@@ -135,6 +135,91 @@ async function fileToDataURL(file){
   });
 }
 
+/* -------------------- OCR helpers -------------------- */
+function setStatus(msgHtml) {
+  const status = $("payrollScanStatus");
+  if (status) status.innerHTML = msgHtml || "";
+}
+
+function fileToImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+async function preprocessDataUrlForOCR(photoDataUrl) {
+  const img = await fileToImageFromDataUrl(photoDataUrl);
+
+  const maxW = 1600;
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const d = imageData.data;
+  const contrast = 1.25;
+  const intercept = 128 * (1 - contrast);
+
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    let y = 0.299 * r + 0.587 * g + 0.114 * b;
+    y = y * contrast + intercept;
+    y = Math.max(0, Math.min(255, y));
+    d[i] = d[i + 1] = d[i + 2] = y;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function extractSuggestionsFromText(text) {
+  const t = String(text || "");
+  const roMatch = t.match(/\b(\d{5,8})\b/);
+  const ro = roMatch ? roMatch[1] : "";
+  const vinMatch = t.match(/\b([A-HJ-NPR-Z0-9]{8})\b/);
+  const vin8 = vinMatch ? vinMatch[1] : "";
+  const hoursMatches = t.match(/\b\d{1,2}\.\d\b/g) || [];
+  const hours = hoursMatches
+    .map(x => Number(x))
+    .filter(n => n > 0 && n < 20)
+    .sort((a, b) => b - a)[0];
+  return { ro, vin8, hours: Number.isFinite(hours) ? String(hours) : "" };
+}
+
+function renderSuggestionButtons(s) {
+  const parts = [];
+  if (s.ro) parts.push(`<button type="button" class="btn" id="useSugRO">Use RO ${s.ro}</button>`);
+  if (s.vin8) parts.push(`<button type="button" class="btn" id="useSugVIN">Use VIN ${s.vin8}</button>`);
+  if (s.hours) parts.push(`<button type="button" class="btn" id="useSugHRS">Use Hours ${s.hours}</button>`);
+  if (!parts.length) return `<div class="muted">No clear RO/VIN/Hours found. Use the text box below.</div>`;
+  return `<div class="row" style="gap:10px; flex-wrap:wrap">${parts.join("")}</div>`;
+}
+
+function wireSuggestionButtons(s) {
+  const roEl = $("ro");
+  const vinEl = $("vin8");
+  const hrsEl = $("hours");
+
+  const bRO = $("useSugRO");
+  if (bRO && roEl) bRO.onclick = () => { roEl.value = s.ro; roEl.dispatchEvent(new Event("input")); };
+
+  const bVIN = $("useSugVIN");
+  if (bVIN && vinEl) bVIN.onclick = () => { vinEl.value = s.vin8; vinEl.dispatchEvent(new Event("input")); };
+
+  const bHRS = $("useSugHRS");
+  if (bHRS && hrsEl) bHRS.onclick = () => { hrsEl.value = s.hours; hrsEl.dispatchEvent(new Event("input")); };
+}
+
 /* -------------------- Week helpers (Mon–Sun) -------------------- */
 function dateKey(d){
   const y = d.getFullYear();
@@ -435,6 +520,9 @@ async function refreshPayrollUI(){
   const ocrBox = $("payrollOcrText");
   if (preview) preview.innerHTML = "";
   if (ocrBox) ocrBox.value = "";
+  setStatus("");
+  const sugBox = $("payrollSuggestions");
+  if (sugBox) sugBox.innerHTML = "";
 
   const data = await getWeekPayroll();
   if (!data) return;
@@ -546,27 +634,41 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const scanPayrollBtn = $("scanPayrollBtn");
   if (scanPayrollBtn) scanPayrollBtn.addEventListener("click", async () => {
-    const pick = $("payrollPhotoPick");
-    const cam = $("payrollPhotoCam");
-    const file = (cam && cam.files && cam.files[0]) ? cam.files[0] : (pick && pick.files && pick.files[0]) ? pick.files[0] : null;
-    if (!file) return alert("Choose a payroll photo first.");
-    if (!(window.Tesseract && window.Tesseract.recognize)) {
-      return alert("Tesseract not loaded yet. Connect online once to cache it, then try again.");
+    const ocrBox = $("payrollOcrText");
+    const data = await getThisWeekPayroll();
+    const photoDataUrl = data?.photoDataUrl;
+
+    if (!photoDataUrl) {
+      setStatus(`<div class="muted">No photo saved yet. Add a payroll photo first.</div>`);
+      return;
     }
-    const photoDataUrl = await fileToDataURL(file);
-    const status = $("payrollPreview");
-    if (status) status.innerHTML = "<div class=\"muted\">Scanning...</div>";
+
+    if (!(window.Tesseract && window.Tesseract.recognize)) {
+      setStatus(`<div class="muted">OCR engine not loaded yet. Open the app once while online, then retry.</div>`);
+      return;
+    }
+
     try {
-      const { data } = await Tesseract.recognize(photoDataUrl, "eng");
-      const text = data && data.text ? data.text.trim() : "";
-      const ocrBox = $("payrollOcrText");
+      setStatus(`<div class="muted">Preprocessing image…</div>`);
+      const prepped = await preprocessDataUrlForOCR(photoDataUrl);
+
+      setStatus(`<div class="muted">Scanning… (10–30s on iPhone)</div>`);
+      const { data: ocrData } = await Tesseract.recognize(prepped, "eng");
+      const text = (ocrData && ocrData.text) ? ocrData.text : "";
+
       if (ocrBox) ocrBox.value = text;
       await saveWeekPayroll({ photoDataUrl, ocrText: text });
-      await refreshPayrollUI();
-      alert("OCR complete.");
-    } catch (err) {
-      console.error(err);
-      alert("OCR failed. Try again while online or with a clearer photo.");
+
+      const sug = extractSuggestionsFromText(text);
+      setStatus(`
+        <div><strong>OCR complete.</strong> Tap to fill fields:</div>
+        ${renderSuggestionButtons(sug)}
+        <div class="muted" style="margin-top:8px;">If this looks wrong, retake with better lighting/glare control.</div>
+      `);
+      wireSuggestionButtons(sug);
+
+    } catch (e) {
+      setStatus(`<div class="muted">OCR couldn’t read this. Photo is saved. Retry with a clearer photo or enter values manually.</div>`);
     }
   });
 
