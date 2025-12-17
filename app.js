@@ -586,13 +586,15 @@ async function wipeAllData(){
 
 /* -------------------- More panel -------------------- */
 function openMore() {
-  const modal = document.getElementById("moreModal");
+  const modal = $("moreModal");
+  if (!modal) return;
   modal.classList.add("open");
   lockBodyScroll();
 }
 
 function closeMore() {
-  const modal = document.getElementById("moreModal");
+  const modal = $("moreModal");
+  if (!modal) return;
   modal.classList.remove("open");
   unlockBodyScroll();
 }

@@ -216,33 +216,15 @@
       background: rgba(0,0,0,.25);
       color: rgba(255,255,255,.85);
     }
-    .page{
-      padding: 14px;
-      max-width: 820px;
-      margin: 0 auto;
-    }
-    .topbar{
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      display:flex;
-      gap:12px;
-      align-items:center;
-      padding: 12px 14px;
-      background: rgba(10,14,25,.92);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid rgba(255,255,255,.08);
-    }
-    .title{ font-weight: 800; }
   </style>
 </head>
 <body>
-<header>
-  <h1>Flat-Rate Log</h1>
-  <a class="btn" href="./more.html">More</a>
+<header class="topbar">
+  <a class="btn" href="./index.html">Back</a>
+  <div class="title">More</div>
 </header>
 
-<main>
+<main class="page">
   <section class="card">
     <div class="summary">
       <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
@@ -348,6 +330,8 @@
     </div>
     <div class="list" id="entryList" style="margin-top:12px;"></div>
   </section>
+<section class="card"><div class="mono" style="font-size:12px;">Debug Log</div><pre id="debugLog" style="white-space:pre-wrap;font-size:12px;color:#9aa4b2;max-height:200px;overflow:auto;">(booting…)
+</pre></section>
 </main>
 
 <div id="moreModal" class="modalShell">
