@@ -518,23 +518,16 @@ function registerSW(){
 async function refreshPayrollUI(){
   const preview = $("payrollPreview");
   const ocrBox = $("payrollOcrText");
-  if (preview) preview.innerHTML = "";
+  if (preview) { preview.style.display = "none"; preview.removeAttribute("src"); }
   if (ocrBox) ocrBox.value = "";
   setStatus("");
-  const sugBox = $("payrollSuggestions");
-  if (sugBox) sugBox.innerHTML = "";
 
   const data = await getWeekPayroll();
   if (!data) return;
 
   if (preview && data.photoDataUrl) {
-    const img = document.createElement("img");
-    img.src = data.photoDataUrl;
-    img.alt = "Payroll sheet";
-    img.style.maxWidth = "100%";
-    img.style.borderRadius = "12px";
-    img.style.border = "1px solid #222";
-    preview.appendChild(img);
+    preview.src = data.photoDataUrl;
+    preview.style.display = "block";
   }
   if (ocrBox && data.ocrText) {
     ocrBox.value = data.ocrText;
@@ -580,12 +573,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (hoursEl) hoursEl.addEventListener("input", () => hoursEl.dataset.touched = "1");
   if (rateEl)  rateEl.addEventListener("input", () => rateEl.dataset.touched = "1");
 
-  const clearBtn = $("clearFormBtn");
-  if (clearBtn) clearBtn.addEventListener("click", () => {
+  const clearForm = () => {
     $("logForm").reset();
     if (hoursEl){ hoursEl.value = "0.5"; hoursEl.dataset.touched = ""; }
     if (rateEl){ rateEl.value = "15"; rateEl.dataset.touched = ""; }
-  });
+  };
+
+  const clearBtn = $("clearFormBtn");
+  if (clearBtn) clearBtn.addEventListener("click", clearForm);
+  const clearEntryBtn = $("clearEntryBtn");
+  if (clearEntryBtn) clearEntryBtn.addEventListener("click", clearForm);
 
   const wipeBtn = $("wipeBtn");
   if (wipeBtn) wipeBtn.addEventListener("click", async () => {
@@ -623,7 +620,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const savePayrollPhotoBtn = $("savePayrollPhotoBtn");
   if (savePayrollPhotoBtn) savePayrollPhotoBtn.addEventListener("click", async () => {
     const pick = $("payrollPhotoPick");
-    const cam = $("payrollPhotoCam");
+    const cam = $("payrollPhotoTake");
     const file = (cam && cam.files && cam.files[0]) ? cam.files[0] : (pick && pick.files && pick.files[0]) ? pick.files[0] : null;
     if (!file) return alert("Choose a payroll photo first.");
     const photoDataUrl = await fileToDataURL(file);
@@ -672,7 +669,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  const exportWeekSummaryBtn = $("exportWeekSummaryBtn");
+  const exportWeekSummaryBtn = $("exportWeekTxtBtn");
   if (exportWeekSummaryBtn) exportWeekSummaryBtn.addEventListener("click", async () => {
     await refreshUI();
     const s = window.__WEEK_STATE__;
@@ -909,6 +906,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (rateEl){ rateEl.value = "15"; rateEl.dataset.touched = ""; }
 
     await refreshUI();
+  });
+
+  const saveEntryBtn = $("saveEntryBtn");
+  if (saveEntryBtn) saveEntryBtn.addEventListener("click", () => {
+    const formEl = $("logForm");
+    if (formEl && formEl.requestSubmit) formEl.requestSubmit();
+    else if (formEl) formEl.dispatchEvent(new Event("submit", { cancelable: true }));
   });
 
   await refreshUI();
