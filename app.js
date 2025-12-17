@@ -10,6 +10,36 @@ const STORES = {
 
 const $ = (id) => document.getElementById(id);
 
+console.log("BUILD", "c3fdf8a", new Date().toISOString());
+
+function setStatusMsg(msg){
+  const s = $("statusMsg");
+  if (s) s.textContent = msg;
+}
+
+function toast(msg){
+  const t = document.getElementById("toast");
+  if(!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1400);
+}
+
+function num(v){
+  const x = parseFloat(v);
+  return Number.isFinite(x) ? x : 0;
+}
+
+function getRate(){
+  const rateInput = document.querySelector('[name="rate"]');
+  return rateInput ? num(rateInput.value) : 15;
+}
+
+function getNotes(){
+  const notesInput = document.querySelector('[name="notes"]');
+  return notesInput ? (notesInput.value || "").trim() : "";
+}
+
 function nowISO(){ return new Date().toISOString(); }
 function todayKeyLocal(){
   const d = new Date();
@@ -136,7 +166,7 @@ async function fileToDataURL(file){
 }
 
 /* -------------------- OCR helpers -------------------- */
-function setStatus(msgHtml) {
+function setPayrollStatus(msgHtml) {
   const status = $("payrollScanStatus");
   if (status) status.innerHTML = msgHtml || "";
 }
@@ -324,7 +354,7 @@ async function maybeAutofillFromType(nameRaw){
   const t = await findTypeByName(name);
   if (!t) return;
 
-  const hoursEl = document.querySelector('input[name="hours"]');
+  const hoursEl = $("hours");
   const rateEl  = document.querySelector('input[name="rate"]');
 
   if (hoursEl && hoursEl.dataset.touched === "1") return;
@@ -561,7 +591,7 @@ async function refreshPayrollUI(){
   const ocrBox = $("payrollOcrText");
   if (preview) { preview.style.display = "none"; preview.removeAttribute("src"); }
   if (ocrBox) ocrBox.value = "";
-  setStatus("");
+  setPayrollStatus("");
 
   const data = await getWeekPayroll();
   if (!data) return;
@@ -622,21 +652,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   initMoreTabs();
 
-  const hoursEl = document.querySelector('input[name="hours"]');
-  const rateEl  = document.querySelector('input[name="rate"]');
-  if (hoursEl) hoursEl.addEventListener("input", () => hoursEl.dataset.touched = "1");
-  if (rateEl)  rateEl.addEventListener("input", () => rateEl.dataset.touched = "1");
-
-  const clearForm = () => {
-    $("logForm").reset();
-    if (hoursEl){ hoursEl.value = "0.5"; hoursEl.dataset.touched = ""; }
-    if (rateEl){ rateEl.value = "15"; rateEl.dataset.touched = ""; }
-  };
-
-  const clearBtn = $("clearFormBtn");
-  if (clearBtn) clearBtn.addEventListener("click", clearForm);
-  const clearEntryBtn = $("clearEntryBtn");
-  if (clearEntryBtn) clearEntryBtn.addEventListener("click", clearForm);
+  const hoursInput = $("hours");
+  const rateInput  = document.querySelector('input[name="rate"]');
+  if (hoursInput) hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
+  if (rateInput)  rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
 
   const wipeBtn = $("wipeBtn");
   if (wipeBtn) wipeBtn.addEventListener("click", async () => {
@@ -690,20 +709,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     const photoDataUrl = data?.photoDataUrl;
 
     if (!photoDataUrl) {
-      setStatus(`<div class="muted">No photo saved yet. Add a payroll photo first.</div>`);
+      setPayrollStatus(`<div class="muted">No photo saved yet. Add a payroll photo first.</div>`);
       return;
     }
 
     if (!(window.Tesseract && window.Tesseract.recognize)) {
-      setStatus(`<div class="muted">OCR engine not loaded yet. Open the app once while online, then retry.</div>`);
+      setPayrollStatus(`<div class="muted">OCR engine not loaded yet. Open the app once while online, then retry.</div>`);
       return;
     }
 
     try {
-      setStatus(`<div class="muted">Preprocessing image…</div>`);
+      setPayrollStatus(`<div class="muted">Preprocessing image…</div>`);
       const prepped = await preprocessDataUrlForOCR(photoDataUrl);
 
-      setStatus(`<div class="muted">Scanning… (10–30s on iPhone)</div>`);
+      setPayrollStatus(`<div class="muted">Scanning… (10–30s on iPhone)</div>`);
       const { data: ocrData } = await Tesseract.recognize(prepped, "eng");
       const text = (ocrData && ocrData.text) ? ocrData.text : "";
 
@@ -711,7 +730,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       await saveWeekPayroll({ photoDataUrl, ocrText: text });
 
       const sug = extractSuggestionsFromText(text);
-      setStatus(`
+      setPayrollStatus(`
         <div><strong>OCR complete.</strong> Tap to fill fields:</div>
         ${renderSuggestionButtons(sug)}
         <div class="muted" style="margin-top:8px;">If this looks wrong, retake with better lighting/glare control.</div>
@@ -719,7 +738,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       wireSuggestionButtons(sug);
 
     } catch (e) {
-      setStatus(`<div class="muted">OCR couldn’t read this. Photo is saved. Retry with a clearer photo or enter values manually.</div>`);
+      setPayrollStatus(`<div class="muted">OCR couldn’t read this. Photo is saved. Retry with a clearer photo or enter values manually.</div>`);
     }
   });
 
@@ -933,66 +952,111 @@ document.addEventListener("DOMContentLoaded", async () => {
       await maybeAutofillFromType(typeEl.value);
     });
     typeEl.addEventListener("change", async () => {
-      if (hoursEl) hoursEl.dataset.touched = "";
-      if (rateEl) rateEl.dataset.touched = "";
+      if (hoursInput) hoursInput.dataset.touched = "";
+      if (rateInput) rateInput.dataset.touched = "";
       await maybeAutofillFromType(typeEl.value);
     });
   }
 
   const form = $("logForm");
-  if (form) form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const fd = new FormData(ev.target);
-
-    const ro = String(fd.get("ro") || "").trim();
-    const vin8 = String(fd.get("vin8") || "").trim().toUpperCase().slice(0,8);
-    const type = String(fd.get("typeText") || "").trim();
-
-    const hours = Number(fd.get("hours") || 0);
-    const rate = Number(fd.get("rate") || 0);
-    const notes = String(fd.get("notes") || "").trim();
-
-    const photoFile = fd.get("photo");
-    const photoDataUrl = (photoFile && photoFile.size) ? await fileToDataURL(photoFile) : null;
-
-    if (!ro) return alert("RO # is required.");
-    if (!type) return alert("Type is required.");
-    if (!Number.isFinite(hours) || hours <= 0) return alert("Hours must be > 0 (decimals ok).");
-    if (!Number.isFinite(rate) || rate < 0) return alert("Rate must be >= 0.");
-
-    const createdAt = nowISO();
-    const dayKey = todayKeyLocal();
-    const earnings = Number((hours * rate).toFixed(2));
-
-    await put(STORES.entries, {
-      id: uuid(),
-      createdAt,
-      dayKey,
-      ro,
-      vin8,
-      type,
-      hours,
-      rate,
-      earnings,
-      notes,
-      photoDataUrl
-    });
-
-    await upsertTypeDefaults(type, hours, rate);
-
-    ev.target.reset();
-    if (hoursEl){ hoursEl.value = "0.5"; hoursEl.dataset.touched = ""; }
-    if (rateEl){ rateEl.value = "15"; rateEl.dataset.touched = ""; }
-
-    await refreshUI();
-  });
-
+  const saveBtnFooter = $("saveBtn");
   const saveEntryBtn = $("saveEntryBtn");
-  if (saveEntryBtn) saveEntryBtn.addEventListener("click", () => {
-    const formEl = $("logForm");
-    if (formEl && formEl.requestSubmit) formEl.requestSubmit();
-    else if (formEl) formEl.dispatchEvent(new Event("submit", { cancelable: true }));
+  const formSubmitBtn = form ? form.querySelector('button[type="submit"]') : null;
+
+  const clearFastFields = (ev) => {
+    if (ev) ev.preventDefault();
+    const clearAll = ev && ev.target && ev.target.id === "clearFormBtn";
+    if (clearAll) {
+      if ($("ro")) $("ro").value = "";
+      if ($("vin8")) $("vin8").value = "";
+    }
+    if (typeEl) typeEl.value = "";
+    if (hoursInput) { hoursInput.value = ""; hoursInput.dataset.touched = ""; }
+    const photoInput = $("proofPhoto");
+    if (photoInput) photoInput.value = "";
+    const notesInput = document.querySelector('[name="notes"]');
+    if (notesInput) notesInput.value = "";
+    setStatusMsg("Ready.");
+    if (typeEl) typeEl.focus();
+  };
+
+  ["clearFormBtn","clearEntryBtn","clearBtn"].forEach((id) => {
+    const btn = $(id);
+    if (btn) btn.addEventListener("click", clearFastFields);
   });
+
+  const handleSave = async (ev) => {
+    if (ev) ev.preventDefault();
+    const disableSaves = (state) => {
+      if (saveBtnFooter) saveBtnFooter.disabled = state;
+      if (formSubmitBtn) formSubmitBtn.disabled = state;
+      if (saveEntryBtn) saveEntryBtn.disabled = state;
+    };
+
+    const ro = ($("ro")?.value || "").trim();
+    const vin8 = ($("vin8")?.value || "").trim().toUpperCase().slice(0,8);
+    const type = (typeEl?.value || "").trim();
+    const hours = num(hoursInput?.value);
+    const rate = getRate();
+    const notes = getNotes();
+
+    if (!ro) { toast("RO # required"); setStatusMsg("RO # required"); return; }
+    if (!type) { toast("Type required"); setStatusMsg("Type required"); return; }
+    if (!(hours > 0)) { toast("Hours must be > 0"); setStatusMsg("Hours must be > 0"); return; }
+    if (!(rate > 0)) { toast("Rate must be > 0"); setStatusMsg("Rate must be > 0"); return; }
+
+    disableSaves(true);
+    setStatusMsg("Saving...");
+
+    try {
+      const photoInput = $("proofPhoto");
+      const photoFile = photoInput?.files?.[0];
+      const photoDataUrl = photoFile ? await fileToDataURL(photoFile) : null;
+
+      const createdAt = nowISO();
+      const dayKey = todayKeyLocal();
+      const earnings = Number((hours * rate).toFixed(2));
+
+      await put(STORES.entries, {
+        id: uuid(),
+        createdAt,
+        dayKey,
+        ro,
+        vin8,
+        type,
+        hours,
+        rate,
+        earnings,
+        notes,
+        photoDataUrl
+      });
+
+      await upsertTypeDefaults(type, hours, rate);
+
+      setStatusMsg("Saved.");
+      toast("Saved ✅");
+
+      if (typeEl) typeEl.value = "";
+      if (hoursInput) { hoursInput.value = ""; hoursInput.dataset.touched = ""; }
+      const notesInput = document.querySelector('[name="notes"]');
+      if (notesInput) notesInput.value = "";
+      const photoInputAfter = $("proofPhoto");
+      if (photoInputAfter) photoInputAfter.value = "";
+      if (typeEl) typeEl.focus();
+
+      await refreshUI();
+    } catch (e) {
+      console.error(e);
+      setStatusMsg("Save failed.");
+      toast("Save failed");
+    } finally {
+      disableSaves(false);
+    }
+  };
+
+  if (form) form.addEventListener("submit", handleSave);
+  if (saveEntryBtn) saveEntryBtn.addEventListener("click", handleSave);
+  if (saveBtnFooter) saveBtnFooter.addEventListener("click", handleSave);
 
   await refreshUI();
 });
