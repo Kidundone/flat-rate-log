@@ -515,6 +515,36 @@ function registerSW(){
   }
 }
 
+let _moreScrollLock = null;
+function preventTouch(e){
+  const body = document.querySelector("#moreModal .modalBody");
+  if (!body) return e.preventDefault();
+  if (!body.contains(e.target)) e.preventDefault();
+}
+function lockBodyScroll(){
+  const y = window.scrollY;
+  document.body.classList.add("modal-open");
+  document.body.style.position = "fixed";
+  document.body.style.top = `-${y}px`;
+  document.body.style.left = "0";
+  document.body.style.right = "0";
+  _moreScrollLock = y;
+  const modal = $("moreModal");
+  if (modal) modal.addEventListener("touchmove", preventTouch, { passive: false });
+}
+function unlockBodyScroll(){
+  document.body.classList.remove("modal-open");
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  const y = _moreScrollLock || 0;
+  window.scrollTo(0, y);
+  _moreScrollLock = null;
+  const modal = $("moreModal");
+  if (modal) modal.removeEventListener("touchmove", preventTouch);
+}
+
 function initMoreTabs(){
   const tabBtns = Array.from(document.querySelectorAll(".tabBtn"));
   const panels = Array.from(document.querySelectorAll(".tabPanel"));
@@ -556,13 +586,15 @@ async function wipeAllData(){
 
 /* -------------------- More panel -------------------- */
 function openMore() {
-  document.body.classList.add("modal-open");
-  $("moreModal").classList.add("open");
+  const modal = document.getElementById("moreModal");
+  modal.classList.add("open");
+  lockBodyScroll();
 }
 
 function closeMore() {
-  $("moreModal").classList.remove("open");
-  document.body.classList.remove("modal-open");
+  const modal = document.getElementById("moreModal");
+  modal.classList.remove("open");
+  unlockBodyScroll();
 }
 
 /* -------------------- Boot -------------------- */
