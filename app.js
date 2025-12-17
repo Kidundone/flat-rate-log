@@ -555,8 +555,15 @@ async function wipeAllData(){
 }
 
 /* -------------------- More panel -------------------- */
-function openMore(){ $("morePanel").style.display = "block"; }
-function closeMore(){ $("morePanel").style.display = "none"; }
+function openMore() {
+  document.body.classList.add("modal-open");
+  $("moreModal").classList.add("open");
+}
+
+function closeMore() {
+  $("moreModal").classList.remove("open");
+  document.body.classList.remove("modal-open");
+}
 
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", async () => {
@@ -576,8 +583,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (moreBtn) moreBtn.addEventListener("click", openMore);
   const closeBtn = $("closeMoreBtn");
   if (closeBtn) closeBtn.addEventListener("click", closeMore);
-  const morePanel = $("morePanel");
-  if (morePanel) morePanel.addEventListener("click", (e) => { if (e.target.id === "morePanel") closeMore(); });
+  const morePanel = document.getElementById("moreModal");
+  if (morePanel) morePanel.addEventListener("click", (e) => { if (e.target.id === "moreModal") closeMore(); });
 
   initMoreTabs();
 
