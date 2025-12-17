@@ -135,6 +135,54 @@
       border: 1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.25);
     }
+    /* -------- More modal = real screen, not a junk drawer -------- */
+    .moreShell{ display:flex; flex-direction:column; gap:12px; }
+    .moreHeader{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .moreTitle{ font-weight:800; font-size:18px; }
+    .moreSub{ color:rgba(255,255,255,.6); font-size:13px; margin-top:2px; }
+    .pad{ padding:14px; }
+    .small{ font-size:13px; }
+    .label{ font-weight:700; color:rgba(255,255,255,.86); margin-bottom:6px; }
+    .hint{ color:rgba(255,255,255,.55); font-size:12px; margin-top:6px; text-align:center; }
+    .row2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:10px; align-items:end; }
+    @media (max-width: 360px){ .row2{ grid-template-columns:1fr; } }
+    .tall{ padding:16px 14px; border-radius:16px; }
+    .divider{ height:1px; background:rgba(255,255,255,.10); margin:14px 0; }
+    .tabsRow{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:10px;
+      padding:10px;
+      border-radius:16px;
+      background: rgba(0,0,0,.20);
+      border:1px solid rgba(255,255,255,.10);
+    }
+    .tabBtn{
+      padding:12px 10px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.85);
+      font-weight:750;
+      cursor:pointer;
+    }
+    .tabBtn.active{
+      background: linear-gradient(180deg, rgba(47,125,255,1), rgba(47,125,255,.75));
+      border:1px solid rgba(47,125,255,.55);
+      box-shadow: 0 10px 26px rgba(47,125,255,.2);
+    }
+    .tabPanel{ display:none; }
+    .tabPanel.active{ display:block; }
+    .card.pad{ padding:14px; }
+    .fileInput{
+      width:100%;
+      padding:12px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.25);
+      color: rgba(255,255,255,.85);
+    }
+    }
   </style>
 </head>
 <body>
@@ -253,83 +301,95 @@
 </pre></section>
 </main>
 
-<!-- Minimal "More" panel (kept lightweight) -->
 <div id="morePanel" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter: blur(8px); z-index:20;">
-  <div style="max-width:780px; margin:60px auto; padding:0 16px;">
-    <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+  <div style="max-width:820px; margin:40px auto; padding:0 16px;">
+    <div class="moreShell card">
+      <div class="moreHeader">
         <div>
-          <div class="mono">More</div>
-          <div class="muted">Manage payroll, exports, and saved types.</div>
+          <div class="moreTitle">More</div>
+          <div class="moreSub">Payroll compare, types, exports.</div>
         </div>
-        <button class="btn" type="button" id="closeMoreBtn">Close</button>
+        <button class="btn" id="closeMoreBtn">Close</button>
       </div>
 
-      <div class="section card" style="padding:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-          <div>
-            <div style="font-weight:750;">Payroll Compare (This Week)</div>
-            <div class="muted" style="font-size:13px;">Enter what payroll flagged. Attach a photo for proof.</div>
-          </div>
-        </div>
+      <div class="tabsRow">
+        <button class="tabBtn active" data-tab="payrollTab">Payroll</button>
+        <button class="tabBtn" data-tab="typesTab">Types</button>
+        <button class="tabBtn" data-tab="exportTab">Export</button>
+      </div>
 
-        <div class="grid2 section">
-          <div>
-            <label class="muted">Flagged Hours</label>
-            <input id="flaggedHours" inputmode="decimal" type="number" step="0.1" placeholder="e.g., 35.0" />
-          </div>
-          <div style="display:flex; align-items:flex-end;">
-            <button class="btn primary" id="saveFlaggedBtn" style="width:100%;">Save Flagged</button>
-          </div>
-        </div>
-
-        <details class="section" open>
-          <summary>Payroll Photo + OCR</summary>
-
-          <div class="muted" style="font-size:13px; margin-top:8px;">
-            Attach proof photo (always saved). OCR is optional and best-effort.
-          </div>
-
-          <div class="fileRow section">
+      <div id="payrollTab" class="tabPanel active">
+        <div class="card pad">
+          <div class="row2">
             <div>
-              <label class="muted">Choose from Photos</label>
-              <input id="payrollPhotoPick" type="file" accept="image/*" />
+              <div class="label">Flagged hours (this week)</div>
+              <input id="flaggedHours" inputmode="decimal" type="number" step="0.1" placeholder="e.g., 35.0" />
+            </div>
+            <button class="btn primary tall" id="saveFlaggedBtn">Save</button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="label">Payroll proof photo</div>
+          <div class="muted small">Attach photo (saved). OCR is optional.</div>
+
+          <div class="row2">
+            <div>
+              <input id="payrollPhotoPick" class="fileInput" type="file" accept="image/*" />
+              <div class="hint">Photos</div>
             </div>
             <div>
-              <label class="muted">Take Photo</label>
-              <input id="payrollPhotoTake" type="file" accept="image/*" capture="environment" />
+              <input id="payrollPhotoTake" class="fileInput" type="file" accept="image/*" capture="environment" />
+              <div class="hint">Camera</div>
             </div>
           </div>
 
-          <div class="grid2 section">
-            <button class="btn" id="savePayrollPhotoBtn">Save Photo</button>
-            <button class="btn primary" id="scanPayrollBtn">Extract (OCR)</button>
+          <div class="row2">
+            <button class="btn tall" id="savePayrollPhotoBtn">Save Photo</button>
+            <button class="btn primary tall" id="scanPayrollBtn">Extract (OCR)</button>
           </div>
 
-          <div id="payrollScanStatus" class="section muted"></div>
+          <div id="payrollScanStatus" class="muted small" style="margin-top:10px;"></div>
 
-          <img id="payrollPreview" class="previewImg section" style="display:none;" />
+          <img id="payrollPreview" class="previewImg" style="display:none; margin-top:10px;" />
 
-          <div class="section">
-            <label class="muted">Extracted Text</label>
+          <div style="margin-top:12px;">
+            <div class="label">Extracted text</div>
             <textarea id="payrollOcrText" placeholder="OCR output will appear here…"></textarea>
           </div>
-        </details>
+        </div>
+      </div>
 
-        <details class="section">
-          <summary>Exports</summary>
-          <div class="grid2 section">
-            <button class="btn" id="exportWeekTxtBtn">Week Summary (TXT)</button>
-            <button class="btn primary" id="exportProofHtmlBtn">Proof Packet (HTML)</button>
+      <div id="typesTab" class="tabPanel">
+        <div class="card pad">
+          <div class="label">Saved work types</div>
+          <div class="muted small">You don’t pre-build combos here. Just type on the main screen and it auto-saves.</div>
+
+          <div style="margin-top:10px;" id="savedTypesList"></div>
+
+          <div class="divider"></div>
+
+          <div class="row2">
+            <button class="btn danger tall" id="wipeTypesBtn">Wipe Types</button>
+            <button class="btn tall" id="exportTypesBtn">Export Types</button>
           </div>
-          <button class="btn section" id="exportProofJsonBtn">Proof Packet (JSON)</button>
-        </details>
+        </div>
+      </div>
 
-        <details class="section">
-          <summary>Saved Types</summary>
-          <div class="muted" style="font-size:13px; margin-top:8px;">Tap a type to delete it.</div>
-          <div id="savedTypesList" class="section"></div>
-        </details>
+      <div id="exportTab" class="tabPanel">
+        <div class="card pad">
+          <div class="label">Exports</div>
+          <div class="muted small">Proof packets are what win disputes. Export weekly + archive.</div>
+
+          <button class="btn tall" id="exportWeekTxtBtn" style="width:100%; margin-top:10px;">Week Summary (TXT)</button>
+          <button class="btn primary tall" id="exportProofHtmlBtn" style="width:100%; margin-top:10px;">Proof Packet (HTML)</button>
+          <button class="btn tall" id="exportProofJsonBtn" style="width:100%; margin-top:10px;">Proof Packet (JSON)</button>
+
+          <div class="divider"></div>
+
+          <button class="btn danger tall" id="wipeAllBtn" style="width:100%;">Danger: Wipe All Local Data</button>
+          <div class="muted small" style="margin-top:8px;">This deletes entries, payroll photo, and saved types.</div>
+        </div>
       </div>
     </div>
   </div>

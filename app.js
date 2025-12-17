@@ -515,6 +515,17 @@ function registerSW(){
   }
 }
 
+function initMoreTabs(){
+  const tabBtns = Array.from(document.querySelectorAll(".tabBtn"));
+  const panels = Array.from(document.querySelectorAll(".tabPanel"));
+  const activate = (id) => {
+    panels.forEach(p => p.classList.toggle("active", p.id === id));
+    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  };
+  tabBtns.forEach(btn => btn.addEventListener("click", () => activate(btn.dataset.tab)));
+  activate("payrollTab");
+}
+
 async function refreshPayrollUI(){
   const preview = $("payrollPreview");
   const ocrBox = $("payrollOcrText");
@@ -567,6 +578,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (closeBtn) closeBtn.addEventListener("click", closeMore);
   const morePanel = $("morePanel");
   if (morePanel) morePanel.addEventListener("click", (e) => { if (e.target.id === "morePanel") closeMore(); });
+
+  initMoreTabs();
 
   const hoursEl = document.querySelector('input[name="hours"]');
   const rateEl  = document.querySelector('input[name="rate"]');
@@ -845,6 +858,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     const payroll = await getThisWeekPayroll();
     const packet = buildProofPacket(state, payroll);
     downloadText(`proof_packet_${packet.week.start}.json`, JSON.stringify(packet, null, 2), "application/json");
+  });
+
+  const wipeAllBtn = $("wipeAllBtn");
+  if (wipeAllBtn) wipeAllBtn.addEventListener("click", async () => {
+    await wipeAllData();
+    await ensureDefaultTypes();
+    await renderTypeDatalist();
+    await renderTypesListInMore();
+    await refreshUI();
+  });
+
+  const wipeTypesBtn = $("wipeTypesBtn");
+  if (wipeTypesBtn) wipeTypesBtn.addEventListener("click", async () => {
+    const ok = confirm("Wipe all saved types?");
+    if (!ok) return;
+    await clearStore(STORES.types);
+    await ensureDefaultTypes();
+    await renderTypeDatalist();
+    await renderTypesListInMore();
+  });
+
+  const exportTypesBtn = $("exportTypesBtn");
+  if (exportTypesBtn) exportTypesBtn.addEventListener("click", async () => {
+    const types = await getAll(STORES.types);
+    downloadText("flat_rate_types.json", JSON.stringify(types, null, 2), "application/json");
   });
 
   const typeEl = $("typeText");
