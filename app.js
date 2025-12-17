@@ -479,13 +479,16 @@ function renderList(entries, mode){
     const div = document.createElement("div");
     div.className = "item";
     const ts = new Date(e.createdAt).toLocaleString();
+    const viewPhotoBtn = e.photoDataUrl
+      ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
+      : "";
     div.innerHTML = `
       <div class="itemTop">
         <div>
           <div><span class="mono">RO ${escapeHtml(e.ro)}</span> <span class="muted">(${escapeHtml(e.type)})</span></div>
           <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8 || "-")}</span> • ${ts}</div>
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-          ${e.photoDataUrl ? `<img alt="Proof" src="${e.photoDataUrl}" style="margin-top:10px;width:100%;max-height:240px;object-fit:cover;border-radius:14px;border:1px solid #222;" />` : ""}
+          ${viewPhotoBtn ? `<div style="margin-top:8px;">${viewPhotoBtn}</div>` : ""}
         </div>
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
@@ -494,7 +497,35 @@ function renderList(entries, mode){
       </div>
     `;
     list.appendChild(div);
+
+    if (e.photoDataUrl) {
+      const btn = div.querySelector('button[data-action="view-photo"]');
+      if (btn) btn.addEventListener("click", () => openPhotoModal(e));
+    }
   }
+}
+
+function openPhotoModal(entry){
+  const shell = document.getElementById("photoModal");
+  const img = document.getElementById("photoImg");
+  const meta = document.getElementById("photoMeta");
+  if (!shell || !img) return;
+
+  img.src = entry.photoDataUrl;
+
+  const when = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "";
+  if (meta) meta.textContent = `${entry.ro || ""} • ${entry.typeText || ""} • ${entry.hours ?? ""} hrs • ${when}`;
+
+  shell.style.display = "block";
+  document.body.classList.add("modal-open");
+}
+
+function closePhotoModal(){
+  const shell = document.getElementById("photoModal");
+  const img = document.getElementById("photoImg");
+  if (img) img.src = "";
+  if (shell) shell.style.display = "none";
+  document.body.classList.remove("modal-open");
 }
 
 async function refreshUI(){
@@ -983,6 +1014,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   ["clearFormBtn","clearEntryBtn","clearBtn"].forEach((id) => {
     const btn = $(id);
     if (btn) btn.addEventListener("click", clearFastFields);
+  });
+
+  async function getEntryById(id){
+    if (!id) return null;
+    const { db, store } = await tx(STORES.entries, "readonly");
+    const item = await new Promise((resolve, reject) => {
+      const r = store.get(id);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+    db.close();
+    return item;
+  }
+
+  const entryList = $("entryList");
+  if (entryList) {
+    entryList.addEventListener("click", async (e) => {
+      const btn = e.target?.closest?.("button[data-action='view-photo']");
+      if (!btn) return;
+      const id = btn.getAttribute("data-id");
+      const entry = await getEntryById(id);
+      if (!entry?.photoDataUrl) {
+        toast("No photo saved");
+        return;
+      }
+      openPhotoModal(entry);
+    });
+  }
+
+  document.getElementById("closePhotoBtn")?.addEventListener("click", closePhotoModal);
+  document.getElementById("photoModal")?.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "photoModal") closePhotoModal();
   });
 
   const handleSave = async (ev) => {

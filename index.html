@@ -234,6 +234,94 @@
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .title{ font-weight: 800; }
+    .actionBar{
+      position: sticky;
+      bottom: 10px;
+      z-index: 30;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(10,14,25,.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    .btnPrimary{
+      padding:14px 16px;
+      border-radius:14px;
+      border:1px solid rgba(47,125,255,.55);
+      background: linear-gradient(180deg, rgba(47,125,255,1), rgba(47,125,255,.75));
+      color: var(--text);
+      font-weight: 750;
+      cursor:pointer;
+    }
+    .btnGhost{
+      padding:14px 16px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      font-weight: 650;
+      cursor:pointer;
+    }
+    .toast{
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15,18,28,.95);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 12px 30px rgba(0,0,0,.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+      z-index: 40;
+    }
+    .toast.show{
+      opacity: 1;
+      transform: translate(-50%, -6px);
+    }
+    /* Photo lightbox */
+    #photoModal{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 18px;
+    }
+    #photoModal.open{ display: flex; }
+    #photoModal .photoBox{
+      background: rgba(15,18,28,0.95);
+      border:1px solid rgba(255,255,255,0.14);
+      border-radius: 16px;
+      padding: 10px;
+      max-width: 860px;
+      width: 100%;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+    }
+    #photoModal img{
+      width: 100%;
+      max-height: 80vh;
+      object-fit: contain;
+      border-radius: 12px;
+      background: #000;
+    }
+    #photoModal .topRow{
+      display:flex;
+      justify-content: space-between;
+      align-items:center;
+      margin-bottom:10px;
+      gap:10px;
+      color:#fff;
+      font-weight:700;
+    }
   </style>
 </head>
 <body>
@@ -264,18 +352,18 @@
       <div class="grid2">
         <div>
           <label>RO #</label>
-          <input id="ro" name="ro" placeholder="123456" required />
+          <input id="ro" name="ro" placeholder="123456" inputmode="numeric" autocomplete="off" required />
         </div>
         <div>
           <label>VIN (last 8)</label>
-          <input id="vin8" name="vin8" placeholder="1A2B3C4D" maxlength="8" />
+          <input id="vin8" name="vin8" placeholder="1A2B3C4D" maxlength="8" inputmode="text" autocomplete="off" autocapitalize="characters" />
         </div>
       </div>
 
       <div class="row grid3">
         <div>
           <label>Type (autocomplete)</label>
-          <input name="typeText" id="typeText" list="typeList" placeholder="Sold + FPF" required />
+          <input name="typeText" id="typeText" list="typeList" placeholder="Sold + FPF" inputmode="text" autocomplete="off" required />
           <datalist id="typeList"></datalist>
           <div class="muted typehint">Just type it. New types auto-save and show up next time.</div>
         </div>
@@ -292,7 +380,7 @@
       <div class="row grid2">
         <div>
           <label>Proof Photo (optional)</label>
-          <input name="photo" type="file" accept="image/*" capture="environment" />
+          <input id="proofPhoto" name="photo" type="file" accept="image/*" capture="environment" />
           <div class="muted" style="margin-top:6px;">Tip: 1 photo per RO is enough.</div>
         </div>
         <div>
@@ -309,9 +397,22 @@
     </form>
   </section>
 
-  <div class="stickyBar">
-    <button class="btn primary" type="button" id="saveEntryBtn">Save Entry</button>
-    <button class="btn" type="button" id="clearEntryBtn">Clear</button>
+  <div class="actionBar">
+    <button id="saveBtn" class="btnPrimary" type="button">Save Entry</button>
+    <button id="clearBtn" class="btnGhost" type="button">Clear</button>
+  </div>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <div id="photoModal" class="modalShell" style="display:none;">
+    <div class="modalContent" style="max-width:900px; margin:20px auto; padding:0 16px;">
+      <div class="card" style="padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div class="mono" id="photoMeta" style="font-size:12px; color:#9aa4b2;"></div>
+          <button class="btn" id="closePhotoBtn" type="button">Close</button>
+        </div>
+        <img id="photoImg" alt="Proof photo" style="width:100%; height:auto; border-radius:14px; margin-top:12px; display:block;" />
+      </div>
+    </div>
   </div>
 
   <section class="card">
