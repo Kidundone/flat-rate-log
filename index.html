@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Flat-Rate Log</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b0b0b" />
+  <style>
+    :root{
+      --bg:#0b0b0b;
+      --card:#121212;
+      --card2:#0f0f0f;
+      --border:#222;
+      --muted:#bdbdbd;
+      --text:#f4f4f4;
+      --blue:#1f6feb;
+      --red:#b42318;
+      --radius:18px;
+      --pad:16px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background: radial-gradient(1200px 500px at 20% -10%, rgba(31,111,235,0.22), transparent 55%),
+                  radial-gradient(900px 500px at 110% 10%, rgba(180,35,24,0.16), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+      font-family:-apple-system,system-ui,Segoe UI,Roboto,Arial;
+    }
+    header{
+      position:sticky; top:0;
+      padding:14px 16px;
+      border-bottom:1px solid var(--border);
+      background: rgba(11,11,11,0.85);
+      backdrop-filter: blur(10px);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      z-index:10;
+    }
+    h1{ font-size:18px; margin:0; letter-spacing:0.2px; }
+    .btn{
+      border:1px solid #2a2a2a;
+      background: rgba(15,15,15,0.8);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:999px;
+      font-size:14px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn.primary{ background: var(--blue); border-color: var(--blue); }
+    .btn.danger{ background: var(--red); border-color: var(--red); }
+    main{ padding:16px; max-width:780px; margin:0 auto; }
+    .card{
+      background: rgba(18,18,18,0.9);
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--pad);
+      margin-bottom: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .summary{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:10px;
+    }
+    .pill{
+      background: rgba(15,15,15,0.8);
+      border:1px solid var(--border);
+      border-radius: 14px;
+      padding:12px;
+    }
+    .k{ font-size:12px; color:var(--muted); }
+    .v{ font-size:18px; margin-top:4px; }
+    label{ font-size:12px; color: #cfcfcf; display:block; margin-bottom:6px; }
+    input, textarea{
+      width:100%;
+      font-size:16px;
+      padding:12px 12px;
+      border-radius:14px;
+      border:1px solid #2a2a2a;
+      background: rgba(15,15,15,0.9);
+      color:var(--text);
+      outline:none;
+    }
+    input:focus, textarea:focus{
+      border-color: rgba(31,111,235,0.7);
+      box-shadow: 0 0 0 3px rgba(31,111,235,0.15);
+    }
+    textarea{ min-height:84px; resize:vertical; }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .grid3{ display:grid; grid-template-columns: 1.2fr 1fr 1fr; gap:12px; }
+    .row{ margin-top:12px; }
+    .actions{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      margin-top:14px;
+    }
+    .muted{ color:var(--muted); font-size:12px; }
+    .list{ display:grid; gap:10px; }
+    .item{
+      background: rgba(15,15,15,0.8);
+      border:1px solid var(--border);
+      border-radius: 16px;
+      padding:12px;
+    }
+    .itemTop{ display:flex; justify-content:space-between; gap:10px; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .right{ text-align:right; }
+    .small{ font-size:12px; color:var(--muted); }
+    details{
+      border:1px solid var(--border);
+      border-radius: 16px;
+      padding: 10px 12px;
+      background: rgba(15,15,15,0.55);
+    }
+    summary{ cursor:pointer; color: #ddd; font-size:14px; }
+    .typehint{ margin-top:6px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Flat-Rate Log</h1>
+  <button class="btn" id="moreBtn" type="button">More</button>
+</header>
+
+<main>
+  <section class="card">
+    <div class="summary">
+      <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
+      <div class="pill"><div class="k">Today $</div><div class="v" id="todayDollars">$0.00</div></div>
+      <div class="pill"><div class="k">Entries Today</div><div class="v" id="todayCount">0</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="summary">
+      <div class="pill"><div class="k">This Week Hours</div><div class="v" id="weekHours">0</div><div class="muted" id="weekRange"></div></div>
+      <div class="pill"><div class="k">This Week $</div><div class="v" id="weekDollars">$0.00</div></div>
+      <div class="pill"><div class="k">Week Difference</div><div class="v" id="weekDelta">0</div><div class="muted">Set flagged hours in More</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <form id="logForm">
+      <div class="grid2">
+        <div>
+          <label>RO #</label>
+          <input name="ro" placeholder="123456" required />
+        </div>
+        <div>
+          <label>VIN (last 8)</label>
+          <input name="vin8" placeholder="1A2B3C4D" maxlength="8" />
+        </div>
+      </div>
+
+      <div class="row grid3">
+        <div>
+          <label>Type (autocomplete)</label>
+          <input name="typeText" id="typeText" list="typeList" placeholder="Sold + FPF" required />
+          <datalist id="typeList"></datalist>
+          <div class="muted typehint">Just type it. New types auto-save and show up next time.</div>
+        </div>
+        <div>
+          <label>Hours (decimal)</label>
+          <input name="hours" type="number" inputmode="decimal" min="0" step="0.1" value="0.5" required />
+        </div>
+        <div>
+          <label>Rate ($)</label>
+          <input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" required />
+        </div>
+      </div>
+
+      <div class="row grid2">
+        <div>
+          <label>Proof Photo (optional)</label>
+          <input name="photo" type="file" accept="image/*" capture="environment" />
+          <div class="muted" style="margin-top:6px;">Tip: 1 photo per RO is enough.</div>
+        </div>
+        <div>
+          <label>Notes (optional)</label>
+          <textarea name="notes" placeholder="Anything that will matter later..."></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" type="submit">Save Entry</button>
+        <button class="btn" type="button" id="clearFormBtn">Clear</button>
+      </div>
+      <div id="statusMsg" class="muted" style="margin-top:10px;">Ready.</div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="actions">
+      <button class="btn" type="button" id="exportCsvBtn">Export CSV</button>
+      <button class="btn" type="button" id="exportJsonBtn">Export JSON</button>
+    </div>
+
+    <details style="margin-top:12px;">
+      <summary>Danger zone</summary>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn danger" type="button" id="wipeBtn">Wipe Local Data</button>
+        <button class="btn" type="button" id="refreshBtn">Refresh</button>
+      </div>
+      <div class="muted" style="margin-top:8px;">Wipe requires typing WIPE.</div>
+    </details>
+
+    <p class="muted" style="margin-top:10px;">Offline supported. Add to Home Screen for app-like use.</p>
+  </section>
+
+  <section class="card">
+    <div class="itemTop">
+      <div>
+        <div class="muted">Recent Entries (newest first)</div>
+        <div class="muted">If totals look stale after export, tap Refresh.</div>
+      </div>
+      <div class="right">
+        <div class="muted">Filter</div>
+        <select id="filterSelect" style="margin-top:6px; width:120px;">
+          <option value="today">Today</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+    </div>
+    <div class="list" id="entryList" style="margin-top:12px;"></div>
+  </section>
+<section class="card"><div class="mono" style="font-size:12px;">Debug Log</div><pre id="debugLog" style="white-space:pre-wrap;font-size:12px;color:#9aa4b2;max-height:200px;overflow:auto;">(booting…)
+</pre></section>
+</main>
+
+<!-- Minimal "More" panel (kept lightweight) -->
+<div id="morePanel" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter: blur(8px); z-index:20;">
+  <div style="max-width:780px; margin:60px auto; padding:0 16px;">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <div class="mono">More</div>
+          <div class="muted">Manage your saved types (optional). Logging stays clean.</div>
+        </div>
+        <button class="btn" type="button" id="closeMoreBtn">Close</button>
+      </div>
+
+      <div class="row">
+        <label>Payroll Compare (This Week)</label>
+        <div class="muted">Enter what payroll flagged for the week. App calculates the delta.</div>
+        <div class="grid2" style="margin-top:10px;">
+          <div>
+            <label>Flagged Hours (from payroll)</label>
+            <input id="flaggedHours" type="number" inputmode="decimal" step="0.1" min="0" placeholder="e.g., 35" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button class="btn primary" type="button" id="saveFlaggedBtn">Save Flagged Hours</button>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;border-top:1px solid #222;padding-top:14px;">
+          <label>Payroll Sheet Photo (stored offline)</label>
+          <div class="grid2" style="margin-top:10px;">
+            <div>
+              <label>Choose from Photos</label>
+              <input id="payrollPhotoPick" type="file" accept="image/*" />
+            </div>
+            <div>
+              <label>Take Photo</label>
+              <input id="payrollPhotoCam" type="file" accept="image/*" capture="environment" />
+            </div>
+          </div>
+          <div class="actions" style="margin-top:10px;">
+            <button class="btn" type="button" id="savePayrollPhotoBtn">Save Photo</button>
+            <button class="btn primary" type="button" id="scanPayrollBtn">Scan Photo (OCR)</button>
+          </div>
+          <div class="muted" style="margin-top:8px;">OCR needs to be loaded once while online; after that it can work offline.</div>
+          <div id="payrollPreview" style="margin-top:10px;"></div>
+          <label style="margin-top:10px;">Extracted Text</label>
+          <textarea id="payrollOcrText" placeholder="OCR output will appear here..."></textarea>
+        </div>
+
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn" type="button" id="exportWeekSummaryBtn">Export Week Summary (TXT)</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Saved Types</label>
+        <div class="muted">Tap a type to delete it.</div>
+        <div class="list" id="savedTypesList" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

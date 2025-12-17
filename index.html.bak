@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Flat-Rate Log</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#111111" />
+  <style>
+    :root { font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial; }
+    body { margin: 0; background: #0b0b0b; color: #f4f4f4; }
+    header { padding: 14px 16px; border-bottom: 1px solid #222; position: sticky; top: 0; background: #0b0b0b; }
+    h1 { font-size: 18px; margin: 0; }
+    main { padding: 16px; max-width: 760px; margin: 0 auto; }
+    .card { background: #121212; border: 1px solid #222; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { font-size: 12px; color: #cfcfcf; display: block; margin-bottom: 6px; }
+    input, select, textarea, button { width: 100%; font-size: 16px; padding: 10px 12px; border-radius: 12px; border: 1px solid #2a2a2a; background: #0f0f0f; color: #f4f4f4; box-sizing: border-box; }
+    textarea { min-height: 80px; resize: vertical; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    button { cursor: pointer; }
+    button.primary { background: #1f6feb; border-color: #1f6feb; }
+    button.danger { background: #b42318; border-color: #b42318; }
+    .summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .pill { padding: 10px 12px; border-radius: 12px; border: 1px solid #222; background: #0f0f0f; }
+    .pill .k { font-size: 12px; color: #cfcfcf; }
+    .pill .v { font-size: 18px; margin-top: 4px; }
+    .list { display: grid; gap: 10px; }
+    .item { border: 1px solid #222; border-radius: 14px; padding: 12px; background: #0f0f0f; }
+    .itemTop { display: flex; justify-content: space-between; gap: 10px; }
+    .muted { color: #bdbdbd; font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .small { font-size: 12px; }
+    .right { text-align: right; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Flat-Rate Log</h1>
+</header>
+
+<main>
+  <section class="card">
+    <div class="summary">
+      <div class="pill">
+        <div class="k">Today Units</div>
+        <div class="v" id="todayUnits">0</div>
+      </div>
+      <div class="pill">
+        <div class="k">Today $</div>
+        <div class="v" id="todayDollars">$0</div>
+      </div>
+      <div class="pill">
+        <div class="k">Entries Today</div>
+        <div class="v" id="todayCount">0</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <form id="logForm">
+      <div class="row">
+        <div>
+          <label>RO #</label>
+          <input name="ro" placeholder="e.g., 123456" required />
+        </div>
+        <div>
+          <label>VIN (last 8)</label>
+          <input name="vin8" placeholder="e.g., 1A2B3C4D" maxlength="8" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label>Item Type</label>
+          <select name="type" required>
+            <option value="Wash">Wash</option>
+            <option value="Interior">Interior</option>
+            <option value="Detail">Detail</option>
+            <option value="Wax/Polish">Wax/Polish</option>
+            <option value="Shampoo">Shampoo</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label>Units (flat-rate items)</label>
+          <input name="units" type="number" inputmode="numeric" min="1" step="1" value="1" required />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label>Rate per unit ($)</label>
+          <input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" required />
+        </div>
+        <div>
+          <label>Proof Photo (optional)</label>
+          <input name="photo" type="file" accept="image/*" capture="environment" />
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label>Notes (optional)</label>
+        <textarea name="notes" placeholder="Anything that will matter later..."></textarea>
+      </div>
+
+      <div class="actions">
+        <button class="primary" type="submit">Save Entry</button>
+        <button type="button" id="clearFormBtn">Clear</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="actions">
+      <button type="button" id="exportCsvBtn">Export CSV</button>
+      <button type="button" id="exportJsonBtn">Export JSON</button>
+    </div>
+    <div class="actions" style="margin-top:10px;">
+      <button type="button" class="danger" id="wipeBtn">Wipe Local Data</button>
+      <button type="button" id="refreshBtn">Refresh</button>
+    </div>
+    <p class="muted small" style="margin-top:10px;">
+      Tip: Add to Home Screen for app-like use. Offline supported.
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="itemTop">
+      <div>
+        <div class="muted">Recent Entries (newest first)</div>
+        <div class="muted small">Tap refresh after exports if needed.</div>
+      </div>
+      <div class="right">
+        <div class="muted small">Filter</div>
+        <select id="filterSelect" style="margin-top:6px;">
+          <option value="today">Today</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+    </div>
+    <div class="list" id="entryList" style="margin-top:12px;"></div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
