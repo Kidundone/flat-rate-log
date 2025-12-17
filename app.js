@@ -215,7 +215,7 @@ async function preprocessDataUrlForOCR(photoDataUrl) {
 function extractSuggestionsFromText(text) {
   const t = String(text || "");
   const roMatch = t.match(/\b(\d{5,8})\b/);
-  const ro = roMatch ? roMatch[1] : "";
+  const ref = roMatch ? roMatch[1] : "";
   const vinMatch = t.match(/\b([A-HJ-NPR-Z0-9]{8})\b/);
   const vin8 = vinMatch ? vinMatch[1] : "";
   const hoursMatches = t.match(/\b\d{1,2}\.\d\b/g) || [];
@@ -223,25 +223,26 @@ function extractSuggestionsFromText(text) {
     .map(x => Number(x))
     .filter(n => n > 0 && n < 20)
     .sort((a, b) => b - a)[0];
-  return { ro, vin8, hours: Number.isFinite(hours) ? String(hours) : "" };
+  return { ref, vin8, hours: Number.isFinite(hours) ? String(hours) : "" };
 }
 
 function renderSuggestionButtons(s) {
   const parts = [];
-  if (s.ro) parts.push(`<button type="button" class="btn" id="useSugRO">Use RO ${s.ro}</button>`);
+  const refVal = s.ref;
+  if (refVal) parts.push(`<button type="button" class="btn" id="useSugRO">Use Ref ${refVal}</button>`);
   if (s.vin8) parts.push(`<button type="button" class="btn" id="useSugVIN">Use VIN ${s.vin8}</button>`);
   if (s.hours) parts.push(`<button type="button" class="btn" id="useSugHRS">Use Hours ${s.hours}</button>`);
-  if (!parts.length) return `<div class="muted">No clear RO/VIN/Hours found. Use the text box below.</div>`;
+  if (!parts.length) return `<div class="muted">No clear Ref/VIN/Hours found. Use the text box below.</div>`;
   return `<div class="row" style="gap:10px; flex-wrap:wrap">${parts.join("")}</div>`;
 }
 
 function wireSuggestionButtons(s) {
-  const roEl = $("ro");
+  const refEl = $("ref");
   const vinEl = $("vin8");
   const hrsEl = $("hours");
 
   const bRO = $("useSugRO");
-  if (bRO && roEl) bRO.onclick = () => { roEl.value = s.ro; roEl.dispatchEvent(new Event("input")); };
+  if (bRO && refEl) bRO.onclick = () => { refEl.value = s.ref; refEl.dispatchEvent(new Event("input")); };
 
   const bVIN = $("useSugVIN");
   if (bVIN && vinEl) bVIN.onclick = () => { vinEl.value = s.vin8; vinEl.dispatchEvent(new Event("input")); };
@@ -437,14 +438,23 @@ function computeWeek(entries, weekStart){
 }
 
 function toCSV(entries){
-  const header = ["createdAt","dayKey","ro","vin8","type","hours","rate","earnings","notes","hasPhoto"];
+  const header = ["createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
   const escape = (v) => {
     const s = String(v ?? "");
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   };
   const rows = entries.map(e => ([
-    e.createdAt, e.dayKey, e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes,
+    e.createdAt,
+    e.dayKey,
+    e.refType || "RO",
+    e.ref || e.ro,
+    e.vin8,
+    e.type,
+    e.hours,
+    e.rate,
+    e.earnings,
+    e.notes,
     e.photoDataUrl ? "yes" : "no"
   ].map(escape).join(",")));
   return [header.join(","), ...rows].join("\n");
@@ -479,13 +489,16 @@ function renderList(entries, mode){
     const div = document.createElement("div");
     div.className = "item";
     const ts = new Date(e.createdAt).toLocaleString();
+    const refLabel = e.refType === "STOCK" ? "STK" : "RO";
+    const refVal = escapeHtml(e.ref || e.ro || "-");
+    const refDisplay = `${refLabel}: ${refVal}`;
     const viewPhotoBtn = e.photoDataUrl
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
     div.innerHTML = `
       <div class="itemTop">
         <div>
-          <div><span class="mono">RO ${escapeHtml(e.ro)}</span> <span class="muted">(${escapeHtml(e.type)})</span></div>
+          <div><span class="mono">${refDisplay}</span> <span class="muted">(${escapeHtml(e.type)})</span></div>
           <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8 || "-")}</span> • ${ts}</div>
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
           ${viewPhotoBtn ? `<div style="margin-top:8px;">${viewPhotoBtn}</div>` : ""}
@@ -514,7 +527,9 @@ function openPhotoModal(entry){
   img.src = entry.photoDataUrl;
 
   const when = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "";
-  if (meta) meta.textContent = `${entry.ro || ""} • ${entry.typeText || ""} • ${entry.hours ?? ""} hrs • ${when}`;
+  const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
+  const refVal = entry.ref || entry.ro || "";
+  if (meta) meta.textContent = `${refLabel}: ${refVal} • ${entry.typeText || entry.type || ""} • ${entry.hours ?? ""} hrs • ${when}`;
 
   shell.style.display = "block";
   document.body.classList.add("modal-open");
@@ -788,7 +803,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     lines.push("");
     lines.push("Entries:");
     for (const e of s.week.entries.sort((a,b)=> (a.createdAt||"").localeCompare(b.createdAt||""))) {
-      lines.push(`${e.dayKey} ${new Date(e.createdAt).toLocaleTimeString()} | RO ${e.ro} | ${e.type} | ${e.hours} hrs | $${e.earnings}`);
+      const refLabel = e.refType === "STOCK" ? "STK" : "RO";
+      const refVal = e.ref || e.ro;
+      lines.push(`${e.dayKey} ${new Date(e.createdAt).toLocaleTimeString()} | ${refLabel}: ${refVal} | ${e.type} | ${e.hours} hrs | $${e.earnings}`);
     }
     downloadText(`week_summary_${dateKey(s.ws)}.txt`, lines.join("\n"), "text/plain");
   });
@@ -840,11 +857,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const money = (n) => `$${Number(n||0).toFixed(2)}`;
     const rows = (packet.entries||[]).map(e => {
       const t = new Date(e.createdAt).toLocaleString();
+      const refLabel = e.refType === "STOCK" ? "STK" : "RO";
+      const refVal = e.ref || e.ro || "";
       return `
         <tr>
           <td>${esc(e.dayKey)}</td>
           <td>${esc(t)}</td>
-          <td>${esc(e.ro)}</td>
+          <td>${esc(`${refLabel}: ${refVal}`)}</td>
           <td>${esc(e.vin8 || "-")}</td>
           <td>${esc(e.type)}</td>
           <td style="text-align:right">${esc(e.hours)}</td>
@@ -919,7 +938,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     <table>
       <thead>
         <tr>
-          <th>Date</th><th>Time</th><th>RO</th><th>VIN8</th><th>Type</th>
+          <th>Date</th><th>Time</th><th>Ref</th><th>VIN8</th><th>Type</th>
           <th style="text-align:right">Hours</th><th style="text-align:right">Rate</th><th style="text-align:right">$</th><th>Notes</th>
         </tr>
       </thead>
@@ -994,12 +1013,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveEntryBtn = $("saveEntryBtn");
   const formSubmitBtn = form ? form.querySelector('button[type="submit"]') : null;
 
+  let refType = "RO";
+  const setRefType = (next) => {
+    refType = next === "STOCK" ? "STOCK" : "RO";
+    const bRO = document.getElementById("refTypeRO");
+    const bSTK = document.getElementById("refTypeSTK");
+    if (bRO) bRO.classList.toggle("active", refType === "RO");
+    if (bSTK) bSTK.classList.toggle("active", refType === "STOCK");
+  };
+  setRefType("RO");
+  document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
+  document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
+
   const clearFastFields = (ev) => {
     if (ev) ev.preventDefault();
     const clearAll = ev && ev.target && ev.target.id === "clearFormBtn";
     if (clearAll) {
-      if ($("ro")) $("ro").value = "";
+      if ($("ref")) $("ref").value = "";
       if ($("vin8")) $("vin8").value = "";
+      setRefType("RO");
     }
     if (typeEl) typeEl.value = "";
     if (hoursInput) { hoursInput.value = ""; hoursInput.dataset.touched = ""; }
@@ -1056,14 +1088,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (saveEntryBtn) saveEntryBtn.disabled = state;
     };
 
-    const ro = ($("ro")?.value || "").trim();
+    const ref = (document.getElementById("ref")?.value || "").trim().toUpperCase();
     const vin8 = ($("vin8")?.value || "").trim().toUpperCase().slice(0,8);
     const type = (typeEl?.value || "").trim();
     const hours = num(hoursInput?.value);
     const rate = getRate();
     const notes = getNotes();
 
-    if (!ro) { toast("RO # required"); setStatusMsg("RO # required"); return; }
+    if (!ref) { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
     if (!type) { toast("Type required"); setStatusMsg("Type required"); return; }
     if (!(hours > 0)) { toast("Hours must be > 0"); setStatusMsg("Hours must be > 0"); return; }
     if (!(rate > 0)) { toast("Rate must be > 0"); setStatusMsg("Rate must be > 0"); return; }
@@ -1072,20 +1104,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     setStatusMsg("Saving...");
 
     try {
+      const id = uuid();
+      const createdAt = nowISO();
+      const dayKey = todayKeyLocal();
+      const weekStartKey = dateKey(startOfWeekLocal(new Date()));
+      const typeText = type;
       const photoInput = $("proofPhoto");
       const photoFile = photoInput?.files?.[0];
       const photoDataUrl = photoFile ? await fileToDataURL(photoFile) : null;
 
-      const createdAt = nowISO();
-      const dayKey = todayKeyLocal();
       const earnings = Number((hours * rate).toFixed(2));
 
       await put(STORES.entries, {
-        id: uuid(),
+        id,
         createdAt,
         dayKey,
-        ro,
+        weekStartKey,
+        refType,
+        ref,
+        ro: ref,
         vin8,
+        typeText,
         type,
         hours,
         rate,

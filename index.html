@@ -135,6 +135,27 @@
       border: 1px solid rgba(255,255,255,.10);
       background: rgba(0,0,0,.25);
     }
+    .field{ display:flex; flex-direction:column; gap:8px; }
+    .seg{
+      display:flex;
+      gap:6px;
+      padding:4px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+    }
+    .segBtn{
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.85);
+      font-weight:800;
+    }
+    .segBtn.active{
+      background: linear-gradient(180deg, rgba(47,125,255,1), rgba(47,125,255,.75));
+      border:1px solid rgba(47,125,255,.55);
+    }
     /* ===== HARD STOP: prevent background scrolling and capture touches ===== */
     body.modal-open { overflow: hidden; }
     #moreModal{
@@ -350,9 +371,25 @@
   <section class="card">
     <form id="logForm">
       <div class="grid2">
-        <div>
-          <label>RO #</label>
-          <input id="ro" name="ro" placeholder="123456" inputmode="numeric" autocomplete="off" required />
+        <div class="field">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+            <label class="muted" style="font-weight:700;">Ref (RO / Stock)</label>
+            <div class="seg" role="group" aria-label="Ref Type">
+              <button type="button" class="segBtn active" id="refTypeRO">RO</button>
+              <button type="button" class="segBtn" id="refTypeSTK">Stock</button>
+            </div>
+          </div>
+
+          <input
+            id="ref"
+            name="ref"
+            placeholder="RO or Stock #"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            required
+          />
         </div>
         <div>
           <label>VIN (last 8)</label>
