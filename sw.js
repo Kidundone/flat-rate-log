@@ -1,8 +1,17 @@
-const CACHE = "flat-rate-log-v14";
-const ASSETS = ["./","./index.html","./more.html","./app.js","./manifest.webmanifest","./sw.js"];
+const CACHE = "flat-rate-log-v300";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./more.html",
+  "./app.js",
+  "./manifest.webmanifest",
+  "./sw.js"
+];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+  );
   self.skipWaiting();
 });
 
@@ -14,12 +23,35 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+// Multi-page safe fetch:
+// - For navigations, try the actual page (more.html/index.html) from cache/network.
+// - Only fall back to index.html if offline and the requested page isn't cached.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+
+  // Handle page navigations
   if (req.mode === "navigate") {
-    event.respondWith(caches.match("./index.html").then((res) => res || fetch("./index.html")));
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+
+      // Try cached exact page first
+      const cachedPage = await cache.match(req, { ignoreSearch: true });
+      if (cachedPage) return cachedPage;
+
+      // Try network, then cache it
+      try {
+        const fresh = await fetch(req);
+        cache.put(req, fresh.clone()).catch(() => {});
+        return fresh;
+      } catch {
+        // Offline fallback
+        return (await cache.match("./index.html")) || Response.error();
+      }
+    })());
     return;
   }
+
+  // For static assets: cache-first
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);
