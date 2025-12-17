@@ -1,4 +1,4 @@
-const CACHE = "flat-rate-log-v10";
+const CACHE = "flat-rate-log-v11";
 const ASSETS = ["./index.html","./app.js","./manifest.webmanifest","./sw.js"];
 
 self.addEventListener("install", (event) => {

@@ -590,6 +590,164 @@ document.addEventListener("DOMContentLoaded", async () => {
     downloadText(`week_summary_${dateKey(s.ws)}.txt`, lines.join("\n"), "text/plain");
   });
 
+  // ---- Proof Packet Export (HTML + JSON) ----
+  function buildProofPacket(state, payroll){
+    const ws = state.ws;
+    const we = state.we;
+    const weekEntries = (state.week.entries || []).slice().sort((a,b)=> (a.createdAt||"").localeCompare(b.createdAt||""));
+    return {
+      meta: {
+        generatedAt: nowISO(),
+        app: "Flat-Rate Log",
+        version: "proof-packet-v1"
+      },
+      week: {
+        start: dateKey(ws),
+        end: dateKey(we)
+      },
+      totals: {
+        loggedHours: Number(state.week.hours || 0),
+        loggedDollars: Number(state.week.dollars || 0),
+        entriesCount: Number(state.week.count || weekEntries.length),
+        payrollFlaggedHours: Number(state.flagged || 0),
+        differenceFlaggedMinusLogged: Number(state.diff || 0)
+      },
+      payroll: {
+        photoDataUrl: payroll?.photoDataUrl || null,
+        ocrText: payroll?.ocrText || ""
+      },
+      entries: weekEntries
+    };
+  }
+
+  function downloadHTML(filename, html){
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function proofHTML(packet){
+    const esc = (s) => String(s ?? "").replace(/[&<>\"']/g, (c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    const money = (n) => `$${Number(n||0).toFixed(2)}`;
+    const rows = (packet.entries||[]).map(e => {
+      const t = new Date(e.createdAt).toLocaleString();
+      return `
+        <tr>
+          <td>${esc(e.dayKey)}</td>
+          <td>${esc(t)}</td>
+          <td>${esc(e.ro)}</td>
+          <td>${esc(e.vin8 || "-")}</td>
+          <td>${esc(e.type)}</td>
+          <td style="text-align:right">${esc(e.hours)}</td>
+          <td style="text-align:right">${money(e.rate)}</td>
+          <td style="text-align:right">${money(e.earnings)}</td>
+          <td>${esc(e.notes || "")}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const img = packet.payroll.photoDataUrl ? `<img src="${packet.payroll.photoDataUrl}" style="width:100%;max-height:520px;object-fit:contain;border:1px solid #ddd;border-radius:12px" />` : `<div style="color:#666">No payroll photo saved for this week.</div>`;
+
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flat-Rate Proof Packet</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 18px; color: #111; }
+    .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+    h1 { margin: 0 0 10px 0; font-size: 20px; }
+    h2 { margin: 0 0 10px 0; font-size: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .k { color:#666; font-size: 12px; margin-bottom: 4px; }
+    .v { font-size: 14px; font-weight: 600; }
+    table { width:100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; vertical-align: top; }
+    th { text-align:left; background: #fafafa; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    @media print { .card { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <h1>Flat-Rate Proof Packet</h1>
+  <div class="card">
+    <div class="grid">
+      <div>
+        <div class="k">Week</div>
+        <div class="v mono">${esc(packet.week.start)} → ${esc(packet.week.end)}</div>
+      </div>
+      <div>
+        <div class="k">Generated</div>
+        <div class="v mono">${esc(packet.meta.generatedAt)}</div>
+      </div>
+      <div>
+        <div class="k">Logged Hours</div>
+        <div class="v">${esc(packet.totals.loggedHours)}</div>
+      </div>
+      <div>
+        <div class="k">Logged $</div>
+        <div class="v">${money(packet.totals.loggedDollars)}</div>
+      </div>
+      <div>
+        <div class="k">Payroll Flagged Hours</div>
+        <div class="v">${esc(packet.totals.payrollFlaggedHours)}</div>
+      </div>
+      <div>
+        <div class="k">Difference (Flagged - Logged)</div>
+        <div class="v">${esc(packet.totals.differenceFlaggedMinusLogged)}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Payroll Sheet Photo</h2>
+    ${img}
+  </div>
+
+  <div class="card">
+    <h2>Entries</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Time</th><th>RO</th><th>VIN8</th><th>Type</th>
+          <th style="text-align:right">Hours</th><th style="text-align:right">Rate</th><th style="text-align:right">$</th><th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || `<tr><td colspan="9" style="color:#666">No entries for this week.</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+  }
+
+  const exportProofHtmlBtn = $("exportProofHtmlBtn");
+  if (exportProofHtmlBtn) exportProofHtmlBtn.addEventListener("click", async () => {
+    await refreshUI();
+    const state = window.__WEEK_STATE__;
+    const payroll = await getThisWeekPayroll();
+    const packet = buildProofPacket(state, payroll);
+    const html = proofHTML(packet);
+    downloadHTML(`proof_packet_${packet.week.start}.html`, html);
+  });
+
+  const exportProofJsonBtn = $("exportProofJsonBtn");
+  if (exportProofJsonBtn) exportProofJsonBtn.addEventListener("click", async () => {
+    await refreshUI();
+    const state = window.__WEEK_STATE__;
+    const payroll = await getThisWeekPayroll();
+    const packet = buildProofPacket(state, payroll);
+    downloadText(`proof_packet_${packet.week.start}.json`, JSON.stringify(packet, null, 2), "application/json");
+  });
+
   const typeEl = $("typeText");
   if (typeEl) {
     typeEl.addEventListener("blur", async () => {
