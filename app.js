@@ -1202,6 +1202,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const handleSave = async (ev) => {
     if (ev) ev.preventDefault();
+    alert("handleSave fired");
+    alert(JSON.stringify({
+      ro: document.getElementById("ro")?.value,
+      refNumber: document.getElementById("refNumber")?.value,
+      typeText: document.getElementById("typeText")?.value,
+      hours: document.getElementById("hours")?.value
+    }, null, 2));
     const disableSaves = (state) => {
       if (saveBtnFooter) saveBtnFooter.disabled = state;
       if (formSubmitBtn) formSubmitBtn.disabled = state;
@@ -1267,10 +1274,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeEl) typeEl.focus();
 
       await refreshUI();
+      alert("WRITE OK");
     } catch (e) {
       console.error(e);
       setStatusMsg("Save failed.");
       toast("Save failed");
+      alert("SAVE ERROR: " + (e?.message || e));
     } finally {
       disableSaves(false);
     }
