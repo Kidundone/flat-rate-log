@@ -682,6 +682,127 @@ function closeMore() {
   unlockBodyScrollForMore();
 }
 
+function entryRefLabel(e){
+  const ref = e.ref || e.ro || e.stock || e.roStock || "";
+  const kind = e.refType || e.refKind || "";
+  return kind ? `${kind} ${ref}` : `${ref}`;
+}
+
+function entryPhotoUrl(e){
+  return e.photoDataUrl || e.proofPhotoDataUrl || e.photo || null;
+}
+
+function formatWhen(iso){
+  try { return new Date(iso).toLocaleString(); } catch { return iso || ""; }
+}
+
+async function renderPhotoGrid(){
+  const grid = document.getElementById("photoGrid");
+  if (!grid) return;
+
+  const q = (document.getElementById("photoSearch")?.value || "").trim().toLowerCase();
+  const sort = document.getElementById("photoSort")?.value || "new";
+
+  const entries = await getAll(STORES.entries);
+  const withPhotos = entries
+    .filter(e => !!entryPhotoUrl(e))
+    .filter(e => {
+      if (!q) return true;
+      const hay = [
+        entryRefLabel(e),
+        e.vin8 || "",
+        e.typeText || e.type || "",
+        e.notes || ""
+      ].join(" ").toLowerCase();
+      return hay.includes(q);
+    })
+    .sort((a,b) => {
+      const ta = new Date(a.createdAt || a.ts || a.when || 0).getTime();
+      const tb = new Date(b.createdAt || b.ts || b.when || 0).getTime();
+      return sort === "old" ? ta - tb : tb - ta;
+    });
+
+  grid.innerHTML = "";
+
+  if (!withPhotos.length){
+    grid.innerHTML = `<div class="muted" style="grid-column:1/-1;">No saved photos yet.</div>`;
+    return;
+  }
+
+  for (const e of withPhotos){
+    const url = entryPhotoUrl(e);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn";
+    btn.style.padding = "0";
+    btn.style.overflow = "hidden";
+    btn.style.borderRadius = "14px";
+    btn.style.aspectRatio = "1 / 1";
+
+    btn.innerHTML = `
+      <img src="${url}" style="width:100%; height:100%; object-fit:cover; display:block;" />
+    `;
+
+    btn.addEventListener("click", () => openPhotoViewer(e));
+    grid.appendChild(btn);
+  }
+}
+
+function openPhotoViewer(e){
+  const shell = document.getElementById("photoViewer");
+  const img = document.getElementById("photoFull");
+  const meta = document.getElementById("photoMeta");
+  const dl = document.getElementById("downloadPhotoBtn");
+  const copyBtn = document.getElementById("copyPhotoBtn");
+
+  if (!shell || !img || !meta || !dl) return;
+
+  const url = entryPhotoUrl(e);
+  img.src = url;
+
+  const label = entryRefLabel(e);
+  const when = formatWhen(e.createdAt || e.ts || e.when);
+  const type = e.typeText || e.type || "";
+  meta.textContent = `${label} • ${type} • ${when}`;
+
+  dl.href = url;
+
+  copyBtn?.addEventListener("click", async () => {
+    try{
+      const blob = await (await fetch(url)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      toast("Copied.");
+    } catch {
+      toast("Copy failed.");
+    }
+  }, { once:true });
+
+  shell.style.display = "block";
+  shell.classList.add("open");
+}
+
+function closePhotoViewer(){
+  const shell = document.getElementById("photoViewer");
+  if (!shell) return;
+  shell.classList.remove("open");
+  shell.style.display = "none";
+}
+
+function initPhotosUI(){
+  document.getElementById("refreshPhotosBtn")?.addEventListener("click", renderPhotoGrid);
+  document.getElementById("photoSearch")?.addEventListener("input", () => {
+    clearTimeout(window.__photoT);
+    window.__photoT = setTimeout(renderPhotoGrid, 120);
+  });
+  document.getElementById("photoSort")?.addEventListener("change", renderPhotoGrid);
+  document.getElementById("closePhotoViewerBtn")?.addEventListener("click", closePhotoViewer);
+  document.getElementById("photoViewer")?.addEventListener("click", (e) => {
+    if (e.target?.id === "photoViewer") closePhotoViewer();
+  });
+
+  renderPhotoGrid();
+}
+
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   initMoreTabs();
@@ -719,19 +840,29 @@ document.addEventListener("DOMContentLoaded", () => {
       await refreshUI();
     });
 
-    const exportCsvBtn = $("exportCsvBtn");
-    if (exportCsvBtn) exportCsvBtn.addEventListener("click", async () => {
+    const exportCsv = async () => {
       const entries = await getAll(STORES.entries);
       entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
-    });
-
-    const exportJsonBtn = $("exportJsonBtn");
-    if (exportJsonBtn) exportJsonBtn.addEventListener("click", async () => {
+    };
+    const exportJson = async () => {
       const entries = await getAll(STORES.entries);
       entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-    });
+    };
+    const wipeAll = async () => {
+      await wipeAllData();
+      await ensureDefaultTypes();
+      await renderTypeDatalist();
+      await renderTypesListInMore();
+      await refreshUI();
+    };
+
+    $("exportCsvBtn")?.addEventListener("click", exportCsv);
+    $("exportJsonBtn")?.addEventListener("click", exportJson);
+    $("wipeBtn")?.addEventListener("click", wipeAll);
+
+    initPhotosUI();
 
   const saveFlaggedBtn = $("saveFlaggedBtn");
   if (saveFlaggedBtn) saveFlaggedBtn.addEventListener("click", async () => {
