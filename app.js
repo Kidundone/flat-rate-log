@@ -591,47 +591,6 @@ function registerSW(){
   }
 }
 
-let _moreScrollLock = null;
-function preventTouch(e){
-  const body = document.querySelector("#moreModal .modalBody");
-  if (!body) return e.preventDefault();
-  if (!body.contains(e.target)) e.preventDefault();
-}
-function lockBodyScroll(){
-  const y = window.scrollY;
-  document.body.classList.add("modal-open");
-  document.body.style.position = "fixed";
-  document.body.style.top = `-${y}px`;
-  document.body.style.left = "0";
-  document.body.style.right = "0";
-  _moreScrollLock = y;
-  const modal = $("moreModal");
-  if (modal) modal.addEventListener("touchmove", preventTouch, { passive: false });
-}
-function unlockBodyScroll(){
-  document.body.classList.remove("modal-open");
-  document.body.style.position = "";
-  document.body.style.top = "";
-  document.body.style.left = "";
-  document.body.style.right = "";
-  const y = _moreScrollLock || 0;
-  window.scrollTo(0, y);
-  _moreScrollLock = null;
-  const modal = $("moreModal");
-  if (modal) modal.removeEventListener("touchmove", preventTouch);
-}
-
-function initMoreTabs(){
-  const tabBtns = Array.from(document.querySelectorAll(".tabBtn"));
-  const panels = Array.from(document.querySelectorAll(".tabPanel"));
-  const activate = (id) => {
-    panels.forEach(p => p.classList.toggle("active", p.id === id));
-    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === id));
-  };
-  tabBtns.forEach(btn => btn.addEventListener("click", () => activate(btn.dataset.tab)));
-  activate("payrollTab");
-}
-
 async function refreshPayrollUI(){
   const preview = $("payrollPreview");
   const ocrBox = $("payrollOcrText");
@@ -660,37 +619,67 @@ async function wipeAllData(){
   await clearStore(STORES.payroll);
 }
 
-/* -------------------- More panel -------------------- */
-function initMoreTabs(){
-  const tabBtns = Array.from(document.querySelectorAll("#moreModal .tabBtn"));
-  const panels = Array.from(document.querySelectorAll("#moreModal .tabPanel"));
+// ===== More modal: iOS-safe open/close + tab init =====
+let _moreScrollY = 0;
+
+function lockBodyScrollForMore() {
+  _moreScrollY = window.scrollY || 0;
+  document.body.classList.add("modal-open");
+  document.body.style.position = "fixed";
+  document.body.style.top = `-${_moreScrollY}px`;
+  document.body.style.left = "0";
+  document.body.style.right = "0";
+}
+
+function unlockBodyScrollForMore() {
+  document.body.classList.remove("modal-open");
+  document.body.style.position = "";
+  const top = document.body.style.top;
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  const y = _moreScrollY || 0;
+  _moreScrollY = 0;
+  window.scrollTo(0, y);
+}
+
+function initMoreTabs() {
+  const root = document.getElementById("moreModal");
+  if (!root) return;
+
+  const tabBtns = Array.from(root.querySelectorAll(".tabBtn"));
+  const panels  = Array.from(root.querySelectorAll(".tabPanel"));
   if (!tabBtns.length || !panels.length) return;
 
-  function activate(id){
+  function activate(id) {
     panels.forEach(p => p.classList.toggle("active", p.id === id));
     tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === id));
   }
 
+  // prevent double-binding if init runs more than once
   tabBtns.forEach(btn => {
-    btn.addEventListener("click", () => activate(btn.dataset.tab));
+    btn.onclick = () => activate(btn.dataset.tab);
   });
 
-  // default to payroll every time init runs
   activate("payrollTab");
 }
 
-function openMore(){
+function openMore() {
   const modal = document.getElementById("moreModal");
   if (!modal) return;
   modal.classList.add("open");
-  document.body.classList.add("modal-open");
+  lockBodyScrollForMore();
+
+  // Make sure the modal scroll container starts at top
+  const body = modal.querySelector(".modalBody");
+  if (body) body.scrollTop = 0;
 }
 
-function closeMore(){
+function closeMore() {
   const modal = document.getElementById("moreModal");
   if (!modal) return;
   modal.classList.remove("open");
-  document.body.classList.remove("modal-open");
+  unlockBodyScrollForMore();
 }
 
 /* -------------------- Boot -------------------- */
