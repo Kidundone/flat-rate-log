@@ -1,5 +1,5 @@
-const DB_NAME = "flatRateLogDB";
-const DB_VERSION = 5;
+const DB_NAME = "frlog";
+const DB_VERSION = 2; // bump this
 
 const STORES = {
   entries: "entries",
@@ -587,7 +587,14 @@ async function refreshUI(){
 
 function registerSW(){
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    window.addEventListener("load", async () => {
+      try {
+        const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+        console.log("SW registered:", reg.scope);
+      } catch (e) {
+        console.error("SW register failed:", e);
+      }
+    });
   }
 }
 
@@ -1132,6 +1139,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveEntryBtn = $("saveEntryBtn");
   const formSubmitBtn = form ? form.querySelector('button[type="submit"]') : null;
   const saveBtnMain = document.getElementById("saveBtn");
+  const clearBtnMain = document.getElementById("clearBtn");
 
   let refType = "RO";
   const setRefType = (next) => {
@@ -1173,8 +1181,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = $(id);
     if (btn) btn.addEventListener("click", clearFastFields);
   });
-  const clearBtn = $("clearBtn");
-  if (clearBtn) clearBtn.addEventListener("click", handleClear);
+  if (clearBtnMain) clearBtnMain.addEventListener("click", handleClear);
 
   async function getEntryById(id){
     if (!id) return null;
@@ -1298,9 +1305,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (saveBtnFooter) saveBtnFooter.addEventListener("click", handleSave); // Main form buttons
   const saveBtn = $("saveBtn");
   if (saveBtn) saveBtn.addEventListener("click", handleSave);
-
-  const clearBtn = $("clearBtn");
-  if (clearBtn) clearBtn.addEventListener("click", clearFastFields);
 
   // Allow Enter/Go key to save
   const logForm = $("logForm");
