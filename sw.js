@@ -1,4 +1,4 @@
-const CACHE = "flat-rate-log-v300";
+const CACHE = "flat-rate-log-v13"; // <- bump this number every deploy
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,10 @@ const ASSETS = [
   "./manifest.webmanifest",
   "./sw.js"
 ];
+
+// fast track new SW
+self.addEventListener("install", (e) => self.skipWaiting());
+self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
