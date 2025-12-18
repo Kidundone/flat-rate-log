@@ -871,22 +871,27 @@ document.addEventListener("DOMContentLoaded", () => {
     // photo gallery
     initPhotosUI();
 
-    const form = document.getElementById("logForm");
-    const clearBtn = document.getElementById("clearBtn");
-    if (form) {
-      form.addEventListener("submit", (e) => {
+    // --- Single, robust wiring (works even if duplicate buttons exist) ---
+    document.addEventListener("click", (e) => {
+      const save = e.target.closest("#saveBtn, #saveEntryBtn, button[data-action='save']");
+      if (save) {
         e.preventDefault();
         handleSave(e);
-      });
-    }
-    if (clearBtn) {
-      clearBtn.addEventListener("click", (e) => {
+      }
+
+      const clear = e.target.closest("#clearBtn, #clearEntryBtn, #clearFormBtn, button[data-action='clear']");
+      if (clear) {
         e.preventDefault();
         document.getElementById("logForm")?.reset();
         setStatusMsg("Cleared.");
         toast("Cleared");
-      });
-    }
+      }
+    }, true);
+
+    document.getElementById("logForm")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      handleSave(e);
+    });
 
     await refreshUI();
   })();
