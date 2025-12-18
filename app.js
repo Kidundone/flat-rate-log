@@ -1,5 +1,5 @@
 const DB_NAME = "frlog";
-const DB_VERSION = 4; // bump this
+const DB_VERSION = 5; // bump this
 
 const STORES = {
   entries: "entries",
@@ -792,6 +792,7 @@ function initPhotosUI(){
 }
 
 /* -------------------- Boot -------------------- */
+/* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   initMoreTabs();
   document.getElementById("moreBtn")?.addEventListener("click", openMore);
@@ -801,6 +802,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target && e.target.id === "moreModal") closeMore();
   });
 
+  // EVERYTHING async stays inside this IIFE
   (async () => {
     registerSW();
 
@@ -809,508 +811,74 @@ document.addEventListener("DOMContentLoaded", () => {
     await renderTypesListInMore();
 
     // wiring
-    const refreshBtn = $("refreshBtn");
-    if (refreshBtn) refreshBtn.addEventListener("click", refreshUI);
-    const filter = $("filterSelect");
-    if (filter) filter.addEventListener("change", refreshUI);
+    $("refreshBtn")?.addEventListener("click", refreshUI);
+    $("filterSelect")?.addEventListener("change", refreshUI);
 
     const hoursInput = $("hours");
     const rateInput  = document.querySelector('input[name="rate"]');
     if (hoursInput) hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
     if (rateInput)  rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
 
-    const wipeBtn = $("wipeBtn");
-    if (wipeBtn) wipeBtn.addEventListener("click", async () => {
-      await wipeAllData();
-      await ensureDefaultTypes();
-      await renderTypeDatalist();
-      await renderTypesListInMore();
-      await refreshUI();
-    });
-
-    const exportCsv = async () => {
+    // exports + wipes live on More page
+    $("exportCsvBtn")?.addEventListener("click", async () => {
       const entries = await getAll(STORES.entries);
       entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
-    };
-    const exportJson = async () => {
+    });
+
+    $("exportJsonBtn")?.addEventListener("click", async () => {
       const entries = await getAll(STORES.entries);
       entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-    };
-    const wipeAll = async () => {
+    });
+
+    $("wipeBtn")?.addEventListener("click", async () => {
       await wipeAllData();
       await ensureDefaultTypes();
       await renderTypeDatalist();
       await renderTypesListInMore();
       await refreshUI();
-    };
+    });
 
-    $("exportCsvBtn")?.addEventListener("click", exportCsv);
-    $("exportJsonBtn")?.addEventListener("click", exportJson);
-    $("wipeBtn")?.addEventListener("click", wipeAll);
+    // flagged hours
+    const saveFlaggedBtn = $("saveFlaggedBtn");
+    if (saveFlaggedBtn) {
+      saveFlaggedBtn.addEventListener("click", async () => {
+        const fh = $("flaggedHours");
+        const val = fh ? Number(fh.value || 0) : 0;
+        if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
+        await setThisWeekFlag(val);
+        await refreshUI();
+        alert("Flagged hours saved for this week.");
+      });
+    }
 
+    // payroll photo save
+    const savePayrollPhotoBtn = $("savePayrollPhotoBtn");
+    if (savePayrollPhotoBtn) {
+      savePayrollPhotoBtn.addEventListener("click", async () => {
+        const pick = $("payrollPhotoPick");
+        const cam = $("payrollPhotoTake");
+        const file =
+          (cam && cam.files && cam.files[0]) ? cam.files[0] :
+          (pick && pick.files && pick.files[0]) ? pick.files[0] : null;
+
+        if (!file) return alert("Choose a payroll photo first.");
+        const photoDataUrl = await fileToDataURL(file);
+        await saveWeekPayroll({ photoDataUrl, ocrText: $("payrollOcrText") ? $("payrollOcrText").value : "" });
+        await refreshPayrollUI();
+        alert("Payroll photo saved for this week.");
+      });
+    }
+
+    // photo gallery
     initPhotosUI();
 
-  const saveFlaggedBtn = $("saveFlaggedBtn");
-  if (saveFlaggedBtn) saveFlaggedBtn.addEventListener("click", async () => {
-    const fh = $("flaggedHours");
-    const val = fh ? Number(fh.value || 0) : 0;
-    if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
-    await setThisWeekFlag(val);
+    // --- SAVE ENTRY wiring (must exist in your code above) ---
+    // Your handleSave and clear handlers should already be defined above this boot block.
+    // Just ensure these ids exist in index.html:
+    // logForm, saveBtn, clearBtn
+
     await refreshUI();
-    alert("Flagged hours saved for this week.");
-  });
-
-  const savePayrollPhotoBtn = $("savePayrollPhotoBtn");
-  if (savePayrollPhotoBtn) savePayrollPhotoBtn.addEventListener("click", async () => {
-    const pick = $("payrollPhotoPick");
-    const cam = $("payrollPhotoTake");
-    const file = (cam && cam.files && cam.files[0]) ? cam.files[0] : (pick && pick.files && pick.files[0]) ? pick.files[0] : null;
-    if (!file) return alert("Choose a payroll photo first.");
-    const photoDataUrl = await fileToDataURL(file);
-    await saveWeekPayroll({ photoDataUrl, ocrText: $("payrollOcrText") ? $("payrollOcrText").value : "" });
-    await refreshPayrollUI();
-    alert("Payroll photo saved for this week.");
-  });
-
-  const scanPayrollBtn = $("scanPayrollBtn");
-  if (scanPayrollBtn) scanPayrollBtn.addEventListener("click", async () => {
-    const ocrBox = $("payrollOcrText");
-    const data = await getThisWeekPayroll();
-    const photoDataUrl = data?.photoDataUrl;
-
-    if (!photoDataUrl) {
-      setPayrollStatus(`<div class="muted">No photo saved yet. Add a payroll photo first.</div>`);
-      return;
-    }
-
-    if (!(window.Tesseract && window.Tesseract.recognize)) {
-      setPayrollStatus(`<div class="muted">OCR engine not loaded yet. Open the app once while online, then retry.</div>`);
-      return;
-    }
-
-    try {
-      setPayrollStatus(`<div class="muted">Preprocessing image…</div>`);
-      const prepped = await preprocessDataUrlForOCR(photoDataUrl);
-
-      setPayrollStatus(`<div class="muted">Scanning… (10–30s on iPhone)</div>`);
-      const { data: ocrData } = await Tesseract.recognize(prepped, "eng");
-      const text = (ocrData && ocrData.text) ? ocrData.text : "";
-
-      if (ocrBox) ocrBox.value = text;
-      await saveWeekPayroll({ photoDataUrl, ocrText: text });
-
-      const sug = extractSuggestionsFromText(text);
-      setPayrollStatus(`
-        <div><strong>OCR complete.</strong> Tap to fill fields:</div>
-        ${renderSuggestionButtons(sug)}
-        <div class="muted" style="margin-top:8px;">If this looks wrong, retake with better lighting/glare control.</div>
-      `);
-      wireSuggestionButtons(sug);
-
-    } catch (e) {
-      setPayrollStatus(`<div class="muted">OCR couldn’t read this. Photo is saved. Retry with a clearer photo or enter values manually.</div>`);
-    }
-  });
-
-  const exportWeekSummaryBtn = $("exportWeekTxtBtn");
-  if (exportWeekSummaryBtn) exportWeekSummaryBtn.addEventListener("click", async () => {
-    await refreshUI();
-    const s = window.__WEEK_STATE__;
-    if (!s) return;
-    const lines = [];
-    lines.push("FLAT-RATE LOG — WEEK SUMMARY");
-    lines.push(`Week: ${dateKey(s.ws)} → ${dateKey(s.we)}`);
-    lines.push(`Logged hours: ${s.week.hours}`);
-    lines.push(`Logged $: ${formatMoney(s.week.dollars)}`);
-    lines.push(`Payroll flagged hours: ${s.flagged}`);
-    lines.push(`Delta (Flagged - Logged): ${s.delta}`);
-    lines.push("");
-    lines.push("Entries:");
-    for (const e of s.week.entries.sort((a,b)=> (a.createdAt||"").localeCompare(b.createdAt||""))) {
-      const refLabel = e.refType === "STOCK" ? "STK" : "RO";
-      const refVal = e.ref || e.ro;
-      lines.push(`${e.dayKey} ${new Date(e.createdAt).toLocaleTimeString()} | ${refLabel}: ${refVal} | ${e.type} | ${e.hours} hrs | $${e.earnings}`);
-    }
-    downloadText(`week_summary_${dateKey(s.ws)}.txt`, lines.join("\n"), "text/plain");
-  });
-
-  // ---- Proof Packet Export (HTML + JSON) ----
-  function buildProofPacket(state, payroll){
-    const ws = state.ws;
-    const we = state.we;
-    const weekEntries = (state.week.entries || []).slice().sort((a,b)=> (a.createdAt||"").localeCompare(b.createdAt||""));
-    return {
-      meta: {
-        generatedAt: nowISO(),
-        app: "Flat-Rate Log",
-        version: "proof-packet-v1"
-      },
-      week: {
-        start: dateKey(ws),
-        end: dateKey(we)
-      },
-      totals: {
-        loggedHours: Number(state.week.hours || 0),
-        loggedDollars: Number(state.week.dollars || 0),
-        entriesCount: Number(state.week.count || weekEntries.length),
-        payrollFlaggedHours: Number(state.flagged || 0),
-        differenceFlaggedMinusLogged: Number(state.diff || 0)
-      },
-      payroll: {
-        photoDataUrl: payroll?.photoDataUrl || null,
-        ocrText: payroll?.ocrText || ""
-      },
-      entries: weekEntries
-    };
-  }
-
-  function downloadHTML(filename, html){
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function proofHTML(packet){
-    const esc = (s) => String(s ?? "").replace(/[&<>\"']/g, (c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-    const money = (n) => `$${Number(n||0).toFixed(2)}`;
-    const rows = (packet.entries||[]).map(e => {
-      const t = new Date(e.createdAt).toLocaleString();
-      const refLabel = e.refType === "STOCK" ? "STK" : "RO";
-      const refVal = e.ref || e.ro || "";
-      return `
-        <tr>
-          <td>${esc(e.dayKey)}</td>
-          <td>${esc(t)}</td>
-          <td>${esc(`${refLabel}: ${refVal}`)}</td>
-          <td>${esc(e.vin8 || "-")}</td>
-          <td>${esc(e.type)}</td>
-          <td style="text-align:right">${esc(e.hours)}</td>
-          <td style="text-align:right">${money(e.rate)}</td>
-          <td style="text-align:right">${money(e.earnings)}</td>
-          <td>${esc(e.notes || "")}</td>
-        </tr>
-      `;
-    }).join("");
-
-    const img = packet.payroll.photoDataUrl ? `<img src="${packet.payroll.photoDataUrl}" style="width:100%;max-height:520px;object-fit:contain;border:1px solid #ddd;border-radius:12px" />` : `<div style="color:#666">No payroll photo saved for this week.</div>`;
-
-    return `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flat-Rate Proof Packet</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 18px; color: #111; }
-    .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
-    h1 { margin: 0 0 10px 0; font-size: 20px; }
-    h2 { margin: 0 0 10px 0; font-size: 16px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .k { color:#666; font-size: 12px; margin-bottom: 4px; }
-    .v { font-size: 14px; font-weight: 600; }
-    table { width:100%; border-collapse: collapse; font-size: 12px; }
-    th, td { border-bottom: 1px solid #eee; padding: 8px; vertical-align: top; }
-    th { text-align:left; background: #fafafa; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-    @media print { .card { break-inside: avoid; } }
-  </style>
-</head>
-<body>
-  <h1>Flat-Rate Proof Packet</h1>
-  <div class="card">
-    <div class="grid">
-      <div>
-        <div class="k">Week</div>
-        <div class="v mono">${esc(packet.week.start)} → ${esc(packet.week.end)}</div>
-      </div>
-      <div>
-        <div class="k">Generated</div>
-        <div class="v mono">${esc(packet.meta.generatedAt)}</div>
-      </div>
-      <div>
-        <div class="k">Logged Hours</div>
-        <div class="v">${esc(packet.totals.loggedHours)}</div>
-      </div>
-      <div>
-        <div class="k">Logged $</div>
-        <div class="v">${money(packet.totals.loggedDollars)}</div>
-      </div>
-      <div>
-        <div class="k">Payroll Flagged Hours</div>
-        <div class="v">${esc(packet.totals.payrollFlaggedHours)}</div>
-      </div>
-      <div>
-        <div class="k">Difference (Flagged - Logged)</div>
-        <div class="v">${esc(packet.totals.differenceFlaggedMinusLogged)}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Payroll Sheet Photo</h2>
-    ${img}
-  </div>
-
-  <div class="card">
-    <h2>Entries</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th><th>Time</th><th>Ref</th><th>VIN8</th><th>Type</th>
-          <th style="text-align:right">Hours</th><th style="text-align:right">Rate</th><th style="text-align:right">$</th><th>Notes</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows || `<tr><td colspan="9" style="color:#666">No entries for this week.</td></tr>`}
-      </tbody>
-    </table>
-  </div>
-</body>
-</html>`;
-  }
-
-  const exportProofHtmlBtn = $("exportProofHtmlBtn");
-  if (exportProofHtmlBtn) exportProofHtmlBtn.addEventListener("click", async () => {
-    await refreshUI();
-    const state = window.__WEEK_STATE__;
-    const payroll = await getThisWeekPayroll();
-    const packet = buildProofPacket(state, payroll);
-    const html = proofHTML(packet);
-    downloadHTML(`proof_packet_${packet.week.start}.html`, html);
-  });
-
-  const exportProofJsonBtn = $("exportProofJsonBtn");
-  if (exportProofJsonBtn) exportProofJsonBtn.addEventListener("click", async () => {
-    await refreshUI();
-    const state = window.__WEEK_STATE__;
-    const payroll = await getThisWeekPayroll();
-    const packet = buildProofPacket(state, payroll);
-    downloadText(`proof_packet_${packet.week.start}.json`, JSON.stringify(packet, null, 2), "application/json");
-  });
-
-  const wipeAllBtn = $("wipeAllBtn");
-  if (wipeAllBtn) wipeAllBtn.addEventListener("click", async () => {
-    await wipeAllData();
-    await ensureDefaultTypes();
-    await renderTypeDatalist();
-    await renderTypesListInMore();
-    await refreshUI();
-  });
-
-  const wipeTypesBtn = $("wipeTypesBtn");
-  if (wipeTypesBtn) wipeTypesBtn.addEventListener("click", async () => {
-    const ok = confirm("Wipe all saved types?");
-    if (!ok) return;
-    await clearStore(STORES.types);
-    await ensureDefaultTypes();
-    await renderTypeDatalist();
-    await renderTypesListInMore();
-  });
-
-  const exportTypesBtn = $("exportTypesBtn");
-  if (exportTypesBtn) exportTypesBtn.addEventListener("click", async () => {
-    const types = await getAll(STORES.types);
-    downloadText("flat_rate_types.json", JSON.stringify(types, null, 2), "application/json");
-  });
-
-  const typeEl = $("typeText");
-  if (typeEl) {
-    typeEl.addEventListener("blur", async () => {
-      await maybeSaveTypeNameOnly(typeEl.value);
-      await maybeAutofillFromType(typeEl.value);
-    });
-    typeEl.addEventListener("change", async () => {
-      if (hoursInput) hoursInput.dataset.touched = "";
-      if (rateInput) rateInput.dataset.touched = "";
-      await maybeAutofillFromType(typeEl.value);
-    });
-  }
-
-  const form = $("logForm");
-  const saveBtn = document.getElementById("saveBtn");
-  const saveEntryBtn = $("saveEntryBtn");
-  const formSubmitBtn = form ? form.querySelector('button[type="submit"]') : null;
-  const clearBtn = document.getElementById("clearBtn");
-
-  let refType = "RO";
-  const setRefType = (next) => {
-    refType = next === "STOCK" ? "STOCK" : "RO";
-    const bRO = document.getElementById("refTypeRO");
-    const bSTK = document.getElementById("refTypeSTK");
-    if (bRO) bRO.classList.toggle("active", refType === "RO");
-    if (bSTK) bSTK.classList.toggle("active", refType === "STOCK");
-  };
-  setRefType("RO");
-  document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
-  document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
-
-  const clearFastFields = (ev) => {
-    if (ev) ev.preventDefault();
-    const clearAll = ev && ev.target && ev.target.id === "clearFormBtn";
-    if (clearAll) {
-      if ($("ref")) $("ref").value = "";
-      if ($("vin8")) $("vin8").value = "";
-      setRefType("RO");
-    }
-    if (typeEl) typeEl.value = "";
-    if (hoursInput) { hoursInput.value = ""; hoursInput.dataset.touched = ""; }
-    const photoInput = $("proofPhoto");
-    if (photoInput) photoInput.value = "";
-    const notesInput = document.querySelector('[name="notes"]');
-    if (notesInput) notesInput.value = "";
-    setStatusMsg("Ready.");
-    if (typeEl) typeEl.focus();
-  };
-
-  function handleClear() {
-    $("logForm")?.reset();
-    const status = $("statusMsg");
-    if (status) status.textContent = "Cleared.";
-  }
-
-  ["clearFormBtn","clearEntryBtn"].forEach((id) => {
-    const btn = $(id);
-    if (btn) btn.addEventListener("click", clearFastFields);
-  });
-  if (clearBtn) clearBtn.addEventListener("click", handleClear);
-
-  async function getEntryById(id){
-    if (!id) return null;
-    const { db, store } = await tx(STORES.entries, "readonly");
-    const item = await new Promise((resolve, reject) => {
-      const r = store.get(id);
-      r.onsuccess = () => resolve(r.result || null);
-      r.onerror = () => reject(r.error);
-    });
-    db.close();
-    return item;
-  }
-
-  const entryList = $("entryList");
-  if (entryList) {
-    entryList.addEventListener("click", async (e) => {
-      const btn = e.target?.closest?.("button[data-action='view-photo']");
-      if (!btn) return;
-      const id = btn.getAttribute("data-id");
-      const entry = await getEntryById(id);
-      if (!entry?.photoDataUrl) {
-        toast("No photo saved");
-        return;
-      }
-      openPhotoModal(entry);
-    });
-  }
-
-  document.getElementById("closePhotoBtn")?.addEventListener("click", closePhotoModal);
-  document.getElementById("photoModal")?.addEventListener("click", (e) => {
-    if (e.target && e.target.id === "photoModal") closePhotoModal();
-  });
-
-  const handleSave = async (ev) => {
-    if (ev) ev.preventDefault();
-    alert("handleSave fired");
-    alert(JSON.stringify({
-      ro: document.getElementById("ro")?.value,
-      refNumber: document.getElementById("refNumber")?.value,
-      typeText: document.getElementById("typeText")?.value,
-      hours: document.getElementById("hours")?.value
-    }, null, 2));
-    const disableSaves = (state) => {
-      if (saveBtn) saveBtn.disabled = state;
-      if (formSubmitBtn) formSubmitBtn.disabled = state;
-      if (saveEntryBtn) saveEntryBtn.disabled = state;
-    };
-
-    const ref = (document.getElementById("ref")?.value || "").trim().toUpperCase();
-    const vin8 = ($("vin8")?.value || "").trim().toUpperCase().slice(0,8);
-    const type = (typeEl?.value || "").trim();
-    const hours = num(hoursInput?.value);
-    const rate = getRate();
-    const notes = getNotes();
-
-    if (!ref) { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
-    if (!type) { toast("Type required"); setStatusMsg("Type required"); return; }
-    if (!(hours > 0)) { toast("Hours must be > 0"); setStatusMsg("Hours must be > 0"); return; }
-    if (!(rate > 0)) { toast("Rate must be > 0"); setStatusMsg("Rate must be > 0"); return; }
-
-    disableSaves(true);
-    setStatusMsg("Saving...");
-
-    try {
-      const id = uuid();
-      const createdAt = nowISO();
-      const dayKey = todayKeyLocal();
-      const weekStartKey = dateKey(startOfWeekLocal(new Date()));
-      const typeText = type;
-      const photoInput = $("proofPhoto");
-      const photoFile = photoInput?.files?.[0];
-      const photoDataUrl = photoFile ? await fileToDataURL(photoFile) : null;
-
-      const earnings = Number((hours * rate).toFixed(2));
-
-      await put(STORES.entries, {
-        id,
-        createdAt,
-        dayKey,
-        weekStartKey,
-        refType,
-        ref,
-        ro: ref,
-        vin8,
-        typeText,
-        type,
-        hours,
-        rate,
-        earnings,
-        notes,
-        photoDataUrl
-      });
-
-      await upsertTypeDefaults(type, hours, rate);
-
-      setStatusMsg("Saved.");
-      toast("Saved ✅");
-
-      if (typeEl) typeEl.value = "";
-      if (hoursInput) { hoursInput.value = ""; hoursInput.dataset.touched = ""; }
-      const notesInput = document.querySelector('[name="notes"]');
-      if (notesInput) notesInput.value = "";
-      const photoInputAfter = $("proofPhoto");
-      if (photoInputAfter) photoInputAfter.value = "";
-      if (typeEl) typeEl.focus();
-
-      await refreshUI();
-      alert("WRITE OK");
-    } catch (e) {
-      console.error(e);
-      setStatusMsg("Save failed.");
-      toast("Save failed");
-      alert("SAVE ERROR: " + (e?.message || e));
-    } finally {
-      disableSaves(false);
-    }
-  };
-
-  if (form) form.addEventListener("submit", handleSave);
-  if (saveEntryBtn) saveEntryBtn.addEventListener("click", handleSave);
-  if (saveBtn) saveBtn.addEventListener("click", handleSave);
-
-  // Allow Enter/Go key to save
-  const logForm = $("logForm");
-  if (logForm) {
-    logForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      handleSave();
-    });
-  }
-
-  await refreshUI();
+  })();
 });
