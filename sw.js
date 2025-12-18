@@ -1,73 +1,49 @@
-const CACHE_VERSION = "v12"; // bump this every push
-console.log("FRLOG BUILD", "2025-12-18-1");
-const CACHE_NAME = `frlog-${CACHE_VERSION}`;
+/* sw.js - safe cache-first for static assets */
+
+const CACHE_VERSION = 2; // bump this any time you change sw.js
+const CACHE_NAME = `frlog-cache-v${CACHE_VERSION}`;
+
 const ASSETS = [
   "./",
   "./index.html",
-  "./more.html",
   "./app.js",
+  "./more.html",
   "./manifest.webmanifest",
-  "./sw.js"
+  "./sw.js",
 ];
 
-// fast track new SW
-self.addEventListener("install", (e) => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
-
+// Install: cache core files
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
+// Activate: delete old caches
 self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k))));
-    await self.clients.claim();
-  })());
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k.startsWith("frlog-cache-") && k !== CACHE_NAME).map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
 });
 
-// Multi-page safe fetch:
-// - For navigations, try the actual page (more.html/index.html) from cache/network.
-// - Only fall back to index.html if offline and the requested page isn't cached.
+// Fetch: cache-first for same-origin GET
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+  if (req.method !== "GET") return;
 
-  // Handle page navigations
-  if (req.mode === "navigate") {
-    event.respondWith((async () => {
-      const cache = await caches.open(CACHE);
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
 
-      // Try cached exact page first
-      const cachedPage = await cache.match(req, { ignoreSearch: true });
-      if (cachedPage) return cachedPage;
-
-      // Try network, then cache it
-      try {
-        const fresh = await fetch(req);
-        cache.put(req, fresh.clone()).catch(() => {});
-        return fresh;
-      } catch {
-        // Offline fallback
-        return (await cache.match("./index.html")) || Response.error();
-      }
-    })());
-    return;
-  }
-
-  // For static assets: cache-first
-  event.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const cached = await cache.match(req);
-    if (cached) return cached;
-    try {
-      const fresh = await fetch(req);
-      cache.put(req, fresh.clone()).catch(() => {});
-      return fresh;
-    } catch {
-      return cached || Response.error();
-    }
-  })());
+  event.respondWith(
+    caches.match(req).then((hit) => {
+      if (hit) return hit;
+      return fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+        return res;
+      });
+    }).catch(() => fetch(req))
+  );
 });
