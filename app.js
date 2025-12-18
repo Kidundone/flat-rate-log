@@ -792,7 +792,6 @@ function initPhotosUI(){
 }
 
 /* -------------------- Boot -------------------- */
-/* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   initMoreTabs();
   document.getElementById("moreBtn")?.addEventListener("click", openMore);
@@ -842,16 +841,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // flagged hours
     const saveFlaggedBtn = $("saveFlaggedBtn");
-    if (saveFlaggedBtn) {
-      saveFlaggedBtn.addEventListener("click", async () => {
-        const fh = $("flaggedHours");
-        const val = fh ? Number(fh.value || 0) : 0;
-        if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
-        await setThisWeekFlag(val);
-        await refreshUI();
-        alert("Flagged hours saved for this week.");
-      });
-    }
+    if (saveFlaggedBtn) saveFlaggedBtn.addEventListener("click", async () => {
+      const fh = $("flaggedHours");
+      const val = fh ? Number(fh.value || 0) : 0;
+      if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
+      await setThisWeekFlag(val);
+      await refreshUI();
+      alert("Flagged hours saved for this week.");
+    });
 
     // payroll photo save
     const savePayrollPhotoBtn = $("savePayrollPhotoBtn");
@@ -874,10 +871,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // photo gallery
     initPhotosUI();
 
-    // --- SAVE ENTRY wiring (must exist in your code above) ---
-    // Your handleSave and clear handlers should already be defined above this boot block.
-    // Just ensure these ids exist in index.html:
-    // logForm, saveBtn, clearBtn
+    const form = document.getElementById("logForm");
+    const clearBtn = document.getElementById("clearBtn");
+    if (form) {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        handleSave(e);
+      });
+    }
+    if (clearBtn) clearBtn.addEventListener("click", handleClear);
 
     await refreshUI();
   })();
