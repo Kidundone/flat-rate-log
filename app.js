@@ -1,5 +1,5 @@
 const DB_NAME = "frlog";
-const DB_VERSION = 3; // bump this
+const DB_VERSION = 4; // bump this
 
 const STORES = {
   entries: "entries",
