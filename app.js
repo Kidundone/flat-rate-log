@@ -1131,6 +1131,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveBtnFooter = $("saveBtn");
   const saveEntryBtn = $("saveEntryBtn");
   const formSubmitBtn = form ? form.querySelector('button[type="submit"]') : null;
+  const saveBtnMain = document.getElementById("saveBtn");
 
   let refType = "RO";
   const setRefType = (next) => {
@@ -1278,6 +1279,10 @@ document.addEventListener("DOMContentLoaded", () => {
   if (form) form.addEventListener("submit", handleSave);
   if (saveEntryBtn) saveEntryBtn.addEventListener("click", handleSave);
   if (saveBtnFooter) saveBtnFooter.addEventListener("click", handleSave);
+  if (saveBtnMain) saveBtnMain.addEventListener("click", handleSave);
+
+  const clearBtnMain = document.getElementById("clearBtn");
+  if (clearBtnMain && typeof clearFastFields === "function") clearBtnMain.addEventListener("click", clearFastFields);
 
   await refreshUI();
 });
