@@ -1,4 +1,4 @@
-const CACHE_VERSION = 101; // bump on every deploy
+const CACHE_VERSION = 102; // bump on every deploy
 const CACHE_NAME = `frlog-cache-v${CACHE_VERSION}`;
 
 const ASSETS = [
