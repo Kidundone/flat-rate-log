@@ -696,56 +696,43 @@ function formatWhen(iso){
   try { return new Date(iso).toLocaleString(); } catch { return iso || ""; }
 }
 
-async function renderPhotoGrid(){
-  const grid = document.getElementById("photoGrid");
-  if (!grid) return;
+function renderPhotoGallery(entries){
+  const el = document.getElementById("photoGallery");
+  if (!el) return;
 
-  const q = (document.getElementById("photoSearch")?.value || "").trim().toLowerCase();
-  const sort = document.getElementById("photoSort")?.value || "new";
+  const withPhotos = (entries || [])
+    .filter(e => e && e.photoDataUrl)
+    .sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
-  const entries = await getAll(STORES.entries);
-  const withPhotos = entries
-    .filter(e => !!entryPhotoUrl(e))
-    .filter(e => {
-      if (!q) return true;
-      const hay = [
-        entryRefLabel(e),
-        e.vin8 || "",
-        e.typeText || e.type || "",
-        e.notes || ""
-      ].join(" ").toLowerCase();
-      return hay.includes(q);
-    })
-    .sort((a,b) => {
-      const ta = new Date(a.createdAt || a.ts || a.when || 0).getTime();
-      const tb = new Date(b.createdAt || b.ts || b.when || 0).getTime();
-      return sort === "old" ? ta - tb : tb - ta;
-    });
-
-  grid.innerHTML = "";
-
-  if (!withPhotos.length){
-    grid.innerHTML = `<div class="muted" style="grid-column:1/-1;">No saved photos yet.</div>`;
+  if (!withPhotos.length) {
+    el.innerHTML = `<div class="muted">No saved entry photos yet.</div>`;
     return;
   }
 
-  for (const e of withPhotos){
-    const url = entryPhotoUrl(e);
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
-    btn.style.padding = "0";
-    btn.style.overflow = "hidden";
-    btn.style.borderRadius = "14px";
-    btn.style.aspectRatio = "1 / 1";
-
-    btn.innerHTML = `
-      <img src="${url}" style="width:100%; height:100%; object-fit:cover; display:block;" />
+  el.innerHTML = withPhotos.slice(0, 60).map(e => {
+    const title = `${(e.refType || "RO")} ${(e.ro || "").toString().toUpperCase()} • ${(e.typeText || "").toString()}`;
+    return `
+      <img
+        class="thumb"
+        src="${e.photoDataUrl}"
+        alt="${title.replace(/"/g,'')}"
+        title="${title.replace(/"/g,'')}"
+        data-full="${e.photoDataUrl}"
+      />
     `;
+  }).join("");
 
-    btn.addEventListener("click", () => openPhotoViewer(e));
-    grid.appendChild(btn);
-  }
+  el.querySelectorAll("img[data-full]").forEach(img => {
+    img.addEventListener("click", () => {
+      const w = window.open();
+      if (w) w.document.write(`<img src="${img.dataset.full}" style="max-width:100%;height:auto" />`);
+    });
+  });
+}
+
+async function renderPhotoGrid(){
+  const entries = await getAll(STORES.entries);
+  renderPhotoGallery(entries);
 }
 
 function openPhotoViewer(e){
@@ -789,12 +776,6 @@ function closePhotoViewer(){
 }
 
 function initPhotosUI(){
-  document.getElementById("refreshPhotosBtn")?.addEventListener("click", renderPhotoGrid);
-  document.getElementById("photoSearch")?.addEventListener("input", () => {
-    clearTimeout(window.__photoT);
-    window.__photoT = setTimeout(renderPhotoGrid, 120);
-  });
-  document.getElementById("photoSort")?.addEventListener("change", renderPhotoGrid);
   document.getElementById("closePhotoViewerBtn")?.addEventListener("click", closePhotoViewer);
   document.getElementById("photoViewer")?.addEventListener("click", (e) => {
     if (e.target?.id === "photoViewer") closePhotoViewer();
