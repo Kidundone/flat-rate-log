@@ -156,39 +156,46 @@
       background: linear-gradient(180deg, rgba(47,125,255,1), rgba(47,125,255,.75));
       border:1px solid rgba(47,125,255,.55);
     }
-    /* ===== HARD STOP: prevent background scrolling and capture touches ===== */
-    body.modal-open { overflow: hidden; }
-    #moreModal{
-      position: fixed !important;
-      inset: 0 !important;
-      z-index: 999999 !important;
+    /* ===== More Modal: iPhone-safe, scrollable, no background bleed ===== */
+    #moreModal.modalShell{
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
       display: none;
-      background: rgba(0,0,0,.55) !important;
-      pointer-events: auto !important;
-      touch-action: none; /* overlay blocks */
+      background: rgba(0,0,0,.55);
+      padding: 14px;
+      overflow: hidden;               /* overlay never scrolls */
+      pointer-events: auto;
     }
-    #moreModal.open{ display:block !important; }
+
+    #moreModal.modalShell.open{ display:block; }
+    /* explicit show/hide control */
+    #moreModal.modalShell{ display:none !important; }
+    #moreModal.modalShell.open{ display:block !important; }
+
     #moreModal .modalContent{
-      position: absolute !important;
-      left: 0; right: 0;
-      top: 14px; bottom: 14px;
-      margin: 0 auto !important;
-      max-width: 820px !important;
-      display: flex !important;
-      flex-direction: column !important;
-      pointer-events: auto !important;
+      max-width: 820px;
+      margin: 0 auto;
+      height: calc(100dvh - 28px);
+      max-height: calc(100dvh - 28px);
+      display: flex;
+      flex-direction: column;
+      padding: 0 !important;          /* kill inline padding fights */
     }
+
     #moreModal .modalBody{
-      flex: 1 1 auto !important;
-      overflow: auto !important;
-      -webkit-overflow-scrolling: touch !important;
+      flex: 1 1 auto;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       touch-action: pan-y;
-      pointer-events: auto !important;
-      padding: 14px !important;
-      background: rgba(15,18,28,.92) !important;
-      border: 1px solid rgba(255,255,255,.10) !important;
-      border-radius: 18px !important;
-      padding-bottom: calc(14px + env(safe-area-inset-bottom));
+      padding: 14px;
+      border-radius: 18px;
+    }
+
+    /* Lock background when modal open */
+    body.modal-open{
+      overflow: hidden;
     }
     /* -------- More modal = real screen, not a junk drawer -------- */
     .moreShell{ display:flex; flex-direction:column; gap:12px; }
@@ -348,7 +355,7 @@
 <body>
 <header>
   <h1>Flat-Rate Log</h1>
-  <a class="btn" href="./more.html">More</a>
+  <button class="btn" type="button" id="moreBtn">More</button>
 </header>
 
 <main>

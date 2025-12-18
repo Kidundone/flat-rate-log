@@ -661,70 +661,88 @@ async function wipeAllData(){
 }
 
 /* -------------------- More panel -------------------- */
-function openMore() {
-  const modal = $("moreModal");
-  if (!modal) return;
-  modal.classList.add("open");
-  lockBodyScroll();
+function initMoreTabs(){
+  const tabBtns = Array.from(document.querySelectorAll("#moreModal .tabBtn"));
+  const panels = Array.from(document.querySelectorAll("#moreModal .tabPanel"));
+  if (!tabBtns.length || !panels.length) return;
+
+  function activate(id){
+    panels.forEach(p => p.classList.toggle("active", p.id === id));
+    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  }
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener("click", () => activate(btn.dataset.tab));
+  });
+
+  // default to payroll every time init runs
+  activate("payrollTab");
 }
 
-function closeMore() {
-  const modal = $("moreModal");
+function openMore(){
+  const modal = document.getElementById("moreModal");
+  if (!modal) return;
+  modal.classList.add("open");
+  document.body.classList.add("modal-open");
+}
+
+function closeMore(){
+  const modal = document.getElementById("moreModal");
   if (!modal) return;
   modal.classList.remove("open");
-  unlockBodyScroll();
+  document.body.classList.remove("modal-open");
 }
 
 /* -------------------- Boot -------------------- */
-document.addEventListener("DOMContentLoaded", async () => {
-  registerSW();
-
-  await ensureDefaultTypes();
-  await renderTypeDatalist();
-  await renderTypesListInMore();
-
-  // wiring
-  const refreshBtn = $("refreshBtn");
-  if (refreshBtn) refreshBtn.addEventListener("click", refreshUI);
-  const filter = $("filterSelect");
-  if (filter) filter.addEventListener("change", refreshUI);
-
-  const moreBtn = $("moreBtn");
-  if (moreBtn) moreBtn.addEventListener("click", openMore);
-  const closeBtn = $("closeMoreBtn");
-  if (closeBtn) closeBtn.addEventListener("click", closeMore);
-  const morePanel = document.getElementById("moreModal");
-  if (morePanel) morePanel.addEventListener("click", (e) => { if (e.target.id === "moreModal") closeMore(); });
-
+document.addEventListener("DOMContentLoaded", () => {
   initMoreTabs();
+  document.getElementById("moreBtn")?.addEventListener("click", openMore);
+  document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
 
-  const hoursInput = $("hours");
-  const rateInput  = document.querySelector('input[name="rate"]');
-  if (hoursInput) hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
-  if (rateInput)  rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
+  document.getElementById("moreModal")?.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "moreModal") closeMore();
+  });
 
-  const wipeBtn = $("wipeBtn");
-  if (wipeBtn) wipeBtn.addEventListener("click", async () => {
-    await wipeAllData();
+  (async () => {
+    registerSW();
+
     await ensureDefaultTypes();
     await renderTypeDatalist();
     await renderTypesListInMore();
-    await refreshUI();
-  });
 
-  const exportCsvBtn = $("exportCsvBtn");
-  if (exportCsvBtn) exportCsvBtn.addEventListener("click", async () => {
-    const entries = await getAll(STORES.entries);
-    entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
-  });
+    // wiring
+    const refreshBtn = $("refreshBtn");
+    if (refreshBtn) refreshBtn.addEventListener("click", refreshUI);
+    const filter = $("filterSelect");
+    if (filter) filter.addEventListener("change", refreshUI);
 
-  const exportJsonBtn = $("exportJsonBtn");
-  if (exportJsonBtn) exportJsonBtn.addEventListener("click", async () => {
-    const entries = await getAll(STORES.entries);
-    entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-  });
+    const hoursInput = $("hours");
+    const rateInput  = document.querySelector('input[name="rate"]');
+    if (hoursInput) hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
+    if (rateInput)  rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
+
+    const wipeBtn = $("wipeBtn");
+    if (wipeBtn) wipeBtn.addEventListener("click", async () => {
+      await wipeAllData();
+      await ensureDefaultTypes();
+      await renderTypeDatalist();
+      await renderTypesListInMore();
+      await refreshUI();
+    });
+
+    const exportCsvBtn = $("exportCsvBtn");
+    if (exportCsvBtn) exportCsvBtn.addEventListener("click", async () => {
+      const entries = await getAll(STORES.entries);
+      entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
+    });
+
+    const exportJsonBtn = $("exportJsonBtn");
+    if (exportJsonBtn) exportJsonBtn.addEventListener("click", async () => {
+      const entries = await getAll(STORES.entries);
+      entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
+    });
 
   const saveFlaggedBtn = $("saveFlaggedBtn");
   if (saveFlaggedBtn) saveFlaggedBtn.addEventListener("click", async () => {
