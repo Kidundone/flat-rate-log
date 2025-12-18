@@ -1,5 +1,5 @@
 const DB_NAME = "frlog";
-const DB_VERSION = 2; // bump this
+const DB_VERSION = 3; // bump this
 
 const STORES = {
   entries: "entries",
@@ -65,8 +65,8 @@ function openDB(){
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
 
-    req.onupgradeneeded = () => {
-      const db = req.result;
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
 
       if (!db.objectStoreNames.contains(STORES.entries)) {
         const os = db.createObjectStore(STORES.entries, { keyPath: "id" });
@@ -1135,11 +1135,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const form = $("logForm");
-  const saveBtnFooter = $("saveBtn");
+  const saveBtn = document.getElementById("saveBtn");
   const saveEntryBtn = $("saveEntryBtn");
   const formSubmitBtn = form ? form.querySelector('button[type="submit"]') : null;
-  const saveBtnMain = document.getElementById("saveBtn");
-  const clearBtnMain = document.getElementById("clearBtn");
+  const clearBtn = document.getElementById("clearBtn");
 
   let refType = "RO";
   const setRefType = (next) => {
@@ -1181,7 +1180,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btn = $(id);
     if (btn) btn.addEventListener("click", clearFastFields);
   });
-  if (clearBtnMain) clearBtnMain.addEventListener("click", handleClear);
+  if (clearBtn) clearBtn.addEventListener("click", handleClear);
 
   async function getEntryById(id){
     if (!id) return null;
@@ -1225,7 +1224,7 @@ document.addEventListener("DOMContentLoaded", () => {
       hours: document.getElementById("hours")?.value
     }, null, 2));
     const disableSaves = (state) => {
-      if (saveBtnFooter) saveBtnFooter.disabled = state;
+      if (saveBtn) saveBtn.disabled = state;
       if (formSubmitBtn) formSubmitBtn.disabled = state;
       if (saveEntryBtn) saveEntryBtn.disabled = state;
     };
@@ -1302,8 +1301,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (form) form.addEventListener("submit", handleSave);
   if (saveEntryBtn) saveEntryBtn.addEventListener("click", handleSave);
-  if (saveBtnFooter) saveBtnFooter.addEventListener("click", handleSave); // Main form buttons
-  const saveBtn = $("saveBtn");
   if (saveBtn) saveBtn.addEventListener("click", handleSave);
 
   // Allow Enter/Go key to save
