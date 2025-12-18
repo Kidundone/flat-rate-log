@@ -1163,10 +1163,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeEl) typeEl.focus();
   };
 
-  ["clearFormBtn","clearEntryBtn","clearBtn"].forEach((id) => {
+  function handleClear() {
+    $("logForm")?.reset();
+    const status = $("statusMsg");
+    if (status) status.textContent = "Cleared.";
+  }
+
+  ["clearFormBtn","clearEntryBtn"].forEach((id) => {
     const btn = $(id);
     if (btn) btn.addEventListener("click", clearFastFields);
   });
+  const clearBtn = $("clearBtn");
+  if (clearBtn) clearBtn.addEventListener("click", handleClear);
 
   async function getEntryById(id){
     if (!id) return null;
@@ -1287,11 +1295,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (form) form.addEventListener("submit", handleSave);
   if (saveEntryBtn) saveEntryBtn.addEventListener("click", handleSave);
-  if (saveBtnFooter) saveBtnFooter.addEventListener("click", handleSave);
-  if (saveBtnMain) saveBtnMain.addEventListener("click", handleSave);
+  if (saveBtnFooter) saveBtnFooter.addEventListener("click", handleSave); // Main form buttons
+  const saveBtn = $("saveBtn");
+  if (saveBtn) saveBtn.addEventListener("click", handleSave);
 
-  const clearBtnMain = document.getElementById("clearBtn");
-  if (clearBtnMain && typeof clearFastFields === "function") clearBtnMain.addEventListener("click", clearFastFields);
+  const clearBtn = $("clearBtn");
+  if (clearBtn) clearBtn.addEventListener("click", clearFastFields);
+
+  // Allow Enter/Go key to save
+  const logForm = $("logForm");
+  if (logForm) {
+    logForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      handleSave();
+    });
+  }
 
   await refreshUI();
 });
