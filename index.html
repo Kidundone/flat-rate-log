@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <base href="/flat-rate-log/">
+  <base href="./">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Log</title>
@@ -376,7 +376,7 @@
   </section>
 
   <section class="card">
-    <form id="logForm">
+    <form id="logForm" onsubmit="return false;">
       <div class="grid2">
         <div class="field">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
@@ -436,6 +436,11 @@
       <div class="actions">
         <button class="btn primary" id="saveEntryBtn" type="submit">Save Entry</button>
         <button class="btn" type="button" id="clearFormBtn">Clear</button>
+      </div>
+
+      <div class="row" style="margin-top:12px; gap:10px;">
+        <button id="saveBtn" class="btnPrimary" type="button">Save Entry</button>
+        <button id="clearBtn" class="btnGhost" type="button">Clear</button>
       </div>
     </form>
   </section>

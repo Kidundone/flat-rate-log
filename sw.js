@@ -1,5 +1,4 @@
-// sw.js — cache static assets, but NEVER pin old HTML forever
-const CACHE_VERSION = 4; // <-- bump this EVERY deploy
+const CACHE_VERSION = 101; // bump on every deploy
 const CACHE_NAME = `frlog-cache-v${CACHE_VERSION}`;
 
 const ASSETS = [
@@ -7,8 +6,9 @@ const ASSETS = [
   "./index.html",
   "./more.html",
   "./app.js",
-  "./manifest.webmanifest",
   "./sw.js",
+  "./manifest.webmanifest"
+  // add icons with ./ too if you have them
 ];
 
 self.addEventListener("install", (event) => {
@@ -21,29 +21,27 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+      Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)))
+    )
   );
+  self.clients.claim();
 });
 
-// Network-first for HTML, cache-first for everything else
+// Network-first for navigations, cache-first for assets
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  if (req.method !== "GET") return;
-  if (url.origin !== self.location.origin) return;
+  if (req.method !== "GET" || url.origin !== self.location.origin) return;
 
-  const isHTML =
-    req.mode === "navigate" ||
-    (req.headers.get("accept") || "").includes("text/html");
+  const isNav = req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html");
 
-  if (isHTML) {
+  if (isNav) {
     event.respondWith(
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
           return res;
         })
         .catch(() => caches.match(req).then((r) => r || caches.match("./index.html")))
@@ -52,13 +50,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-        return res;
-      });
-    })
+    caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+      return res;
+    }))
   );
 });
