@@ -879,7 +879,14 @@ document.addEventListener("DOMContentLoaded", () => {
         handleSave(e);
       });
     }
-    if (clearBtn) clearBtn.addEventListener("click", handleClear);
+    if (clearBtn) {
+      clearBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        document.getElementById("logForm")?.reset();
+        setStatusMsg("Cleared.");
+        toast("Cleared");
+      });
+    }
 
     await refreshUI();
   })();
