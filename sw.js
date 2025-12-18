@@ -1,4 +1,6 @@
-const CACHE = "flat-rate-log-v13"; // <- bump this number every deploy
+const CACHE_VERSION = "v12"; // bump this every push
+console.log("FRLOG BUILD", "2025-12-18-1");
+const CACHE_NAME = `frlog-${CACHE_VERSION}`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -14,7 +16,7 @@ self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
   self.skipWaiting();
 });
@@ -22,7 +24,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k === CACHE ? null : caches.delete(k))));
+    await Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k))));
     await self.clients.claim();
   })());
 });
