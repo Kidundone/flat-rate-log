@@ -1,6 +1,6 @@
 /* sw.js - safe cache-first for static assets */
 
-const CACHE_VERSION = 2; // bump this any time you change sw.js
+const CACHE_VERSION = 3; // bump this any time you change sw.js
 const CACHE_NAME = `frlog-cache-v${CACHE_VERSION}`;
 
 const ASSETS = [
