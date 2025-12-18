@@ -876,6 +876,18 @@ document.addEventListener("DOMContentLoaded", () => {
       const save = e.target.closest("#saveBtn, #saveEntryBtn, button[data-action='save']");
       if (save) {
         e.preventDefault();
+        console.log("SAVE CLICK", new Date().toISOString());
+        console.log("FIELDS", {
+          ref:
+            (document.getElementById("ref")?.value ||
+             document.getElementById("ro")?.value ||
+             document.getElementById("refNumber")?.value ||
+             "").trim().toUpperCase(),
+          vin8: (document.getElementById("vin8")?.value || ""),
+          type: (document.getElementById("typeText")?.value || ""),
+          hours: (document.getElementById("hours")?.value || ""),
+          rate: (document.querySelector('[name=\"rate\"]')?.value || "")
+        });
         handleSave(e);
       }
 
