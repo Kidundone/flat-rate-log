@@ -97,62 +97,90 @@ function openDB(){
   });
 }
 
-async function tx(storeName, mode="readonly"){
+async function tx(storeName, mode = "readonly") {
   const db = await openDB();
   const t = db.transaction(storeName, mode);
-  return { db, t, store: t.objectStore(storeName) };
+  const store = t.objectStore(storeName);
+
+  const done = new Promise((resolve, reject) => {
+    t.oncomplete = () => resolve(true);
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error("Transaction aborted"));
+  });
+
+  return { db, t, store, done };
 }
 
-async function getAll(storeName){
-  const { db, store } = await tx(storeName, "readonly");
-  const items = await new Promise((resolve, reject) => {
-    const r = store.getAll();
-    r.onsuccess = () => resolve(r.result || []);
-    r.onerror = () => reject(r.error);
-  });
-  db.close();
-  return items;
+async function getAll(storeName) {
+  const { db, store, done } = await tx(storeName, "readonly");
+  try {
+    const items = await new Promise((resolve, reject) => {
+      const r = store.getAll();
+      r.onsuccess = () => resolve(r.result || []);
+      r.onerror = () => reject(r.error);
+    });
+    await done; // wait for txn
+    return items;
+  } finally {
+    db.close();
+  }
 }
 
-async function get(storeName, key){
-  const { db, store } = await tx(storeName, "readonly");
-  const item = await new Promise((resolve, reject) => {
-    const r = store.get(key);
-    r.onsuccess = () => resolve(r.result || null);
-    r.onerror = () => reject(r.error);
-  });
-  db.close();
-  return item;
+async function get(storeName, key) {
+  const { db, store, done } = await tx(storeName, "readonly");
+  try {
+    const item = await new Promise((resolve, reject) => {
+      const r = store.get(key);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+    await done; // wait for txn
+    return item;
+  } finally {
+    db.close();
+  }
 }
 
-async function put(storeName, item){
-  const { db, store } = await tx(storeName, "readwrite");
-  await new Promise((resolve, reject) => {
-    const r = store.put(item);
-    r.onsuccess = () => resolve(true);
-    r.onerror = () => reject(r.error);
-  });
-  db.close();
+async function put(storeName, item) {
+  const { db, store, done } = await tx(storeName, "readwrite");
+  try {
+    await new Promise((resolve, reject) => {
+      const r = store.put(item);
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => reject(r.error);
+    });
+    await done; // IMPORTANT: wait for commit
+  } finally {
+    db.close();
+  }
 }
 
-async function del(storeName, key){
-  const { db, store } = await tx(storeName, "readwrite");
-  await new Promise((resolve, reject) => {
-    const r = store.delete(key);
-    r.onsuccess = () => resolve(true);
-    r.onerror = () => reject(r.error);
-  });
-  db.close();
+async function del(storeName, key) {
+  const { db, store, done } = await tx(storeName, "readwrite");
+  try {
+    await new Promise((resolve, reject) => {
+      const r = store.delete(key);
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => reject(r.error);
+    });
+    await done;
+  } finally {
+    db.close();
+  }
 }
 
-async function clearStore(storeName){
-  const { db, store } = await tx(storeName, "readwrite");
-  await new Promise((resolve, reject) => {
-    const r = store.clear();
-    r.onsuccess = () => resolve(true);
-    r.onerror = () => reject(r.error);
-  });
-  db.close();
+async function clearStore(storeName) {
+  const { db, store, done } = await tx(storeName, "readwrite");
+  try {
+    await new Promise((resolve, reject) => {
+      const r = store.clear();
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => reject(r.error);
+    });
+    await done;
+  } finally {
+    db.close();
+  }
 }
 
 async function fileToDataURL(file){
