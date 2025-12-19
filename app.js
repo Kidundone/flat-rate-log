@@ -899,39 +899,110 @@ document.addEventListener("DOMContentLoaded", () => {
     // photo gallery
     initPhotosUI();
 
-    // --- Single, robust wiring (works even if duplicate buttons exist) ---
-    document.addEventListener("click", (e) => {
-      const save = e.target.closest("#saveBtn, #saveEntryBtn, button[data-action='save']");
-      if (save) {
-        e.preventDefault();
-        console.log("SAVE CLICK", new Date().toISOString());
-        console.log("FIELDS", {
-          ref:
-            (document.getElementById("ref")?.value ||
-             document.getElementById("ro")?.value ||
-             document.getElementById("refNumber")?.value ||
-             "").trim().toUpperCase(),
-          vin8: (document.getElementById("vin8")?.value || ""),
-          type: (document.getElementById("typeText")?.value || ""),
-          hours: (document.getElementById("hours")?.value || ""),
-          rate: (document.querySelector('[name=\"rate\"]')?.value || "")
+    // ---------------- SAVE + CLEAR (single source of truth) ----------------
+    let refType = "RO";
+    function setRefType(next) {
+      refType = (next === "STOCK") ? "STOCK" : "RO";
+      document.getElementById("refTypeRO")?.classList.toggle("active", refType === "RO");
+      document.getElementById("refTypeSTK")?.classList.toggle("active", refType === "STOCK");
+    }
+    setRefType("RO");
+    document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
+    document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
+
+    const form = document.getElementById("logForm");
+    const saveBtn = document.getElementById("saveBtn");        // Save Entry button id must be saveBtn
+    const clearBtn = document.getElementById("clearBtn");      // Clear button id must be clearBtn
+
+    function handleClear(ev) {
+      if (ev) ev.preventDefault();
+      document.getElementById("ref") && (document.getElementById("ref").value = "");
+      document.getElementById("vin8") && (document.getElementById("vin8").value = "");
+      document.getElementById("typeText") && (document.getElementById("typeText").value = "");
+      document.getElementById("hours") && (document.getElementById("hours").value = "");
+      const rateEl = document.querySelector('input[name="rate"]');
+      if (rateEl) rateEl.value = "15";
+      const notesEl = document.querySelector('textarea[name="notes"], input[name="notes"]');
+      if (notesEl) notesEl.value = "";
+      const photoEl = document.getElementById("proofPhoto");
+      if (photoEl) photoEl.value = "";
+      setStatusMsg("Cleared.");
+    }
+
+    async function handleSave(ev) {
+      if (ev) ev.preventDefault();
+
+      const disable = (on) => {
+        if (saveBtn) saveBtn.disabled = on;
+        const submitBtn = form?.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = on;
+      };
+
+      const ref = (document.getElementById("ref")?.value || "").trim().toUpperCase();
+      const vin8 = (document.getElementById("vin8")?.value || "").trim().toUpperCase().slice(0, 8);
+      const type = (document.getElementById("typeText")?.value || "").trim();
+      const hours = num(document.getElementById("hours")?.value);
+      const rate = getRate();
+      const notes = getNotes();
+
+      if (!ref)  { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
+      if (!type) { toast("Type required");     setStatusMsg("Type required");     return; }
+      if (!(hours > 0)) { toast("Hours must be > 0"); setStatusMsg("Hours must be > 0"); return; }
+      if (!(rate > 0))  { toast("Rate must be > 0");  setStatusMsg("Rate must be > 0");  return; }
+
+      disable(true);
+      setStatusMsg("Saving...");
+
+      try {
+        const id = uuid();
+        const createdAt = nowISO();
+        const dayKey = todayKeyLocal();
+        const weekStartKey = dateKey(startOfWeekLocal(new Date()));
+
+        const photoEl = document.getElementById("proofPhoto");
+        const photoFile = photoEl?.files?.[0] || null;
+        const photoDataUrl = photoFile ? await fileToDataURL(photoFile) : null;
+
+        const earnings = Number((hours * rate).toFixed(2));
+
+        await put(STORES.entries, {
+          id,
+          createdAt,
+          dayKey,
+          weekStartKey,
+          refType,
+          ref,
+          ro: ref,
+          vin8,
+          typeText: type,
+          type,
+          hours,
+          rate,
+          earnings,
+          notes,
+          photoDataUrl
         });
-        handleSave(e);
-      }
 
-      const clear = e.target.closest("#clearBtn, #clearEntryBtn, #clearFormBtn, button[data-action='clear']");
-      if (clear) {
-        e.preventDefault();
-        document.getElementById("logForm")?.reset();
-        setStatusMsg("Cleared.");
-        toast("Cleared");
-      }
-    }, true);
+        await upsertTypeDefaults(type, hours, rate);
 
-    document.getElementById("logForm")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      handleSave(e);
-    });
+        toast("Saved ✅");
+        setStatusMsg("Saved.");
+
+        await refreshUI();
+        handleClear();
+      } catch (e) {
+        console.error(e);
+        toast("Save failed");
+        setStatusMsg("Save failed");
+        alert("SAVE ERROR: " + (e?.message || e));
+      } finally {
+        disable(false);
+      }
+    }
+
+    if (form) form.addEventListener("submit", handleSave);
+    if (saveBtn) saveBtn.addEventListener("click", handleSave);
+    if (clearBtn) clearBtn.addEventListener("click", handleClear);
 
     await refreshUI();
   })();
