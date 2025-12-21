@@ -1,59 +1,49 @@
-const CACHE_VERSION = 102; // bump on every deploy
-const CACHE_NAME = `frlog-cache-v${CACHE_VERSION}`;
+const CACHE = "frlog-runtime"; // constant on purpose
 
-const ASSETS = [
+const SHELL = [
   "./",
   "./index.html",
   "./more.html",
-  "./app.js",
+  "./manifest.webmanifest",
   "./sw.js",
-  "./manifest.webmanifest"
-  // add icons with ./ too if you have them
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
   self.skipWaiting();
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil(self.clients.claim());
 });
 
-// Network-first for navigations, cache-first for assets
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  if (req.method !== "GET" || url.origin !== self.location.origin) return;
+  // Only handle same-origin requests
+  if (url.origin !== self.location.origin) return;
 
-  const isNav = req.mode === "navigate" || (req.headers.get("accept") || "").includes("text/html");
+  // Always network-first for HTML AND app.js so deploys show up without rituals
+  const isHTML = req.mode === "navigate" || url.pathname.endsWith(".html");
+  const isAppJS = url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js");
 
-  if (isNav) {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req).then((r) => r || caches.match("./index.html")))
-    );
+  if (isHTML || isAppJS) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: "no-store" });
+        const cache = await caches.open(CACHE);
+        cache.put(req, fresh.clone());
+        return fresh;
+      } catch {
+        return (await caches.match(req)) || (await caches.match("./"));
+      }
+    })());
     return;
   }
 
+  // Cache-first for everything else (fast)
   event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-      return res;
-    }))
+    caches.match(req).then((cached) => cached || fetch(req))
   );
 });

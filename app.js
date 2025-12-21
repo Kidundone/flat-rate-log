@@ -623,16 +623,25 @@ async function refreshUI(){
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
 }
 
-function registerSW(){
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", async () => {
-      try {
-        const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
-        console.log("SW registered:", reg.scope);
-      } catch (e) {
-        console.error("SW register failed:", e);
-      }
+async function registerSW() {
+  if (!("serviceWorker" in navigator)) return;
+
+  try {
+    const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+    // check for updates every time the app opens
+    reg.update();
+
+    // if a new SW takes control, reload once to use fresh assets
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
     });
+
+    console.log("SW registered:", reg.scope);
+  } catch (e) {
+    console.error("SW register failed:", e);
   }
 }
 
