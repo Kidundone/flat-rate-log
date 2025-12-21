@@ -52,6 +52,16 @@ function formatMoney(n){
   const x = Number(n || 0);
   return `$${x.toFixed(2)}`;
 }
+function round1(n){
+  return Math.round((Number(n) || 0) * 10) / 10;
+}
+function round2(n){
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+function formatHours(n){
+  const x = round1(n);
+  return (x % 1 === 0) ? String(x.toFixed(0)) : String(x.toFixed(1));
+}
 function uuid(){
   return crypto.randomUUID ? crypto.randomUUID() : `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
@@ -455,14 +465,14 @@ function computeToday(entries, dayKey){
   const today = entries.filter(e => e.dayKey === dayKey);
   const hours = today.reduce((s, e) => s + Number(e.hours || 0), 0);
   const dollars = today.reduce((s, e) => s + Number(e.earnings || 0), 0);
-  return { hours, dollars, count: today.length };
+  return { hours: round1(hours), dollars: round2(dollars), count: today.length };
 }
 
 function computeWeek(entries, weekStart){
   const weekEntries = entries.filter(e => inWeek(e.dayKey, weekStart));
   const hours = weekEntries.reduce((s, e) => s + Number(e.hours || 0), 0);
   const dollars = weekEntries.reduce((s, e) => s + Number(e.earnings || 0), 0);
-  return { hours, dollars, count: weekEntries.length, entries: weekEntries };
+  return { hours: round1(hours), dollars: round2(dollars), count: weekEntries.length, entries: weekEntries };
 }
 
 function toCSV(entries){
@@ -580,7 +590,7 @@ async function refreshUI(){
   // Today
   const dayKey = todayKeyLocal();
   const today = computeToday(entries, dayKey);
-  setText("todayHours", String(today.hours));
+  setText("todayHours", round1(today.hours));
   setText("todayDollars", formatMoney(today.dollars));
   setText("todayCount", String(today.count));
 
@@ -589,13 +599,13 @@ async function refreshUI(){
   const we = endOfWeekLocal(new Date());
   const week = computeWeek(entries, ws);
 
-  setText("weekHours", String(week.hours));
+  setText("weekHours", round1(week.hours));
   setText("weekDollars", formatMoney(week.dollars));
   setText("weekRange", `${dateKey(ws)} → ${dateKey(we)}`);
 
   const flag = await getThisWeekFlag();
   const flagged = flag ? Number(flag.flaggedHours || 0) : 0;
-  const delta = Number((flagged - week.hours).toFixed(1));
+  const delta = round1(flagged - week.hours);
   setText("weekDelta", String(delta));
 
   // More panel input value
@@ -941,13 +951,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const ref = (document.getElementById("ref")?.value || "").trim().toUpperCase();
       const vin8 = (document.getElementById("vin8")?.value || "").trim().toUpperCase().slice(0, 8);
       const type = (document.getElementById("typeText")?.value || "").trim();
-      const hours = num(document.getElementById("hours")?.value);
+      const hours = round1(num(hoursInput?.value));
       const rate = getRate();
       const notes = getNotes();
 
       if (!ref)  { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
       if (!type) { toast("Type required");     setStatusMsg("Type required");     return; }
-      if (!(hours > 0)) { toast("Hours must be > 0"); setStatusMsg("Hours must be > 0"); return; }
+      if (!(hours > 0)) { toast("Hours must be greater than 0"); setStatusMsg("Hours must be greater than 0"); return; }
       if (!(rate > 0))  { toast("Rate must be > 0");  setStatusMsg("Rate must be > 0");  return; }
 
       disable(true);
