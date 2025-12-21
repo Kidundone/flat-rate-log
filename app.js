@@ -930,11 +930,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------------- SAVE + CLEAR (single source of truth) ----------------
     let refType = "RO";
-    function setRefType(next) {
-      refType = (next === "STOCK") ? "STOCK" : "RO";
+    const setRefType = (next) => {
+      refType = next === "STOCK" ? "STOCK" : "RO";
       document.getElementById("refTypeRO")?.classList.toggle("active", refType === "RO");
       document.getElementById("refTypeSTK")?.classList.toggle("active", refType === "STOCK");
-    }
+    };
     setRefType("RO");
     document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
     document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
@@ -967,14 +967,26 @@ document.addEventListener("DOMContentLoaded", () => {
         if (submitBtn) submitBtn.disabled = on;
       };
 
-      const ref = (document.getElementById("ref")?.value || "").trim().toUpperCase();
-      const vin8 = (document.getElementById("vin8")?.value || "").trim().toUpperCase().slice(0, 8);
+      const ref = (document.getElementById("ref")?.value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+      const vin8 = (document.getElementById("vin8")?.value || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-HJ-NPR-Z0-9]/g, "")
+        .slice(0, 8);
       const type = (document.getElementById("typeText")?.value || "").trim();
       const hours = round1(num(hoursInput?.value));
       const rate = getRate();
       const notes = getNotes();
 
       if (!ref)  { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
+      if (!/^[A-Z0-9-]{3,20}$/.test(ref)) {
+        toast("Ref must be letters/numbers");
+        setStatusMsg("Invalid RO/Stock #");
+        return;
+      }
       if (!type) { toast("Type required");     setStatusMsg("Type required");     return; }
       if (!Number.isFinite(hours) || hours <= 0) { toast("Hours must be greater than 0"); setStatusMsg("Invalid hours"); return; }
       if (!(rate > 0))  { toast("Rate must be > 0");  setStatusMsg("Rate must be > 0");  return; }
