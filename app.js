@@ -862,7 +862,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const hoursInput = $("hours");
     const rateInput  = document.querySelector('input[name="rate"]');
-    if (hoursInput) hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
+    if (hoursInput) {
+      hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
+      hoursInput.addEventListener("blur", () => {
+        const v = round1(num(hoursInput.value));
+        if (Number.isFinite(v) && v > 0) {
+          hoursInput.value = String(v);
+        } else if (hoursInput.value) {
+          hoursInput.value = "";
+        }
+      });
+    }
     if (rateInput)  rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
 
     // exports + wipes live on More page
@@ -966,7 +976,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!ref)  { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
       if (!type) { toast("Type required");     setStatusMsg("Type required");     return; }
-      if (!(hours > 0)) { toast("Hours must be greater than 0"); setStatusMsg("Hours must be greater than 0"); return; }
+      if (!Number.isFinite(hours) || hours <= 0) { toast("Hours must be greater than 0"); setStatusMsg("Invalid hours"); return; }
       if (!(rate > 0))  { toast("Rate must be > 0");  setStatusMsg("Rate must be > 0");  return; }
 
       disable(true);
