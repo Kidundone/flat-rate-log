@@ -12,6 +12,8 @@ const $ = (id) => document.getElementById(id);
 
 console.log("BUILD", "c3fdf8a", new Date().toISOString());
 
+let rangeMode = "day";
+
 function setStatusMsg(msg){
   const s = $("statusMsg");
   if (s) s.textContent = msg;
@@ -318,6 +320,20 @@ function inWeek(dayKeyStr, weekStart){
   const v = new Date(yy, mm-1, dd);
   return v >= s && v <= e;
 }
+function startOfMonthLocal(d=new Date()){
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function endOfMonthLocal(d=new Date()){
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+}
+function inMonth(dayKeyStr, monthStart){
+  const [yy,mm,dd] = String(dayKeyStr || "").split("-").map(Number);
+  if (!yy || !mm || !dd) return false;
+  const s = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1);
+  const e = endOfMonthLocal(monthStart);
+  const v = new Date(yy, mm - 1, dd);
+  return v >= s && v <= e;
+}
 
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
 const DEFAULT_TYPES = [
@@ -475,6 +491,55 @@ function computeWeek(entries, weekStart){
   return { hours: round1(hours), dollars: round2(dollars), count: weekEntries.length, entries: weekEntries };
 }
 
+function filterByMode(entries, mode){
+  const now = new Date();
+  if (mode === "day") {
+    const dayKey = todayKeyLocal();
+    return entries.filter(e => e.dayKey === dayKey);
+  }
+  if (mode === "week") {
+    const ws = startOfWeekLocal(now);
+    return entries.filter(e => inWeek(e.dayKey, ws));
+  }
+  if (mode === "month") {
+    const ms = startOfMonthLocal(now);
+    return entries.filter(e => inMonth(e.dayKey, ms));
+  }
+  return entries;
+}
+
+function computeTotals(entries){
+  const hours = entries.reduce((s, e) => s + Number(e.hours || 0), 0);
+  const dollars = entries.reduce((s, e) => s + Number(e.earnings || 0), 0);
+  const count = entries.length;
+  const avgHrs = count ? (hours / count) : 0;
+  return {
+    hours: round1(hours),
+    dollars: round2(dollars),
+    count,
+    avgHrs
+  };
+}
+
+function rangeSubLabel(mode){
+  const now = new Date();
+  if (mode === "day") return dateKey(now);
+  if (mode === "week") {
+    const ws = startOfWeekLocal(now);
+    const we = endOfWeekLocal(now);
+    return `${dateKey(ws)} → ${dateKey(we)}`;
+  }
+  if (mode === "month") {
+    const ms = startOfMonthLocal(now);
+    const me = endOfMonthLocal(now);
+    return `${dateKey(ms)} → ${dateKey(me)}`;
+  }
+  const entries = (window.__RANGE_FILTERED__ || window.__RANGE_ENTRIES__ || []);
+  if (!entries.length) return "—";
+  const keys = entries.map(e => e.dayKey).filter(Boolean).sort();
+  return keys.length ? `${keys[0]} → ${keys[keys.length - 1]}` : "—";
+}
+
 function toCSV(entries){
   const header = ["createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
   const escape = (v) => {
@@ -587,6 +652,29 @@ async function refreshUI(){
   const entries = await getAll(STORES.entries);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
+  window.__RANGE_ENTRIES__ = entries;
+
+  const mode = window.__RANGE_MODE__ || rangeMode || "day";
+  rangeMode = mode;
+
+  const filtered = filterByMode(entries, mode);
+  window.__RANGE_FILTERED__ = filtered;
+  const totals = computeTotals(filtered);
+
+  const r1 = (n) => (Math.round(Number(n || 0) * 10) / 10).toFixed(1);
+
+  const title =
+    mode === "day" ? "Today" :
+    mode === "week" ? "This Week" :
+    mode === "month" ? "This Month" : "All Time";
+
+  setText("rangeTitle", title);
+  setText("rangeHours", r1(totals.hours));
+  setText("rangeDollars", formatMoney(totals.dollars));
+  setText("rangeCount", String(totals.count));
+  setText("rangeAvgHrs", r1(totals.avgHrs));
+  setText("rangeSub", rangeSubLabel(mode));
+
   // Today
   const dayKey = todayKeyLocal();
   const today = computeToday(entries, dayKey);
@@ -617,7 +705,8 @@ async function refreshUI(){
 
   const fs = document.getElementById("filterSelect");
   const mode = fs ? fs.value : "today";
-  renderList(entries, mode);
+  const listMode = (mode === "today") ? "today" : "all";
+  renderList(filtered, listMode);
 
   // stash last week calc for export
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
@@ -859,6 +948,24 @@ document.addEventListener("DOMContentLoaded", () => {
     // wiring
     $("refreshBtn")?.addEventListener("click", refreshUI);
     $("filterSelect")?.addEventListener("change", refreshUI);
+
+    window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
+
+    const setRangeMode = (m) => {
+      rangeMode = m;
+      window.__RANGE_MODE__ = m;
+      document.getElementById("rangeDayBtn")?.classList.toggle("active", m === "day");
+      document.getElementById("rangeWeekBtn")?.classList.toggle("active", m === "week");
+      document.getElementById("rangeMonthBtn")?.classList.toggle("active", m === "month");
+      document.getElementById("rangeAllBtn")?.classList.toggle("active", m === "all");
+      refreshUI();
+    };
+
+    document.getElementById("rangeDayBtn")?.addEventListener("click", () => setRangeMode("day"));
+    document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
+    document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
+    document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
+    setRangeMode(window.__RANGE_MODE__);
 
     const hoursInput = $("hours");
     const rateInput  = document.querySelector('input[name="rate"]');

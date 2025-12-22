@@ -53,6 +53,7 @@
       box-shadow: 0 14px 35px rgba(0,0,0,.35);
     }
     .summary{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; }
+    .pillRow{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
     .pill{
       background: var(--card2);
       border:1px solid var(--stroke);
@@ -124,7 +125,10 @@
     details summary::-webkit-details-marker{ display:none; }
     .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
     .grid3{ display:grid; grid-template-columns: 1.2fr 1fr 1fr; gap:12px; }
-    @media (max-width:520px){ .grid2{ grid-template-columns: 1fr; } }
+    @media (max-width:520px){
+      .grid2{ grid-template-columns: 1fr; }
+      .pillRow{ grid-template-columns: repeat(2, 1fr); }
+    }
     .typehint{ margin-top:6px; }
     .fileRow{ display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .fileRow .btn{ width:100%; }
@@ -362,6 +366,39 @@
 </header>
 
 <main>
+  <section class="card">
+    <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:12px;">
+      <div class="mono" style="font-size:13px; opacity:.85;" id="rangeTitle">Today</div>
+
+      <div class="seg" role="tablist" aria-label="Range">
+        <button id="rangeDayBtn" type="button" class="segBtn active">Day</button>
+        <button id="rangeWeekBtn" type="button" class="segBtn">Week</button>
+        <button id="rangeMonthBtn" type="button" class="segBtn">Month</button>
+        <button id="rangeAllBtn" type="button" class="segBtn">All</button>
+      </div>
+    </div>
+
+    <div class="pillRow" style="margin-top:10px;">
+      <div class="pill">
+        <div class="k">Hours</div>
+        <div class="v" id="rangeHours">0.0</div>
+        <div class="muted" id="rangeSub">—</div>
+      </div>
+      <div class="pill">
+        <div class="k">$</div>
+        <div class="v" id="rangeDollars">$0.00</div>
+      </div>
+      <div class="pill">
+        <div class="k">Entries</div>
+        <div class="v" id="rangeCount">0</div>
+      </div>
+      <div class="pill">
+        <div class="k">Avg hrs/entry</div>
+        <div class="v" id="rangeAvgHrs">0.0</div>
+      </div>
+    </div>
+  </section>
+
   <section class="card">
     <div class="summary">
       <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
