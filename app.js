@@ -704,8 +704,8 @@ async function refreshUI(){
   await refreshPayrollUI();
 
   const fs = document.getElementById("filterSelect");
-  const mode = fs ? fs.value : "today";
-  const listMode = (mode === "today") ? "today" : "all";
+  const listFilter = fs ? fs.value : "today";
+  const listMode = (listFilter === "today") ? "today" : "all";
   renderList(filtered, listMode);
 
   // stash last week calc for export
