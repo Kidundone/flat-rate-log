@@ -712,11 +712,13 @@ async function refreshUI(){
 
   const flag = await getThisWeekFlag();
   const flagged = flag ? Number(flag.flaggedHours || 0) : 0;
+  let delta = null; // ALWAYS defined
+
   if (!flagged || flagged <= 0) {
     setText("weekDelta", "—");
     setText("weekDeltaHint", "Set flagged hours in More");
   } else {
-    const delta = round1(flagged - week.hours);
+    delta = round1(flagged - week.hours);
     setText("weekDelta", String(delta));
     setText("weekDeltaHint", "");
   }
@@ -733,7 +735,7 @@ async function refreshUI(){
   const listMode = (listFilter === "today") ? "today" : "all";
   renderList(filtered, listMode);
 
-  // stash last week calc for export
+  // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
 }
 
