@@ -44,6 +44,7 @@
     h1,h2,h3{ letter-spacing: .2px; }
     h1{ font-size:18px; margin:0; }
     main{ padding:16px; max-width:780px; margin:0 auto; }
+    #legacyTotals{ display:none; }
     .card{
       background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.045));
       border: 1px solid var(--stroke);
@@ -399,21 +400,23 @@
     </div>
   </section>
 
-  <section class="card">
-    <div class="summary">
-      <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
-      <div class="pill"><div class="k">Today $</div><div class="v" id="todayDollars">$0.00</div></div>
-      <div class="pill"><div class="k">Entries Today</div><div class="v" id="todayCount">0</div></div>
-    </div>
-  </section>
+  <div id="legacyTotals">
+    <section class="card">
+      <div class="summary">
+        <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
+        <div class="pill"><div class="k">Today $</div><div class="v" id="todayDollars">$0.00</div></div>
+        <div class="pill"><div class="k">Entries Today</div><div class="v" id="todayCount">0</div></div>
+      </div>
+    </section>
 
-  <section class="card">
-    <div class="summary">
-      <div class="pill"><div class="k">This Week Hours</div><div class="v" id="weekHours">0</div><div class="muted" id="weekRange"></div></div>
-      <div class="pill"><div class="k">This Week $</div><div class="v" id="weekDollars">$0.00</div></div>
-      <div class="pill"><div class="k">Week Difference</div><div class="v" id="weekDelta">0</div><div class="muted">Set flagged hours in More</div></div>
-    </div>
-  </section>
+    <section class="card">
+      <div class="summary">
+        <div class="pill"><div class="k">This Week Hours</div><div class="v" id="weekHours">0</div><div class="muted" id="weekRange"></div></div>
+        <div class="pill"><div class="k">This Week $</div><div class="v" id="weekDollars">$0.00</div></div>
+        <div class="pill"><div class="k">Week Difference</div><div class="v" id="weekDelta">0</div><div class="muted" id="weekDeltaNote">Set flagged hours in More</div></div>
+      </div>
+    </section>
+  </div>
 
   <section class="card">
     <form id="logForm" onsubmit="return false;">
