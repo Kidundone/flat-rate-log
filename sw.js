@@ -1,4 +1,4 @@
-const CACHE = "frlog-runtime"; // constant on purpose
+const CACHE = "frlog-cache-v8"; // bump to invalidate old runtime cache
 
 const SHELL = [
   "./",
@@ -18,32 +18,34 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  const url = new URL(req.url);
+  const url = new URL(event.request.url);
 
-  // Only handle same-origin requests
-  if (url.origin !== self.location.origin) return;
-
-  // Always network-first for HTML AND app.js so deploys show up without rituals
-  const isHTML = req.mode === "navigate" || url.pathname.endsWith(".html");
-  const isAppJS = url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js");
-
-  if (isHTML || isAppJS) {
+  // Network-first for navigations/HTML so new builds show quickly
+  if (event.request.mode === "navigate" || url.pathname.endsWith(".html")) {
     event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
       try {
-        const fresh = await fetch(req, { cache: "no-store" });
-        const cache = await caches.open(CACHE);
-        cache.put(req, fresh.clone());
+        const fresh = await fetch(event.request, { cache: "no-store" });
+        cache.put(event.request, fresh.clone());
         return fresh;
       } catch {
-        return (await caches.match(req)) || (await caches.match("./"));
+        const cached = await cache.match(event.request);
+        return cached || cache.match("./index.html") || caches.match("./");
       }
     })());
     return;
   }
 
-  // Cache-first for everything else (fast)
-  event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req))
-  );
+  // Stale-while-revalidate for static assets (JS/CSS/etc)
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(event.request);
+
+    const fetchPromise = fetch(event.request).then((fresh) => {
+      cache.put(event.request, fresh.clone());
+      return fresh;
+    }).catch(() => null);
+
+    return cached || (await fetchPromise) || Response.error();
+  })());
 });
