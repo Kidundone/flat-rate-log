@@ -693,8 +693,14 @@ async function refreshUI(){
 
   const flag = await getThisWeekFlag();
   const flagged = flag ? Number(flag.flaggedHours || 0) : 0;
-  const delta = round1(flagged - week.hours);
-  setText("weekDelta", String(delta));
+  if (!flagged || flagged <= 0) {
+    setText("weekDelta", "—");
+    setText("weekDeltaHint", "Set flagged hours in More");
+  } else {
+    const delta = round1(flagged - week.hours);
+    setText("weekDelta", String(delta));
+    setText("weekDeltaHint", "");
+  }
 
   // More panel input value
   const fh = document.getElementById("flaggedHours");
