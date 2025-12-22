@@ -431,20 +431,11 @@
 
   <section class="card">
     <form id="logForm" onsubmit="return false;">
-      <div class="card" style="padding:14px;">
-        <div class="row">
-          <label class="lbl" for="empId">Employee #</label>
-          <input
-            id="empId"
-            name="empId"
-            placeholder="e.g., 1234"
-            inputmode="numeric"
-            autocomplete="off"
-            required
-          />
-          <div class="hint">Required. Keeps each tech’s entries separate on this device.</div>
-        </div>
-      </div>
+      <section class="card">
+        <label class="lbl" for="empId">Employee #</label>
+        <input id="empId" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off" />
+        <div class="hint">Required. Entries are stored under this number on this device.</div>
+      </section>
 
       <div class="card" style="padding:14px;">
         <div class="row" style="justify-content:space-between; align-items:center; gap:10px;">
