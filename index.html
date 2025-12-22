@@ -164,6 +164,13 @@
       background: rgba(255,255,255,.14);
       color:#fff;
     }
+    .rangeTabs .segBtn.active {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(0,0,0,.25);
+    }
+    .rangeTabs .segBtn {
+      transition: transform .08s ease, box-shadow .08s ease;
+    }
     /* ===== More Modal: iPhone-safe, scrollable, no background bleed ===== */
     #moreModal.modalShell{
       position: fixed;
@@ -371,7 +378,7 @@
     <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:12px;">
       <div class="mono" style="font-size:13px; opacity:.85;" id="rangeTitle">Today</div>
 
-      <div class="seg" role="tablist" aria-label="Range">
+      <div class="seg rangeTabs" role="tablist" aria-label="Range">
         <button id="rangeDayBtn" type="button" class="segBtn active">Day</button>
         <button id="rangeWeekBtn" type="button" class="segBtn">Week</button>
         <button id="rangeMonthBtn" type="button" class="segBtn">Month</button>
@@ -424,6 +431,21 @@
 
   <section class="card">
     <form id="logForm" onsubmit="return false;">
+      <div class="card" style="padding:14px;">
+        <div class="row">
+          <label class="lbl" for="empId">Employee #</label>
+          <input
+            id="empId"
+            name="empId"
+            placeholder="e.g., 1234"
+            inputmode="numeric"
+            autocomplete="off"
+            required
+          />
+          <div class="hint">Required. Keeps each tech’s entries separate on this device.</div>
+        </div>
+      </div>
+
       <div class="card" style="padding:14px;">
         <div class="row" style="justify-content:space-between; align-items:center; gap:10px;">
           <div class="mono" style="font-size:13px; opacity:.85;">Reference</div>

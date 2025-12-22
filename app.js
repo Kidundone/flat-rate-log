@@ -9,6 +9,8 @@ const STORES = {
 };
 
 const $ = (id) => document.getElementById(id);
+const EMP_KEY = "frlog_emp";
+let ACTIVE_EMP = (typeof localStorage !== "undefined" ? localStorage.getItem(EMP_KEY) : "") || "";
 
 console.log("BUILD", "c3fdf8a", new Date().toISOString());
 
@@ -63,6 +65,15 @@ function round2(n){
 function formatHours(n){
   const x = round1(n);
   return (x % 1 === 0) ? String(x.toFixed(0)) : String(x.toFixed(1));
+}
+function getEmpId(){
+  const inp = $("empId");
+  const val = inp ? (inp.value || "").trim() : "";
+  return val || ACTIVE_EMP || "";
+}
+function setActiveEmp(empId){
+  ACTIVE_EMP = (empId || "").trim();
+  try { localStorage.setItem(EMP_KEY, ACTIVE_EMP); } catch {}
 }
 function uuid(){
   return crypto.randomUUID ? crypto.randomUUID() : `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -521,6 +532,12 @@ function computeTotals(entries){
   };
 }
 
+function filterEntriesByEmp(entries, empId){
+  const id = String(empId ?? ACTIVE_EMP ?? "").trim();
+  if (!id) return [];
+  return entries.filter(e => String(e.empId || "").trim() === id);
+}
+
 function rangeSubLabel(mode){
   const now = new Date();
   if (mode === "day") return dateKey(now);
@@ -649,7 +666,9 @@ function closePhotoModal(){
 async function refreshUI(){
   const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-  const entries = await getAll(STORES.entries);
+  const empId = getEmpId();
+  const allEntries = await getAll(STORES.entries);
+  const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   window.__RANGE_ENTRIES__ = entries;
@@ -880,7 +899,7 @@ function renderPhotoGallery(entries){
 }
 
 async function renderPhotoGrid(){
-  const entries = await getAll(STORES.entries);
+  const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
   renderPhotoGallery(entries);
 }
 
@@ -955,6 +974,15 @@ document.addEventListener("DOMContentLoaded", () => {
     $("refreshBtn")?.addEventListener("click", refreshUI);
     $("filterSelect")?.addEventListener("change", refreshUI);
 
+    const empInput = document.getElementById("empId");
+    if (empInput) {
+      empInput.value = ACTIVE_EMP;
+      empInput.addEventListener("input", () => {
+        setActiveEmp(empInput.value.trim());
+        refreshUI();
+      });
+    }
+
     window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
 
     const setRangeMode = (m) => {
@@ -990,13 +1018,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // exports + wipes live on More page
     $("exportCsvBtn")?.addEventListener("click", async () => {
-      const entries = await getAll(STORES.entries);
+      const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
       entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
     });
 
     $("exportJsonBtn")?.addEventListener("click", async () => {
-      const entries = await getAll(STORES.entries);
+      const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
       entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
     });
@@ -1080,6 +1108,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (submitBtn) submitBtn.disabled = on;
       };
 
+      const empId = getEmpId();
+      if (!empId) {
+        toast("Employee # required");
+        setStatusMsg("Employee # required");
+        return;
+      }
+      setActiveEmp(empId);
+
       const ref = (document.getElementById("ref")?.value || "")
         .trim()
         .toUpperCase()
@@ -1124,6 +1160,7 @@ document.addEventListener("DOMContentLoaded", () => {
           createdAt,
           dayKey,
           weekStartKey,
+          empId,
           refType,
           ref,
           ro: ref,
