@@ -538,6 +538,11 @@ function filterEntriesByEmp(entries, empId){
   return entries.filter(e => String(e.empId || "").trim() === id);
 }
 
+async function requireAdmin() {
+  const pass = prompt("Admin export. Enter passcode:");
+  return pass === "0231"; // change this
+}
+
 function rangeSubLabel(mode){
   const now = new Date();
   if (mode === "day") return dateKey(now);
@@ -558,13 +563,14 @@ function rangeSubLabel(mode){
 }
 
 function toCSV(entries){
-  const header = ["createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
+  const header = ["empId","createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
   const escape = (v) => {
     const s = String(v ?? "");
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   };
   const rows = entries.map(e => ([
+    e.empId || "",
     e.createdAt,
     e.dayKey,
     e.refType || "RO",
@@ -903,6 +909,14 @@ function renderPhotoGallery(entries){
 async function renderPhotoGrid(){
   const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
   renderPhotoGallery(entries);
+}
+
+async function exportAllCsvAdmin() {
+  if (!(await requireAdmin())) return alert("Denied.");
+
+  const entries = await getAll(STORES.entries);
+  entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  downloadText(`flat_rate_log_ALL_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
 }
 
 function openPhotoViewer(e){
