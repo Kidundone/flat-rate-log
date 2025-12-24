@@ -1,6 +1,6 @@
 {
-  "name": "Flat-Rate Log",
-  "short_name": "FlatRate",
+  "name": "Flat-Rate Tracker",
+  "short_name": "FR Tracker",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
