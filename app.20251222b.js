@@ -1,9 +1,9 @@
 const DB_NAME = "frlog";
-const DB_VERSION = 5; // bump this
+const DB_VERSION = 6; // bump this
 
 const STORES = {
   entries: "entries",
-  types: "types",
+  types: "types_v2",      // <-- change from "types"
   weekflags: "weekflags",
   payroll: "payroll"
 };
@@ -90,6 +90,7 @@ function openDB(){
 
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
+      const upgradeTxn = e.target.transaction;
 
       if (!db.objectStoreNames.contains(STORES.entries)) {
         const os = db.createObjectStore(STORES.entries, { keyPath: "id" });
@@ -101,7 +102,34 @@ function openDB(){
 
       if (!db.objectStoreNames.contains(STORES.types)) {
         const os = db.createObjectStore(STORES.types, { keyPath: "id" });
-        os.createIndex("name", "name", { unique: true });
+        os.createIndex("empId", "empId", { unique: false });
+        os.createIndex("empId_nameLower", ["empId", "nameLower"], { unique: true });
+      }
+
+      // Migrate legacy types store -> types_v2 (leave old store; it becomes unused)
+      if (
+        upgradeTxn &&
+        db.objectStoreNames.contains("types") &&
+        STORES.types !== "types"
+      ) {
+        try {
+          const oldStore = upgradeTxn.objectStore("types");
+          const newStore = upgradeTxn.objectStore(STORES.types);
+          const migrate = oldStore.getAll();
+          migrate.onsuccess = () => {
+            const items = (migrate.result || []).map((item) => ({
+              ...item,
+              empId: String(item.empId || "").trim(),
+              nameLower: String(item.name || "").trim().toLowerCase()
+            }));
+            items.forEach((item) => {
+              try { newStore.put(item); }
+              catch (err) { console.warn("types_v2 migrate skip", err); }
+            });
+          };
+        } catch (err) {
+          console.error("types migration failed", err);
+        }
       }
 
       if (!db.objectStoreNames.contains(STORES.weekflags)) {
@@ -347,23 +375,41 @@ function inMonth(dayKeyStr, monthStart){
 }
 
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
-const DEFAULT_TYPES = [
-  { name: "Preowned Detail", lastHours: 4.5, lastRate: 15 },
-  { name: "FPF", lastHours: 1.0, lastRate: 15 },
-  { name: "Sold", lastHours: 1.0, lastRate: 15 },
-  { name: "Buff", lastHours: 1.0, lastRate: 15 }
-];
+const DEFAULT_TYPES = []; // no presets; the app learns from each employee
+
+function cleanEmpId(empId){
+  return String(empId ?? "").trim();
+}
+
+function normalizeTypeName(name){
+  return String(name || "").trim();
+}
+
+function normalizeTypeLower(name){
+  return normalizeTypeName(name).toLowerCase();
+}
 
 async function ensureDefaultTypes(){
-  const types = await getAll(STORES.types);
+  const empId = cleanEmpId(getEmpId());
+  const types = await loadTypesSorted(empId);
   if (types.length > 0) return;
+  const targetEmp = empId || "";
   for (const t of DEFAULT_TYPES) {
-    await put(STORES.types, { id: uuid(), name: t.name, lastHours: t.lastHours, lastRate: t.lastRate, updatedAt: nowISO() });
+    await put(STORES.types, {
+      id: uuid(),
+      empId: targetEmp,
+      name: t.name,
+      nameLower: normalizeTypeLower(t.name),
+      lastHours: t.lastHours,
+      lastRate: t.lastRate,
+      updatedAt: nowISO()
+    });
   }
 }
 
-async function loadTypesSorted(){
-  const types = await getAll(STORES.types);
+async function loadTypesSorted(empId){
+  const e = String(empId || "").trim();
+  const types = (await getAll(STORES.types)).filter(t => String(t.empId || "").trim() === e);
   types.sort((a,b) => a.name.localeCompare(b.name));
   return types;
 }
@@ -371,7 +417,8 @@ async function loadTypesSorted(){
 async function renderTypeDatalist(){
   const list = $("typeList");
   if (!list) return;
-  const types = await loadTypesSorted();
+  const empId = getEmpId();
+  const types = await loadTypesSorted(empId);
   list.innerHTML = "";
   for (const t of types) {
     const opt = document.createElement("option");
@@ -380,21 +427,32 @@ async function renderTypeDatalist(){
   }
 }
 
-async function findTypeByName(name){
+async function findTypeByName(empId, name){
   const n = String(name || "").trim().toLowerCase();
-  if (!n) return null;
+  const e = String(empId || "").trim();
+  if (!e || !n) return null;
+
   const types = await getAll(STORES.types);
-  return types.find(t => String(t.name).toLowerCase() === n) || null;
+  return types.find(t =>
+    String(t.empId || "").trim() === e &&
+    String(t.nameLower || "").trim() === n
+  ) || null;
 }
 
 async function upsertTypeDefaults(nameRaw, hours, rate){
   const name = String(nameRaw || "").trim();
   if (!name) return;
 
-  const existing = await findTypeByName(name);
+  const empId = cleanEmpId(getEmpId());
+  const nameLower = normalizeTypeLower(name);
+  const existing = await findTypeByName(empId, name);
+  const existingEmp = existing ? cleanEmpId(existing.empId) : null;
+  const isSameEmp = existing && existingEmp === empId;
   const payload = {
-    id: existing ? existing.id : uuid(),
-    name: existing ? existing.name : name,
+    id: isSameEmp ? existing.id : uuid(),
+    empId: isSameEmp ? existingEmp : empId,
+    name: isSameEmp ? existing.name : name,
+    nameLower,
     lastHours: Number(hours),
     lastRate: Number(rate),
     updatedAt: nowISO()
@@ -407,9 +465,19 @@ async function upsertTypeDefaults(nameRaw, hours, rate){
 async function maybeSaveTypeNameOnly(nameRaw){
   const name = String(nameRaw || "").trim();
   if (!name) return;
-  const existing = await findTypeByName(name);
-  if (existing) return;
-  await put(STORES.types, { id: uuid(), name, lastHours: 0.5, lastRate: 15, updatedAt: nowISO() });
+  const empId = cleanEmpId(getEmpId());
+  const nameLower = normalizeTypeLower(name);
+  const existing = await findTypeByName(empId, name);
+  if (existing && cleanEmpId(existing.empId) === empId) return;
+  await put(STORES.types, {
+    id: uuid(),
+    empId,
+    name,
+    nameLower,
+    lastHours: 0.5,
+    lastRate: 15,
+    updatedAt: nowISO()
+  });
   await renderTypeDatalist();
   await renderTypesListInMore();
 }
@@ -417,7 +485,7 @@ async function maybeSaveTypeNameOnly(nameRaw){
 async function maybeAutofillFromType(nameRaw){
   const name = String(nameRaw || "").trim();
   if (!name) return;
-  const t = await findTypeByName(name);
+  const t = await findTypeByName(cleanEmpId(getEmpId()), name);
   if (!t) return;
 
   const hoursEl = $("hours");
@@ -433,7 +501,8 @@ async function maybeAutofillFromType(nameRaw){
 async function renderTypesListInMore(){
   const box = $("savedTypesList");
   if (!box) return;
-  const types = await loadTypesSorted();
+  const empId = getEmpId();
+  const types = await loadTypesSorted(empId);
   box.innerHTML = "";
   if (types.length === 0) {
     box.innerHTML = `<div class="muted">No saved types yet.</div>`;
@@ -993,8 +1062,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const empInput = document.getElementById("empId");
     if (empInput) {
       empInput.value = ACTIVE_EMP;
-      empInput.addEventListener("input", () => {
+      empInput.addEventListener("input", async () => {
         setActiveEmp(empInput.value.trim());
+        await ensureDefaultTypes();
+        await renderTypeDatalist();
+        await renderTypesListInMore();
         refreshUI();
       });
     }
