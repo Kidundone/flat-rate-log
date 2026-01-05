@@ -24,7 +24,7 @@
     .primary{background:linear-gradient(180deg, rgba(84,155,255,1), rgba(46,112,255,1));border:0}
   </style>
 </head>
-<body>
+<body data-page="more">
   <header class="top">
     <div class="topRow">
       <div style="font-weight:900">More</div>
@@ -41,10 +41,12 @@
         <input
           id="empId"
           inputmode="numeric"
-          placeholder="Enter employee #"
+          placeholder="Employee # (required for export/photos)"
           style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc"
         />
-        <button class="btn" type="button" id="refreshBtn">Load</button>
+      </div>
+      <div class="muted" style="margin-top:8px">
+        Tip: enter it once — it saves on this device.
       </div>
     </section>
 
@@ -128,6 +130,6 @@
   })();
   </script>
 
-  <script src="./app.20251222b.js?v=20251222b" defer></script>
+  <script src="./app.20251222b.js?v=20251223_fix1" defer></script>
 </body>
 </html>

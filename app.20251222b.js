@@ -14,6 +14,8 @@ let ACTIVE_EMP = (typeof localStorage !== "undefined" ? localStorage.getItem(EMP
 
 console.log("BUILD", "delta-fix-20251222b", new Date().toISOString());
 
+const PAGE = document.body?.dataset?.page || "unknown";
+
 let rangeMode = "day";
 
 function setStatusMsg(msg){
@@ -1192,251 +1194,122 @@ function initPhotosUI(){
 
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  initMoreTabs();
-  document.getElementById("moreBtn")?.addEventListener("click", openMore);
-  document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
+  // Only main page has the modal tabs + More button
+  if (PAGE === "main") {
+    initMoreTabs();
+    document.getElementById("moreBtn")?.addEventListener("click", openMore);
+    document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
 
-  document.getElementById("moreModal")?.addEventListener("click", (e) => {
-    if (e.target && e.target.id === "moreModal") closeMore();
-  });
+    document.getElementById("moreModal")?.addEventListener("click", (e) => {
+      if (e.target && e.target.id === "moreModal") closeMore();
+    });
+  }
 
-  // EVERYTHING async stays inside this IIFE
   (async () => {
     registerSW();
-
     await ensureDefaultTypes();
-    await renderTypeDatalist();
-    await renderTypesListInMore();
 
-    // wiring
-    $("refreshBtn")?.addEventListener("click", refreshUI);
-    $("filterSelect")?.addEventListener("change", refreshUI);
-    $("searchBox")?.addEventListener("input", refreshUI);
-
+    // Shared: Employee #
     const empInput = document.getElementById("empId");
     if (empInput) {
       empInput.value = ACTIVE_EMP;
-      empInput.addEventListener("input", async () => {
+      empInput.addEventListener("input", () => {
         setActiveEmp(empInput.value.trim());
-        await ensureDefaultTypes();
-        await renderTypeDatalist();
-        await renderTypesListInMore();
-        refreshUI();
+        if (PAGE === "main") refreshUI();
+        if (PAGE === "more") renderPhotoGrid();
       });
     }
 
-    window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
-
-    const setRangeMode = (m) => {
-      rangeMode = m;
-      window.__RANGE_MODE__ = m;
-      document.getElementById("rangeDayBtn")?.classList.toggle("active", m === "day");
-      document.getElementById("rangeWeekBtn")?.classList.toggle("active", m === "week");
-      document.getElementById("rangeMonthBtn")?.classList.toggle("active", m === "month");
-      document.getElementById("rangeAllBtn")?.classList.toggle("active", m === "all");
-      refreshUI();
-    };
-
-    document.getElementById("rangeDayBtn")?.addEventListener("click", () => setRangeMode("day"));
-    document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
-    document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
-    document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
-    setRangeMode(window.__RANGE_MODE__);
-
-    const hoursInput = $("hours");
-    const rateInput  = document.querySelector('input[name="rate"]');
-    if (hoursInput) {
-      hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
-      hoursInput.addEventListener("blur", () => {
-        const v = round1(num(hoursInput.value));
-        if (Number.isFinite(v) && v > 0) {
-          hoursInput.value = String(v);
-        } else if (hoursInput.value) {
-          hoursInput.value = "";
-        }
-      });
-    }
-    if (rateInput)  rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
-
-    // exports + wipes live on More page
-    $("exportCsvBtn")?.addEventListener("click", async () => {
-      const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
-      entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-      downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
-    });
-
-    $("exportJsonBtn")?.addEventListener("click", async () => {
-      const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
-      entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-      downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-    });
-
-    $("wipeBtn")?.addEventListener("click", async () => {
-      await wipeAllData();
-      await ensureDefaultTypes();
+    // ---------- MAIN ----------
+    if (PAGE === "main") {
       await renderTypeDatalist();
       await renderTypesListInMore();
-      await refreshUI();
-    });
 
-    // flagged hours
-    const saveFlaggedBtn = $("saveFlaggedBtn");
-    if (saveFlaggedBtn) saveFlaggedBtn.addEventListener("click", async () => {
-      const fh = $("flaggedHours");
-      const val = fh ? Number(fh.value || 0) : 0;
-      if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
-      await setThisWeekFlag(val);
-      await refreshUI();
-      alert("Flagged hours saved for this week.");
-    });
+      $("refreshBtn")?.addEventListener("click", refreshUI);
+      $("filterSelect")?.addEventListener("change", refreshUI);
 
-    // payroll photo save
-    const savePayrollPhotoBtn = $("savePayrollPhotoBtn");
-    if (savePayrollPhotoBtn) {
-      savePayrollPhotoBtn.addEventListener("click", async () => {
-        const pick = $("payrollPhotoPick");
-        const cam = $("payrollPhotoTake");
-        const file =
-          (cam && cam.files && cam.files[0]) ? cam.files[0] :
-          (pick && pick.files && pick.files[0]) ? pick.files[0] : null;
+      window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
 
-        if (!file) return alert("Choose a payroll photo first.");
-        const photoDataUrl = await fileToDataURL(file);
-        await saveWeekPayroll({ photoDataUrl, ocrText: $("payrollOcrText") ? $("payrollOcrText").value : "" });
-        await refreshPayrollUI();
-        alert("Payroll photo saved for this week.");
-      });
-    }
-
-    // photo gallery
-    initPhotosUI();
-
-    // ---------------- SAVE + CLEAR (single source of truth) ----------------
-    let refType = "RO";
-    const setRefType = (next) => {
-      refType = next === "STOCK" ? "STOCK" : "RO";
-      document.getElementById("refTypeRO")?.classList.toggle("active", refType === "RO");
-      document.getElementById("refTypeSTK")?.classList.toggle("active", refType === "STOCK");
-    };
-    setRefType("RO");
-    document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
-    document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
-
-    const form = document.getElementById("logForm");
-    const saveBtn = document.getElementById("saveBtn");        // Save Entry button id must be saveBtn
-    const clearBtn = document.getElementById("clearBtn");      // Clear button id must be clearBtn
-
-    function handleClear(ev) {
-      if (ev) ev.preventDefault();
-      document.getElementById("ref") && (document.getElementById("ref").value = "");
-      document.getElementById("vin8") && (document.getElementById("vin8").value = "");
-      document.getElementById("typeText") && (document.getElementById("typeText").value = "");
-      document.getElementById("hours") && (document.getElementById("hours").value = "");
-      const rateEl = document.querySelector('input[name="rate"]');
-      if (rateEl) rateEl.value = "15";
-      const notesEl = document.querySelector('textarea[name="notes"], input[name="notes"]');
-      if (notesEl) notesEl.value = "";
-      const photoEl = document.getElementById("proofPhoto");
-      if (photoEl) photoEl.value = "";
-      setStatusMsg("Cleared.");
-    }
-
-    async function handleSave(ev) {
-      if (ev) ev.preventDefault();
-
-      const disable = (on) => {
-        if (saveBtn) saveBtn.disabled = on;
-        const submitBtn = form?.querySelector('button[type="submit"]');
-        if (submitBtn) submitBtn.disabled = on;
+      const setRangeMode = (m) => {
+        rangeMode = m;
+        window.__RANGE_MODE__ = m;
+        document.getElementById("rangeDayBtn")?.classList.toggle("active", m === "day");
+        document.getElementById("rangeWeekBtn")?.classList.toggle("active", m === "week");
+        document.getElementById("rangeMonthBtn")?.classList.toggle("active", m === "month");
+        document.getElementById("rangeAllBtn")?.classList.toggle("active", m === "all");
+        refreshUI();
       };
 
-      const empId = getEmpId();
-      if (!empId) {
-        toast("Employee # required");
-        setStatusMsg("Employee # required");
-        return;
-      }
-      setActiveEmp(empId);
+      document.getElementById("rangeDayBtn")?.addEventListener("click", () => setRangeMode("day"));
+      document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
+      document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
+      document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
+      setRangeMode(window.__RANGE_MODE__);
 
-      const ref = (document.getElementById("ref")?.value || "")
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, "");
-      const vin8 = (document.getElementById("vin8")?.value || "")
-        .trim()
-        .toUpperCase()
-        .replace(/[^A-HJ-NPR-Z0-9]/g, "")
-        .slice(0, 8);
-      const type = (document.getElementById("typeText")?.value || "").trim();
-      const hours = round1(num(hoursInput?.value));
-      const rate = getRate();
-      const notes = getNotes();
+      const hoursInput = $("hours");
+      const rateInput  = document.querySelector('input[name="rate"]');
 
-      if (!ref)  { toast("RO/Stock required"); setStatusMsg("RO/Stock required"); return; }
-      if (!/^[A-Z0-9-]{3,20}$/.test(ref)) {
-        toast("Ref must be letters/numbers");
-        setStatusMsg("Invalid RO/Stock #");
-        return;
-      }
-      if (!type) { toast("Type required");     setStatusMsg("Type required");     return; }
-      if (!Number.isFinite(hours) || hours <= 0) { toast("Hours must be greater than 0"); setStatusMsg("Invalid hours"); return; }
-      if (!(rate > 0))  { toast("Rate must be > 0");  setStatusMsg("Rate must be > 0");  return; }
-
-      disable(true);
-      setStatusMsg("Saving...");
-
-      try {
-        const id = uuid();
-        const createdAt = nowISO();
-        const dayKey = todayKeyLocal();
-        const weekStartKey = dateKey(startOfWeekLocal(new Date()));
-
-        const photoEl = document.getElementById("proofPhoto");
-        const photoFile = photoEl?.files?.[0] || null;
-        const photoDataUrl = photoFile ? await fileToDataURL(photoFile) : null;
-
-        const earnings = Number((hours * rate).toFixed(2));
-
-        await put(STORES.entries, {
-          id,
-          createdAt,
-          dayKey,
-          weekStartKey,
-          empId,
-          refType,
-          ref,
-          ro: ref,
-          vin8,
-          typeText: type,
-          type,
-          hours,
-          rate,
-          earnings,
-          notes,
-          photoDataUrl
+      if (hoursInput) {
+        hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
+        hoursInput.addEventListener("blur", () => {
+          const v = round1(num(hoursInput.value));
+          if (Number.isFinite(v) && v > 0) hoursInput.value = String(v);
+          else if (hoursInput.value) hoursInput.value = "";
         });
-
-        await upsertTypeDefaults(type, hours, rate);
-
-        toast("Saved ✅");
-        setStatusMsg("Saved.");
-
-        await refreshUI();
-        handleClear();
-      } catch (e) {
-        console.error(e);
-        toast("Save failed");
-        setStatusMsg("Save failed");
-        alert("SAVE ERROR: " + (e?.message || e));
-      } finally {
-        disable(false);
       }
+      if (rateInput) rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
+
+      // Photo grid exists inside main More modal too
+      initPhotosUI();
+
+      // KEEP your existing handleClear + handleSave functions unchanged.
+      // This block assumes they exist in the same scope as before.
+      const form = document.getElementById("logForm");
+      const saveBtn = document.getElementById("saveBtn");
+      const clearBtn = document.getElementById("clearBtn");
+
+      if (form) form.addEventListener("submit", handleSave);
+      if (saveBtn) saveBtn.addEventListener("click", handleSave);
+      if (clearBtn) clearBtn.addEventListener("click", handleClear);
+
+      await refreshUI();
+      return;
     }
 
-    if (form) form.addEventListener("submit", handleSave);
-    if (saveBtn) saveBtn.addEventListener("click", handleSave);
-    if (clearBtn) clearBtn.addEventListener("click", handleClear);
+    // ---------- MORE ----------
+    if (PAGE === "more") {
+      $("exportCsvBtn")?.addEventListener("click", async () => {
+        const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
+        entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
+      });
 
-    await refreshUI();
+      $("exportJsonBtn")?.addEventListener("click", async () => {
+        const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
+        entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
+      });
+
+      $("refreshBtn")?.addEventListener("click", async () => {
+        await renderPhotoGrid();
+      });
+
+      $("saveFlaggedBtn")?.addEventListener("click", async () => {
+        const fh = $("flaggedHours");
+        const val = fh ? Number(fh.value || 0) : 0;
+        if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
+        await setThisWeekFlag(val);
+        alert("Flagged hours saved for this week.");
+      });
+
+      $("wipeBtn")?.addEventListener("click", async () => {
+        await wipeAllData();
+        await ensureDefaultTypes();
+        await renderPhotoGrid();
+      });
+
+      initPhotosUI();
+      await renderPhotoGrid();
+    }
   })();
 });
