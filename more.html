@@ -88,6 +88,32 @@
 
   </main>
 
+  <script>
+  (function () {
+    function show(msg) {
+      try {
+        // show once, avoid infinite loops
+        if (window.__ERR_SHOWN__) return;
+        window.__ERR_SHOWN__ = true;
+        alert("MORE PAGE ERROR:\n\n" + msg);
+      } catch {}
+    }
+
+    window.addEventListener("error", function (e) {
+      const m = (e && e.message) ? e.message : String(e);
+      const src = e && e.filename ? e.filename : "";
+      const line = e && e.lineno ? e.lineno : "";
+      show(m + "\n" + src + ":" + line);
+    });
+
+    window.addEventListener("unhandledrejection", function (e) {
+      const r = e && e.reason ? e.reason : e;
+      const m = (r && r.message) ? r.message : String(r);
+      show("Unhandled Promise Rejection:\n" + m);
+    });
+  })();
+  </script>
+
   <script src="./app.20251222b.js?v=20251222b" defer></script>
 </body>
 </html>
