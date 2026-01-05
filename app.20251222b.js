@@ -1098,7 +1098,7 @@ function renderPhotoGallery(entries){
   if (!el) return;
 
   const withPhotos = (entries || [])
-    .filter(e => e && e.photoDataUrl)
+    .filter(e => e && (e.photoDataUrl || e.proofPhotoDataUrl || e.photo))
     .sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   if (!withPhotos.length) {
@@ -1108,13 +1108,14 @@ function renderPhotoGallery(entries){
 
   el.innerHTML = withPhotos.slice(0, 60).map(e => {
     const title = `${(e.refType || "RO")} ${(e.ro || "").toString().toUpperCase()} • ${(e.typeText || "").toString()}`;
+    const photoUrl = entryPhotoUrl(e);
     return `
       <img
         class="thumb"
-        src="${e.photoDataUrl}"
+        src="${photoUrl}"
         alt="${title.replace(/"/g,'')}"
         title="${title.replace(/"/g,'')}"
-        data-full="${e.photoDataUrl}"
+        data-full="${photoUrl}"
       />
     `;
   }).join("");

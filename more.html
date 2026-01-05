@@ -35,6 +35,20 @@
   <main class="wrap">
 
     <section class="card">
+      <div class="h">Employee</div>
+      <div class="muted">Required to load your saved entries/photos on this device.</div>
+      <div class="row" style="margin-top:10px">
+        <input
+          id="empId"
+          inputmode="numeric"
+          placeholder="Enter employee #"
+          style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc"
+        />
+        <button class="btn" type="button" id="refreshBtn">Load</button>
+      </div>
+    </section>
+
+    <section class="card">
       <div class="h">Payroll Compare (This Week)</div>
       <div class="muted">Set what payroll flagged so the main page can show the difference.</div>
       <div class="row" style="margin-top:10px">
