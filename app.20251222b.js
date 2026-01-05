@@ -66,6 +66,13 @@ function formatHours(n){
   const x = round1(n);
   return (x % 1 === 0) ? String(x.toFixed(0)) : String(x.toFixed(1));
 }
+function formatDayLabel(dayKey){
+  if (!dayKey) return "";
+  const [y, m, d] = String(dayKey).split("-").map(Number);
+  if (!y || !m || !d) return "";
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
 function getEmpId(){
   const inp = $("empId");
   const val = inp ? (inp.value || "").trim() : "";
@@ -328,6 +335,17 @@ function wireSuggestionButtons(s) {
 
   const bHRS = $("useSugHRS");
   if (bHRS && hrsEl) bHRS.onclick = () => { hrsEl.value = s.hours; hrsEl.dispatchEvent(new Event("input")); };
+}
+
+function matchesSearch(e, q){
+  if (!q) return true;
+  const hay = [
+    e.ref || e.ro || "",
+    e.vin8 || "",
+    e.type || e.typeText || "",
+    e.notes || ""
+  ].join(" ").toLowerCase();
+  return hay.includes(q);
 }
 
 /* -------------------- Week helpers (Mon–Sun) -------------------- */
@@ -673,14 +691,19 @@ function renderList(entries, mode){
   list.innerHTML = "";
 
   const dayKey = todayKeyLocal();
-  const filtered = (mode === "today") ? entries.filter(e => e.dayKey === dayKey) : entries;
+  const byRange = (mode === "today") ? entries.filter(e => e.dayKey === dayKey) : entries;
 
-  if (filtered.length === 0) {
-    list.innerHTML = `<div class="muted">No entries.</div>`;
+  const q = (document.getElementById("searchBox")?.value || "").trim().toLowerCase();
+  const visible = byRange.filter(e => matchesSearch(e, q));
+  const capped = visible.slice(0, 60);
+
+  if (capped.length === 0) {
+    const msg = q ? `No entries match "${escapeHtml(q)}".` : "No entries match your search.";
+    list.innerHTML = `<div class="muted">${msg}</div>`;
     return;
   }
 
-  for (const e of filtered.slice(0, 60)) {
+  const buildEntry = (e) => {
     const div = document.createElement("div");
     div.className = "item";
     const ts = new Date(e.createdAt).toLocaleString();
@@ -704,12 +727,43 @@ function renderList(entries, mode){
         </div>
       </div>
     `;
-    list.appendChild(div);
-
     if (e.photoDataUrl) {
       const btn = div.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhotoModal(e));
     }
+    return div;
+  };
+
+  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
+  if (isWeekRange) {
+    const groups = new Map();
+    for (const e of capped) {
+      const key = e.dayKey || "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    }
+    const dayKeys = Array.from(groups.keys()).sort((a, b) => (b || "").localeCompare(a || ""));
+    for (const key of dayKeys) {
+      const bucket = groups.get(key) || [];
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.justifyContent = "space-between";
+      header.style.alignItems = "baseline";
+      header.style.margin = "8px 0";
+      header.innerHTML = `
+        <div class="mono">${escapeHtml(key || "Unknown")}</div>
+        <div class="muted small">${formatDayLabel(key)}</div>
+      `;
+      list.appendChild(header);
+      for (const e of bucket) {
+        list.appendChild(buildEntry(e));
+      }
+    }
+    return;
+  }
+
+  for (const e of capped) {
+    list.appendChild(buildEntry(e));
   }
 }
 
@@ -1058,6 +1112,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // wiring
     $("refreshBtn")?.addEventListener("click", refreshUI);
     $("filterSelect")?.addEventListener("change", refreshUI);
+    $("searchBox")?.addEventListener("input", refreshUI);
 
     const empInput = document.getElementById("empId");
     if (empInput) {

@@ -542,7 +542,7 @@
     <div class="itemTop">
       <div>
         <div class="muted">Recent Entries (newest first)</div>
-        <div class="muted">If totals look stale after export, tap Refresh.</div>
+        <div class="muted">Search works across RO/Stock, VIN8, Type, Notes.</div>
       </div>
       <div class="right">
         <div class="muted">Filter</div>
@@ -552,6 +552,13 @@
         </select>
       </div>
     </div>
+
+    <div class="row" style="margin-top:12px;">
+      <label class="lbl" for="searchBox">Search</label>
+      <input id="searchBox" placeholder="Search RO/Stock, VIN8, Type, Notes…" autocomplete="off" />
+      <div class="hint">Tip: type part of a RO, VIN8, or work type.</div>
+    </div>
+
     <div class="list" id="entryList" style="margin-top:12px;"></div>
   </section>
 </main>
@@ -651,6 +658,6 @@
 </div>
 
 <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
-<script src="./app.20251222b.js?v=20251222b"></script>
+<script src="./app.20251222b.js?v=20251222c"></script>
 </body>
 </html>
