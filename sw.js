@@ -1,4 +1,4 @@
-const CACHE = "frlog-cache-20251222b";
+const CACHE = "frlog-v20251222b";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
@@ -7,6 +7,9 @@ self.addEventListener("install", (e) => {
     "./index.html",
     "./more.html",
     "./app.20251222b.js",
+    "./manifest.webmanifest",
+    "./icon-192.png",
+    "./icon-512.png"
   ])));
 });
 
