@@ -348,6 +348,65 @@ function matchesSearch(e, q){
   return hay.includes(q);
 }
 
+function weekdayLabel(i){
+  // i: 0..6 where 0 = Monday
+  return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i] || "";
+}
+
+function computeWeekBreakdown(entries, weekStart){
+  const days = [];
+  for (let i = 0; i < 7; i++){
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    const key = dateKey(d);
+    const dayEntries = entries.filter(e => e.dayKey === key);
+    const totals = computeTotals(dayEntries);
+    days.push({ i, key, totals, count: totals.count });
+  }
+  return days;
+}
+
+function renderWeekBreakdown(days){
+  const card = document.getElementById("weekBreakdownCard");
+  const list = document.getElementById("weekBreakdownList");
+  if (!card || !list) return;
+
+  if (!days || !days.length){
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "block";
+
+  const picked = window.__WEEK_DAY_PICK__ || ""; // dayKey or ""
+  list.innerHTML = days.map(d => {
+    const active = picked === d.key;
+    return `
+      <div class="item" data-daykey="${d.key}" style="${active ? "outline:2px solid rgba(47,125,255,.7);" : ""}">
+        <div class="itemTop">
+          <div>
+            <div class="mono">${weekdayLabel(d.i)} • ${d.key}</div>
+            <div class="small muted">${d.count} entries</div>
+          </div>
+          <div class="right">
+            <div class="mono">${d.totals.hours.toFixed(1)} hrs</div>
+            <div style="margin-top:6px;">${formatMoney(d.totals.dollars)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Tap to filter list by that day; tap again to clear
+  list.querySelectorAll(".item[data-daykey]").forEach(el => {
+    el.addEventListener("click", () => {
+      const dk = el.getAttribute("data-daykey") || "";
+      window.__WEEK_DAY_PICK__ = (window.__WEEK_DAY_PICK__ === dk) ? "" : dk;
+      refreshUI();
+    });
+  });
+}
+
 /* -------------------- Week helpers (Mon–Sun) -------------------- */
 function dateKey(d){
   const y = d.getFullYear();
@@ -673,7 +732,19 @@ function toCSV(entries){
   return [header.join(","), ...rows].join("\n");
 }
 
-function downloadText(filename, text, mime="text/plain"){
+async function downloadText(filename, text, mime="text/plain"){
+  // iOS-friendly: try Share Sheet first
+  try{
+    const blob = new Blob([text], { type: mime });
+    const file = new File([blob], filename, { type: mime });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  } catch {}
+
+  // fallback: normal download
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -693,8 +764,11 @@ function renderList(entries, mode){
   const dayKey = todayKeyLocal();
   const byRange = (mode === "today") ? entries.filter(e => e.dayKey === dayKey) : entries;
 
+  const pickedDay = (mode === "week") ? (window.__WEEK_DAY_PICK__ || "") : "";
+  const ranged = pickedDay ? byRange.filter(e => e.dayKey === pickedDay) : byRange;
+
   const q = (document.getElementById("searchBox")?.value || "").trim().toLowerCase();
-  const visible = byRange.filter(e => matchesSearch(e, q));
+  const visible = ranged.filter(e => matchesSearch(e, q));
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
@@ -805,7 +879,24 @@ async function refreshUI(){
   const mode = window.__RANGE_MODE__ || rangeMode || "day";
   rangeMode = mode;
 
-  const filtered = filterByMode(entries, mode);
+  let filtered = filterByMode(entries, mode);
+
+  if (mode === "week") {
+    // optional day filter inside week
+    const pick = window.__WEEK_DAY_PICK__ || "";
+    if (pick) filtered = filtered.filter(e => e.dayKey === pick);
+
+    // render week breakdown (always uses full week, not the picked day)
+    const ws0 = startOfWeekLocal(new Date());
+    const days = computeWeekBreakdown(entries.filter(e => inWeek(e.dayKey, ws0)), ws0);
+    renderWeekBreakdown(days);
+  } else {
+    // hide week breakdown when not in week mode
+    const card = document.getElementById("weekBreakdownCard");
+    if (card) card.style.display = "none";
+    window.__WEEK_DAY_PICK__ = ""; // reset when leaving week mode
+  }
+
   window.__RANGE_FILTERED__ = filtered;
   const totals = computeTotals(filtered);
 
@@ -863,6 +954,13 @@ async function refreshUI(){
   const listFilter = fs ? fs.value : "today";
   const listMode = (listFilter === "today") ? "today" : "all";
   renderList(filtered, listMode);
+
+  if (mode === "week") {
+    renderWeekBreakdown(computeWeekBreakdown(filtered, ws));
+  } else {
+    renderWeekBreakdown([]);
+    window.__WEEK_DAY_PICK__ = "";
+  }
 
   // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
