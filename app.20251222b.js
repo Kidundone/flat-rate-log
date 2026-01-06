@@ -14,11 +14,29 @@ let ACTIVE_EMP = (typeof localStorage !== "undefined" ? localStorage.getItem(EMP
 
 console.log("BUILD", "delta-fix-20251222b", new Date().toISOString());
 
-const PAGE = document.body?.dataset?.page || "unknown";
+const PAGE = location.pathname.endsWith("more.html") ? "more" : "main";
+console.log("PAGE:", PAGE);
 const IS_MAIN = PAGE === "main";
 const IS_MORE = PAGE === "more";
 
+// Global guards: don't crash on unexpected errors
+window.addEventListener("error", (e) => {
+  console.warn("Global error suppressed:", e.message);
+}, { once: true });
+window.addEventListener("unhandledrejection", (e) => {
+  console.warn("Unhandled rejection suppressed:", e.reason);
+}, { once: true });
+
 let rangeMode = "day";
+let currentRefType = "RO";
+
+function setRefType(t) {
+  currentRefType = t === "STOCK" ? "STOCK" : "RO";
+  const ro = document.getElementById("refTypeRO");
+  const stk = document.getElementById("refTypeSTK");
+  ro?.classList.toggle("active", currentRefType === "RO");
+  stk?.classList.toggle("active", currentRefType === "STOCK");
+}
 
 function setStatusMsg(msg){
   const s = $("statusMsg");
@@ -36,6 +54,16 @@ function toast(msg){
 function num(v){
   const x = parseFloat(v);
   return Number.isFinite(x) ? x : 0;
+}
+
+function setRangeMode(m) {
+  rangeMode = m;
+  window.__RANGE_MODE__ = m;
+  document.getElementById("rangeDayBtn")?.classList.toggle("active", m === "day");
+  document.getElementById("rangeWeekBtn")?.classList.toggle("active", m === "week");
+  document.getElementById("rangeMonthBtn")?.classList.toggle("active", m === "month");
+  document.getElementById("rangeAllBtn")?.classList.toggle("active", m === "all");
+  if (typeof refreshUI === "function" && PAGE === "main") refreshUI();
 }
 
 function getRate(){
@@ -513,6 +541,88 @@ function groupByDay(entries){
   }
   const keys = Array.from(map.keys()).sort((a,b)=>b.localeCompare(a));
   return keys.map(k => ({ dayKey: k, entries: map.get(k) }));
+}
+
+function handleClear(ev) {
+  if (ev) ev.preventDefault();
+  const empInputEl = document.getElementById("empId");
+  const refEl = document.getElementById("ref");
+  const vinEl = document.getElementById("vin8");
+  const typeEl = document.getElementById("typeText");
+  const hoursEl = document.getElementById("hours");
+  const rateEl = document.querySelector('input[name="rate"]');
+  const photoEl = document.getElementById("proofPhoto");
+  const notesEl = document.querySelector('textarea[name="notes"]');
+
+  if (refEl) refEl.value = "";
+  if (vinEl) vinEl.value = "";
+  if (typeEl) typeEl.value = "";
+  if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
+  if (rateEl) { rateEl.value = "15"; rateEl.dataset.touched = ""; }
+  if (notesEl) notesEl.value = "";
+  if (photoEl) photoEl.value = "";
+  if (empInputEl) empInputEl.value = getEmpId();
+  setRefType("RO");
+}
+
+async function handleSave(ev) {
+  if (ev) ev.preventDefault();
+  const empId = getEmpId();
+  if (!empId) { toast("Employee # required"); return; }
+
+  const refEl = document.getElementById("ref");
+  const vinEl = document.getElementById("vin8");
+  const typeEl = document.getElementById("typeText");
+  const hoursEl = document.getElementById("hours");
+  const rateEl = document.querySelector('input[name="rate"]');
+  const photoEl = document.getElementById("proofPhoto");
+  const notesEl = document.querySelector('textarea[name="notes"]');
+
+  const ref = (refEl?.value || "").trim();
+  const vin8 = (vinEl?.value || "").trim().toUpperCase();
+  const typeName = (typeEl?.value || "").trim();
+  const hoursVal = num(hoursEl?.value);
+  const rateVal = num(rateEl?.value) || 15;
+  const notes = (notesEl?.value || "").trim();
+
+  if (!ref) { toast("Ref required"); return; }
+  if (!typeName) { toast("Type required"); return; }
+  if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
+
+  let photoDataUrl = null;
+  try {
+    const file = photoEl?.files?.[0];
+    if (file) photoDataUrl = await fileToDataURL(file);
+  } catch (e) {
+    console.error("photo save failed", e);
+  }
+
+  const createdAt = nowISO();
+  const dayKey = dayKeyFromISO(createdAt);
+  const entry = {
+    id: uuid(),
+    empId,
+    createdAt,
+    dayKey,
+    weekStartKey: dateKey(startOfWeekLocal(new Date(createdAt))),
+    refType: currentRefType,
+    ref,
+    ro: ref,
+    vin8,
+    type: typeName,
+    typeText: typeName,
+    hours: round1(hoursVal),
+    rate: round2(rateVal),
+    earnings: round2(hoursVal * rateVal),
+    notes,
+    photoDataUrl
+  };
+
+  await put(STORES.entries, entry);
+  await upsertTypeDefaults(typeName, entry.hours, entry.rate);
+  toast("Saved");
+  handleClear();
+  await refreshUI();
 }
 
 function showHistory(open=true){
@@ -1170,6 +1280,35 @@ async function registerSW() {
   }
 }
 
+async function exportCSV(){
+  const all = await getAll(STORES.entries);
+  const entries = filterEntriesByEmp(all, getEmpId(), true);
+  entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries, true), "text/csv");
+}
+
+async function exportJSON(){
+  const all = await getAll(STORES.entries);
+  const entries = filterEntriesByEmp(all, getEmpId(), true);
+  entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
+}
+
+async function saveFlaggedHours(){
+  const fh = document.getElementById("flaggedHours");
+  const val = fh ? Number(fh.value || 0) : 0;
+  if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
+  await setThisWeekFlag(val);
+  alert("Flagged hours saved for this week.");
+}
+
+async function wipeLocalOnly(){
+  await clearStore(STORES.entries);
+  await clearStore(STORES.types);
+  await renderPhotoGrid(true);
+  await ensureDefaultTypes();
+}
+
 async function refreshPayrollUI(){
   const preview = $("payrollPreview");
   const ocrBox = $("payrollOcrText");
@@ -1375,81 +1514,65 @@ function initPhotosUI(){
 
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("PAGE:", PAGE);
-  // Never crash because an element doesn't exist on this page.
-  const has = (id) => !!document.getElementById(id);
-
-  // Only main page has the "More" modal/tabs
-  if (IS_MAIN) {
-    if (has("moreModal")) initMoreTabs();
-    document.getElementById("moreBtn")?.addEventListener("click", openMore);
-    document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
-    document.getElementById("moreModal")?.addEventListener("click", (e) => {
-      if (e.target && e.target.id === "moreModal") closeMore();
-    });
-  }
-
   (async () => {
-    // SW should never take the page down if it fails on iOS
-    try { await registerSW(); } catch (e) { console.log("SW skipped:", e?.message || e); }
+    // Service worker: SAFE on both pages
+    try {
+      await registerSW();
+    } catch (e) {
+      console.warn("SW skipped:", e);
+    }
 
     await ensureDefaultTypes();
 
-    // ----- EMPLOYEE # (works on both pages if present) -----
+    // Employee input exists on both pages
     const empInput = document.getElementById("empId");
     if (empInput) {
-      empInput.value = ACTIVE_EMP || "";
+      empInput.value = getEmpId();
       empInput.addEventListener("input", () => {
         setActiveEmp(empInput.value.trim());
-        if (IS_MAIN) refreshUI();
-        if (IS_MORE) renderPhotoGrid(true);
+        if (PAGE === "main") refreshUI?.();
+        if (PAGE === "more") renderPhotoGrid?.(true);
       });
     }
 
     const empId = getEmpId();
-    if (empId) {
-      await backfillDayKeysForEmp(empId);
-    }
+    if (empId) await backfillDayKeysForEmp(empId);
 
-    // ===================== MAIN PAGE ONLY =====================
-    if (IS_MAIN && has("logForm")) {
+    // ================= MAIN PAGE ONLY =================
+    if (PAGE === "main") {
+      if (typeof handleSave !== "function") {
+        console.error("handleSave missing on main page");
+        return;
+      }
+
+      initMoreTabs?.();
+
+      document.getElementById("moreBtn")?.addEventListener("click", openMore);
+      document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
+      document.getElementById("moreModal")?.addEventListener("click", (e) => {
+        if (e.target && e.target.id === "moreModal") closeMore();
+      });
+
       await renderTypeDatalist();
       await renderTypesListInMore();
 
-      $("refreshBtn")?.addEventListener("click", refreshUI);
-      $("filterSelect")?.addEventListener("change", refreshUI);
+      document.getElementById("filterSelect")?.addEventListener("change", refreshUI);
+      document.getElementById("refreshBtn")?.addEventListener("click", refreshUI);
 
       const sIn = document.getElementById("searchInput");
       const sClr = document.getElementById("clearSearchBtn");
       if (sIn) sIn.addEventListener("input", () => refreshUI());
       if (sClr) sClr.addEventListener("click", () => { if (sIn) sIn.value = ""; refreshUI(); });
 
-      window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
-      const setRangeMode = (m) => {
-        rangeMode = m;
-        window.__RANGE_MODE__ = m;
-        document.getElementById("rangeDayBtn")?.classList.toggle("active", m === "day");
-        document.getElementById("rangeWeekBtn")?.classList.toggle("active", m === "week");
-        document.getElementById("rangeMonthBtn")?.classList.toggle("active", m === "month");
-        document.getElementById("rangeAllBtn")?.classList.toggle("active", m === "all");
-        refreshUI();
-      };
-
       document.getElementById("rangeDayBtn")?.addEventListener("click", () => setRangeMode("day"));
       document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
       document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
       document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
-      try { setRangeMode(window.__RANGE_MODE__); }
-      catch (e) { console.error("setRangeMode failed", e); }
+      setRangeMode(window.__RANGE_MODE__ || "day");
 
-      document.getElementById("historyBtn")?.addEventListener("click", () => {
-        showHistory(true);
-        renderHistory();
-      });
-      document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
-      document.getElementById("histRange")?.addEventListener("change", renderHistory);
-      document.getElementById("histGroup")?.addEventListener("change", renderHistory);
-      document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
+      document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
+      document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
+      setRefType(document.getElementById("refTypeSTK")?.classList.contains("active") ? "STOCK" : "RO");
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');
@@ -1464,162 +1587,41 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       if (rateInput) rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
 
-      // Photo grid exists inside main More modal too
-      initPhotosUI();
       document.getElementById("closePhotoBtn")?.addEventListener("click", closePhotoModal);
       document.getElementById("photoModal")?.addEventListener("click", (e) => {
         if (e.target && e.target.id === "photoModal") closePhotoModal();
       });
 
-      // KEEP your existing handleClear + handleSave functions unchanged.
-      // This block assumes they exist in the same scope as before.
       const form = document.getElementById("logForm");
-      const saveBtn = document.getElementById("saveBtn");
-      const clearBtn = document.getElementById("clearBtn");
+      form?.addEventListener("submit", handleSave);
+      document.getElementById("saveBtn")?.addEventListener("click", handleSave);
+      document.getElementById("clearBtn")?.addEventListener("click", handleClear);
 
-      let currentRefType = "RO";
-      const refTypeRO = document.getElementById("refTypeRO");
-      const refTypeSTK = document.getElementById("refTypeSTK");
-      const setRefType = (t) => {
-        currentRefType = t === "STOCK" ? "STOCK" : "RO";
-        refTypeRO?.classList.toggle("active", currentRefType === "RO");
-        refTypeSTK?.classList.toggle("active", currentRefType === "STOCK");
-      };
-      if (refTypeRO) refTypeRO.addEventListener("click", () => setRefType("RO"));
-      if (refTypeSTK) refTypeSTK.addEventListener("click", () => setRefType("STOCK"));
-      setRefType(refTypeSTK?.classList.contains("active") ? "STOCK" : "RO");
+      document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
+      document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
+      document.getElementById("histRange")?.addEventListener("change", renderHistory);
+      document.getElementById("histGroup")?.addEventListener("change", renderHistory);
+      document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
-      function handleClear(ev) {
-        if (ev) ev.preventDefault();
-        const empInputEl = document.getElementById("empId");
-        const refEl = document.getElementById("ref");
-        const vinEl = document.getElementById("vin8");
-        const typeEl = document.getElementById("typeText");
-        const hoursEl = document.getElementById("hours");
-        const rateEl = document.querySelector('input[name="rate"]');
-        const photoEl = document.getElementById("proofPhoto");
-        const notesEl = document.querySelector('textarea[name="notes"]');
-
-        if (refEl) refEl.value = "";
-        if (vinEl) vinEl.value = "";
-        if (typeEl) typeEl.value = "";
-        if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
-        if (rateEl) { rateEl.value = "15"; rateEl.dataset.touched = ""; }
-        if (notesEl) notesEl.value = "";
-        if (photoEl) photoEl.value = "";
-        if (empInputEl) empInputEl.value = getEmpId();
-        setRefType("RO");
-      }
-
-      async function handleSave(ev) {
-        if (ev) ev.preventDefault();
-        const empId = getEmpId();
-        if (!empId) { toast("Employee # required"); return; }
-
-        const refEl = document.getElementById("ref");
-        const vinEl = document.getElementById("vin8");
-        const typeEl = document.getElementById("typeText");
-        const hoursEl = document.getElementById("hours");
-        const rateEl = document.querySelector('input[name="rate"]');
-        const photoEl = document.getElementById("proofPhoto");
-        const notesEl = document.querySelector('textarea[name="notes"]');
-
-        const ref = (refEl?.value || "").trim();
-        const vin8 = (vinEl?.value || "").trim().toUpperCase();
-        const typeName = (typeEl?.value || "").trim();
-        const hoursVal = num(hoursEl?.value);
-        const rateVal = num(rateEl?.value) || 15;
-        const notes = (notesEl?.value || "").trim();
-
-        if (!ref) { toast("Ref required"); return; }
-        if (!typeName) { toast("Type required"); return; }
-        if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
-
-        let photoDataUrl = null;
-        try {
-          const file = photoEl?.files?.[0];
-          if (file) photoDataUrl = await fileToDataURL(file);
-        } catch (e) {
-          console.error("photo save failed", e);
-        }
-
-        const createdAt = nowISO();
-        const dayKey = dayKeyFromISO(createdAt);
-        const entry = {
-          id: uuid(),
-          empId,
-          createdAt,
-          dayKey,
-          weekStartKey: dateKey(startOfWeekLocal(new Date(createdAt))),
-          refType: currentRefType,
-          ref,
-          ro: ref,
-          vin8,
-          type: typeName,
-          typeText: typeName,
-          hours: round1(hoursVal),
-          rate: round2(rateVal),
-          earnings: round2(hoursVal * rateVal),
-          notes,
-          photoDataUrl
-        };
-
-        await put(STORES.entries, entry);
-        await upsertTypeDefaults(typeName, entry.hours, entry.rate);
-        toast("Saved");
-        handleClear();
-        await refreshUI();
-      }
-
-      if (form) form.addEventListener("submit", handleSave);
-      if (saveBtn) saveBtn.addEventListener("click", handleSave);
-      if (clearBtn) clearBtn.addEventListener("click", handleClear);
-
-      try { await refreshUI(); }
-      catch (e) { console.error("refreshUI failed", e); }
-      return; // IMPORTANT: do not run More wiring on main
+      initPhotosUI();
+      await refreshUI();
+      return;
     }
 
-    // ===================== MORE PAGE ONLY =====================
-    if (IS_MORE) {
-      // Export buttons
-      document.getElementById("exportCsvBtn")?.addEventListener("click", async () => {
-        const all = await getAll(STORES.entries);
-        const entries = filterEntriesByEmp(all, getEmpId(), true); // allow all if emp blank
-        entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-        downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
-      });
+    // ================= MORE PAGE ONLY =================
+    if (PAGE === "more") {
+      document.getElementById("exportCsvBtn")?.addEventListener("click", exportCSV);
+      document.getElementById("exportJsonBtn")?.addEventListener("click", exportJSON);
+      document.getElementById("refreshBtn")?.addEventListener("click", () => renderPhotoGrid(true));
 
-      document.getElementById("exportJsonBtn")?.addEventListener("click", async () => {
-        const all = await getAll(STORES.entries);
-        const entries = filterEntriesByEmp(all, getEmpId(), true);
-        entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-        downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-      });
+      document.getElementById("saveFlaggedBtn")?.addEventListener("click", saveFlaggedHours);
 
-      // Refresh on more page just re-renders photos
-      document.getElementById("refreshBtn")?.addEventListener("click", async () => {
-        await renderPhotoGrid(true);
-      });
-
-      // flagged hours
-      document.getElementById("saveFlaggedBtn")?.addEventListener("click", async () => {
-        const fh = document.getElementById("flaggedHours");
-        const val = fh ? Number(fh.value || 0) : 0;
-        if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
-        await setThisWeekFlag(val);
-        alert("Flagged hours saved for this week.");
-      });
-
-      // wipe
-      document.getElementById("wipeBtn")?.addEventListener("click", async () => {
-        await wipeAllData();
-        await ensureDefaultTypes();
-        await renderPhotoGrid(true);
-      });
+      document.getElementById("wipeBtn")?.addEventListener("click", wipeLocalOnly);
+      document.getElementById("wipeAllBtn")?.addEventListener("click", wipeAllData);
 
       initPhotosUI();
       await renderPhotoGrid(true);
+      return;
     }
   })();
 });
