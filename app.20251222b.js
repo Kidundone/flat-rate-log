@@ -15,6 +15,8 @@ let ACTIVE_EMP = (typeof localStorage !== "undefined" ? localStorage.getItem(EMP
 console.log("BUILD", "delta-fix-20251222b", new Date().toISOString());
 
 const PAGE = document.body?.dataset?.page || "unknown";
+const IS_MAIN = PAGE === "main";
+const IS_MORE = PAGE === "more";
 
 let rangeMode = "day";
 
@@ -339,15 +341,15 @@ function wireSuggestionButtons(s) {
   if (bHRS && hrsEl) bHRS.onclick = () => { hrsEl.value = s.hours; hrsEl.dispatchEvent(new Event("input")); };
 }
 
-function matchesSearch(e, q){
-  if (!q) return true;
-  const hay = [
-    e.ref || e.ro || "",
-    e.vin8 || "",
-    e.type || e.typeText || "",
-    e.notes || ""
-  ].join(" ").toLowerCase();
-  return hay.includes(q);
+function applySearch(entries, q){
+  const s = String(q || "").trim().toLowerCase();
+  if (!s) return entries;
+  return entries.filter(e => {
+    const hay = [
+      e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes
+    ].map(x => String(x || "").toLowerCase()).join(" ");
+    return hay.includes(s);
+  });
 }
 
 function weekdayLabel(i){
@@ -680,10 +682,10 @@ function computeTotals(entries){
   };
 }
 
-function filterEntriesByEmp(entries, empId){
+function filterEntriesByEmp(entries, empId, allowAll = false){
   const id = String(empId ?? ACTIVE_EMP ?? "").trim();
-  if (!id) return [];
-  return entries.filter(e => String(e.empId || "").trim() === id);
+  if (!id) return allowAll ? (entries || []) : [];
+  return (entries || []).filter(e => String(e.empId || "").trim() === id);
 }
 
 async function requireAdmin() {
@@ -710,27 +712,24 @@ function rangeSubLabel(mode){
   return keys.length ? `${keys[0]} → ${keys[keys.length - 1]}` : "—";
 }
 
-function toCSV(entries){
-  const header = ["empId","createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
+function toCSV(entries, includeEmp = false){
+  const header = includeEmp
+    ? ["empId","createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"]
+    : ["createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
+
   const escape = (v) => {
     const s = String(v ?? "");
     if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   };
-  const rows = entries.map(e => ([
-    e.empId || "",
-    e.createdAt,
-    e.dayKey,
-    e.refType || "RO",
-    e.ref || e.ro,
-    e.vin8,
-    e.type,
-    e.hours,
-    e.rate,
-    e.earnings,
-    e.notes,
-    e.photoDataUrl ? "yes" : "no"
-  ].map(escape).join(",")));
+
+  const rows = (entries || []).map(e => {
+    const row = includeEmp
+      ? [e.empId, e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, e.photoDataUrl ? "yes" : "no"]
+      : [e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, e.photoDataUrl ? "yes" : "no"];
+    return row.map(escape).join(",");
+  });
+
   return [header.join(","), ...rows].join("\n");
 }
 
@@ -769,8 +768,10 @@ function renderList(entries, mode){
   const pickedDay = (mode === "week") ? (window.__WEEK_DAY_PICK__ || "") : "";
   const ranged = pickedDay ? byRange.filter(e => e.dayKey === pickedDay) : byRange;
 
-  const q = (document.getElementById("searchBox")?.value || "").trim().toLowerCase();
-  const visible = ranged.filter(e => matchesSearch(e, q));
+  const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
+  const q = (searchInput?.value || "").trim().toLowerCase();
+
+  const visible = applySearch(ranged, q);
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
@@ -899,8 +900,12 @@ async function refreshUI(){
     window.__WEEK_DAY_PICK__ = ""; // reset when leaving week mode
   }
 
-  window.__RANGE_FILTERED__ = filtered;
-  const totals = computeTotals(filtered);
+  const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
+  const q = searchInput?.value || "";
+  const searched = applySearch(filtered, q);
+
+  window.__RANGE_FILTERED__ = searched; // replace for list + totals
+  const totals = computeTotals(searched);
 
   const r1 = (n) => (Math.round(Number(n || 0) * 10) / 10).toFixed(1);
 
@@ -955,7 +960,15 @@ async function refreshUI(){
   const fs = document.getElementById("filterSelect");
   const listFilter = fs ? fs.value : "today";
   const listMode = (listFilter === "today") ? "today" : "all";
-  renderList(filtered, listMode);
+
+  const status = document.getElementById("filterStatus");
+  if (status) {
+    const rangeLabel = title;
+    const qtxt = q.trim() ? ` • Search: "${q.trim()}"` : "";
+    status.textContent = `Showing: ${rangeLabel}${qtxt} • ${searched.length} entries`;
+  }
+
+  renderList(searched, listMode);
 
   if (mode === "week") {
     renderWeekBreakdown(computeWeekBreakdown(filtered, ws));
@@ -1130,8 +1143,9 @@ function renderPhotoGallery(entries){
   });
 }
 
-async function renderPhotoGrid(){
-  const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
+async function renderPhotoGrid(allowAll = false){
+  const all = await getAll(STORES.entries);
+  const entries = filterEntriesByEmp(all, getEmpId(), allowAll);
   renderPhotoGallery(entries);
 }
 
@@ -1194,42 +1208,51 @@ function initPhotosUI(){
 
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  // Only main page has the modal tabs + More button
-  if (PAGE === "main") {
-    initMoreTabs();
+  console.log("PAGE:", PAGE);
+  // Never crash because an element doesn't exist on this page.
+  const has = (id) => !!document.getElementById(id);
+
+  // Only main page has the "More" modal/tabs
+  if (IS_MAIN) {
+    if (has("moreModal")) initMoreTabs();
     document.getElementById("moreBtn")?.addEventListener("click", openMore);
     document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
-
     document.getElementById("moreModal")?.addEventListener("click", (e) => {
       if (e.target && e.target.id === "moreModal") closeMore();
     });
   }
 
   (async () => {
-    registerSW();
+    // SW should never take the page down if it fails on iOS
+    try { await registerSW(); } catch (e) { console.log("SW skipped:", e?.message || e); }
+
     await ensureDefaultTypes();
 
-    // Shared: Employee #
+    // ----- EMPLOYEE # (works on both pages if present) -----
     const empInput = document.getElementById("empId");
     if (empInput) {
-      empInput.value = ACTIVE_EMP;
+      empInput.value = ACTIVE_EMP || "";
       empInput.addEventListener("input", () => {
         setActiveEmp(empInput.value.trim());
-        if (PAGE === "main") refreshUI();
-        if (PAGE === "more") renderPhotoGrid();
+        if (IS_MAIN) refreshUI();
+        if (IS_MORE) renderPhotoGrid(true);
       });
     }
 
-    // ---------- MAIN ----------
-    if (PAGE === "main") {
+    // ===================== MAIN PAGE ONLY =====================
+    if (IS_MAIN && has("logForm")) {
       await renderTypeDatalist();
       await renderTypesListInMore();
 
       $("refreshBtn")?.addEventListener("click", refreshUI);
       $("filterSelect")?.addEventListener("change", refreshUI);
 
-      window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
+      const sIn = document.getElementById("searchInput");
+      const sClr = document.getElementById("clearSearchBtn");
+      if (sIn) sIn.addEventListener("input", () => refreshUI());
+      if (sClr) sClr.addEventListener("click", () => { if (sIn) sIn.value = ""; refreshUI(); });
 
+      window.__RANGE_MODE__ = window.__RANGE_MODE__ || "day";
       const setRangeMode = (m) => {
         rangeMode = m;
         window.__RANGE_MODE__ = m;
@@ -1244,7 +1267,8 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
       document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
       document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
-      setRangeMode(window.__RANGE_MODE__);
+      try { setRangeMode(window.__RANGE_MODE__); }
+      catch (e) { console.error("setRangeMode failed", e); }
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');
@@ -1261,6 +1285,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Photo grid exists inside main More modal too
       initPhotosUI();
+      document.getElementById("closePhotoBtn")?.addEventListener("click", closePhotoModal);
+      document.getElementById("photoModal")?.addEventListener("click", (e) => {
+        if (e.target && e.target.id === "photoModal") closePhotoModal();
+      });
 
       // KEEP your existing handleClear + handleSave functions unchanged.
       // This block assumes they exist in the same scope as before.
@@ -1272,44 +1300,51 @@ document.addEventListener("DOMContentLoaded", () => {
       if (saveBtn) saveBtn.addEventListener("click", handleSave);
       if (clearBtn) clearBtn.addEventListener("click", handleClear);
 
-      await refreshUI();
-      return;
+      try { await refreshUI(); }
+      catch (e) { console.error("refreshUI failed", e); }
+      return; // IMPORTANT: do not run More wiring on main
     }
 
-    // ---------- MORE ----------
-    if (PAGE === "more") {
-      $("exportCsvBtn")?.addEventListener("click", async () => {
-        const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
+    // ===================== MORE PAGE ONLY =====================
+    if (IS_MORE) {
+      // Export buttons
+      document.getElementById("exportCsvBtn")?.addEventListener("click", async () => {
+        const all = await getAll(STORES.entries);
+        const entries = filterEntriesByEmp(all, getEmpId(), true); // allow all if emp blank
         entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
         downloadText(`flat_rate_log_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
       });
 
-      $("exportJsonBtn")?.addEventListener("click", async () => {
-        const entries = filterEntriesByEmp(await getAll(STORES.entries), getEmpId());
+      document.getElementById("exportJsonBtn")?.addEventListener("click", async () => {
+        const all = await getAll(STORES.entries);
+        const entries = filterEntriesByEmp(all, getEmpId(), true);
         entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
         downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
       });
 
-      $("refreshBtn")?.addEventListener("click", async () => {
-        await renderPhotoGrid();
+      // Refresh on more page just re-renders photos
+      document.getElementById("refreshBtn")?.addEventListener("click", async () => {
+        await renderPhotoGrid(true);
       });
 
-      $("saveFlaggedBtn")?.addEventListener("click", async () => {
-        const fh = $("flaggedHours");
+      // flagged hours
+      document.getElementById("saveFlaggedBtn")?.addEventListener("click", async () => {
+        const fh = document.getElementById("flaggedHours");
         const val = fh ? Number(fh.value || 0) : 0;
         if (!Number.isFinite(val) || val < 0) return alert("Flagged hours must be a number >= 0.");
         await setThisWeekFlag(val);
         alert("Flagged hours saved for this week.");
       });
 
-      $("wipeBtn")?.addEventListener("click", async () => {
+      // wipe
+      document.getElementById("wipeBtn")?.addEventListener("click", async () => {
         await wipeAllData();
         await ensureDefaultTypes();
-        await renderPhotoGrid();
+        await renderPhotoGrid(true);
       });
 
       initPhotosUI();
-      await renderPhotoGrid();
+      await renderPhotoGrid(true);
     }
   })();
 });
