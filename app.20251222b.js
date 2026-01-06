@@ -1147,10 +1147,26 @@ async function registerSW() {
 
   try {
     const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
-    if (reg && typeof reg.update === "function") reg.update();
+
+    // iOS SAFETY: reg can exist but not be "ready"
+    if (reg && reg.active && typeof reg.update === "function") {
+      try {
+        await reg.update();
+      } catch (e) {
+        console.warn("SW update skipped (iOS safe):", e);
+      }
+    }
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      // reload once only
+      if (window.__SW_RELOADED__) return;
+      window.__SW_RELOADED__ = true;
+      location.reload();
+    });
+
     console.log("SW registered:", reg.scope);
   } catch (e) {
-    console.warn("SW register failed:", e);
+    console.warn("SW registration failed safely:", e);
   }
 }
 
