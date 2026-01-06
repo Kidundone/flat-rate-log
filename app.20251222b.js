@@ -1147,20 +1147,10 @@ async function registerSW() {
 
   try {
     const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
-    // check for updates every time the app opens
-    reg.update();
-
-    // if a new SW takes control, reload once to use fresh assets
-    let reloaded = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (reloaded) return;
-      reloaded = true;
-      window.location.reload();
-    });
-
+    if (reg && typeof reg.update === "function") reg.update();
     console.log("SW registered:", reg.scope);
   } catch (e) {
-    console.error("SW register failed:", e);
+    console.warn("SW register failed:", e);
   }
 }
 
@@ -1470,6 +1460,100 @@ document.addEventListener("DOMContentLoaded", () => {
       const form = document.getElementById("logForm");
       const saveBtn = document.getElementById("saveBtn");
       const clearBtn = document.getElementById("clearBtn");
+
+      let currentRefType = "RO";
+      const refTypeRO = document.getElementById("refTypeRO");
+      const refTypeSTK = document.getElementById("refTypeSTK");
+      const setRefType = (t) => {
+        currentRefType = t === "STOCK" ? "STOCK" : "RO";
+        refTypeRO?.classList.toggle("active", currentRefType === "RO");
+        refTypeSTK?.classList.toggle("active", currentRefType === "STOCK");
+      };
+      if (refTypeRO) refTypeRO.addEventListener("click", () => setRefType("RO"));
+      if (refTypeSTK) refTypeSTK.addEventListener("click", () => setRefType("STOCK"));
+      setRefType(refTypeSTK?.classList.contains("active") ? "STOCK" : "RO");
+
+      function handleClear(ev) {
+        if (ev) ev.preventDefault();
+        const empInputEl = document.getElementById("empId");
+        const refEl = document.getElementById("ref");
+        const vinEl = document.getElementById("vin8");
+        const typeEl = document.getElementById("typeText");
+        const hoursEl = document.getElementById("hours");
+        const rateEl = document.querySelector('input[name="rate"]');
+        const photoEl = document.getElementById("proofPhoto");
+        const notesEl = document.querySelector('textarea[name="notes"]');
+
+        if (refEl) refEl.value = "";
+        if (vinEl) vinEl.value = "";
+        if (typeEl) typeEl.value = "";
+        if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
+        if (rateEl) { rateEl.value = "15"; rateEl.dataset.touched = ""; }
+        if (notesEl) notesEl.value = "";
+        if (photoEl) photoEl.value = "";
+        if (empInputEl) empInputEl.value = getEmpId();
+        setRefType("RO");
+      }
+
+      async function handleSave(ev) {
+        if (ev) ev.preventDefault();
+        const empId = getEmpId();
+        if (!empId) { toast("Employee # required"); return; }
+
+        const refEl = document.getElementById("ref");
+        const vinEl = document.getElementById("vin8");
+        const typeEl = document.getElementById("typeText");
+        const hoursEl = document.getElementById("hours");
+        const rateEl = document.querySelector('input[name="rate"]');
+        const photoEl = document.getElementById("proofPhoto");
+        const notesEl = document.querySelector('textarea[name="notes"]');
+
+        const ref = (refEl?.value || "").trim();
+        const vin8 = (vinEl?.value || "").trim().toUpperCase();
+        const typeName = (typeEl?.value || "").trim();
+        const hoursVal = num(hoursEl?.value);
+        const rateVal = num(rateEl?.value) || 15;
+        const notes = (notesEl?.value || "").trim();
+
+        if (!ref) { toast("Ref required"); return; }
+        if (!typeName) { toast("Type required"); return; }
+        if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
+
+        let photoDataUrl = null;
+        try {
+          const file = photoEl?.files?.[0];
+          if (file) photoDataUrl = await fileToDataURL(file);
+        } catch (e) {
+          console.error("photo save failed", e);
+        }
+
+        const createdAt = nowISO();
+        const dayKey = dayKeyFromISO(createdAt);
+        const entry = {
+          id: uuid(),
+          empId,
+          createdAt,
+          dayKey,
+          weekStartKey: dateKey(startOfWeekLocal(new Date(createdAt))),
+          refType: currentRefType,
+          ref,
+          ro: ref,
+          vin8,
+          type: typeName,
+          typeText: typeName,
+          hours: round1(hoursVal),
+          rate: round2(rateVal),
+          earnings: round2(hoursVal * rateVal),
+          notes,
+          photoDataUrl
+        };
+
+        await put(STORES.entries, entry);
+        await upsertTypeDefaults(typeName, entry.hours, entry.rate);
+        toast("Saved");
+        handleClear();
+        await refreshUI();
+      }
 
       if (form) form.addEventListener("submit", handleSave);
       if (saveBtn) saveBtn.addEventListener("click", handleSave);
