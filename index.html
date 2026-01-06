@@ -555,16 +555,55 @@
           <option value="today">Today</option>
           <option value="all">All</option>
         </select>
+        <div style="margin-top:6px; text-align:right;">
+          <button class="btn" id="historyBtn" type="button">History</button>
+        </div>
       </div>
     </div>
 
-    <div class="row" style="margin-top:12px;">
-      <label class="lbl" for="searchBox">Search</label>
-      <input id="searchBox" placeholder="Search RO/Stock, VIN8, Type, Notes…" autocomplete="off" />
-      <div class="hint">Tip: type part of a RO, VIN8, or work type.</div>
+    <div class="card" style="margin-top:12px">
+      <div class="row" style="gap:10px; align-items:center">
+        <input id="searchInput" placeholder="Search RO, VIN, type, notes..." 
+          style="flex:1;min-width:220px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+        <button class="btn" type="button" id="clearSearchBtn">Clear</button>
+      </div>
+      <div class="muted" id="filterStatus" style="margin-top:8px"></div>
     </div>
 
     <div class="list" id="entryList" style="margin-top:12px;"></div>
+  </section>
+
+  <section class="card" id="historyPanel" style="display:none;">
+    <div class="itemTop">
+      <div>
+        <div class="mono">Work History</div>
+        <div class="muted small" id="historyMeta"></div>
+      </div>
+      <div class="right">
+        <button class="btn" id="closeHistoryBtn" type="button">Close</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <input id="historySearchInput" placeholder="Search RO/Stock, VIN8, Type, Notes…" style="width:100%;" />
+    </div>
+
+    <div class="row" style="margin-top:10px; gap:10px; flex-wrap:wrap;">
+      <select id="histRange" style="width:160px;">
+        <option value="week">This Week</option>
+        <option value="lastweek">Last Week</option>
+        <option value="month">This Month</option>
+        <option value="all">All Time</option>
+      </select>
+
+      <select id="histGroup" style="width:160px;">
+        <option value="none">No Group</option>
+        <option value="day">Group by Day</option>
+      </select>
+    </div>
+
+    <div class="divider"></div>
+    <div id="historyList" class="list"></div>
   </section>
 </main>
 

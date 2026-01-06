@@ -455,6 +455,167 @@ function inMonth(dayKeyStr, monthStart){
   return v >= s && v <= e;
 }
 
+function dayKeyFromISO(iso){
+  // Use local time consistently
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+async function backfillDayKeysForEmp(empId){
+  const all = await getAll(STORES.entries);
+  const mine = filterEntriesByEmp(all, empId);
+  const needsFix = mine.filter(e => !e.dayKey || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(e.dayKey)));
+  if (!needsFix.length) return 0;
+
+  for (const e of needsFix) {
+    const fixed = dayKeyFromISO(e.createdAt);
+    if (!fixed) continue;
+    e.dayKey = fixed;
+    e.weekStartKey = dateKey(startOfWeekLocal(new Date(fixed)));
+    await put(STORES.entries, e);
+  }
+  return needsFix.length;
+}
+
+function startOfWeekFromDateKey(dayKeyStr){
+  const [yy,mm,dd] = dayKeyStr.split("-").map(Number);
+  const d = new Date(yy, mm-1, dd);
+  return startOfWeekLocal(d);
+}
+
+function getLastWeekRange(){
+  const now = new Date();
+  const thisWs = startOfWeekLocal(now);
+  const lastWs = new Date(thisWs);
+  lastWs.setDate(lastWs.getDate() - 7);
+  const lastWe = endOfWeekLocal(lastWs);
+  return { ws: lastWs, we: lastWe };
+}
+
+function matchSearch(e, q){
+  if (!q) return true;
+  const s = q.toLowerCase();
+  return [
+    e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes
+  ].some(v => String(v||"").toLowerCase().includes(s));
+}
+
+function groupByDay(entries){
+  const map = new Map();
+  for (const e of entries) {
+    const k = e.dayKey || dayKeyFromISO(e.createdAt) || "unknown";
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(e);
+  }
+  const keys = Array.from(map.keys()).sort((a,b)=>b.localeCompare(a));
+  return keys.map(k => ({ dayKey: k, entries: map.get(k) }));
+}
+
+function showHistory(open=true){
+  const p = $("historyPanel");
+  if (!p) return;
+  p.style.display = open ? "block" : "none";
+}
+
+async function renderHistory(){
+  const empId = getEmpId();
+  if (!empId) { toast("Employee # required"); return; }
+
+  const q = ($("historySearchInput")?.value || "").trim();
+  const range = $("histRange")?.value || "week";
+  const group = $("histGroup")?.value || "none";
+
+  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
+    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+
+  let slice = all;
+
+  if (range === "week") {
+    const ws = startOfWeekLocal(new Date());
+    slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
+  } else if (range === "lastweek") {
+    const { ws } = getLastWeekRange();
+    slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
+  } else if (range === "month") {
+    const ms = startOfMonthLocal(new Date());
+    slice = all.filter(e => inMonth(e.dayKey || dayKeyFromISO(e.createdAt), ms));
+  }
+
+  slice = slice.filter(e => matchSearch(e, q));
+
+  const totals = computeTotals(slice);
+  const meta = $("historyMeta");
+  if (meta) meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
+
+  const box = $("historyList");
+  if (!box) return;
+  box.innerHTML = "";
+
+  if (!slice.length) {
+    box.innerHTML = `<div class="muted">No entries match.</div>`;
+    return;
+  }
+
+  if (group === "day") {
+    const groups = groupByDay(slice);
+    for (const g of groups) {
+      const t = computeTotals(g.entries);
+      const header = document.createElement("div");
+      header.className = "item";
+      header.innerHTML = `
+        <div class="itemTop">
+          <div class="mono">${g.dayKey}</div>
+          <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
+        </div>
+      `;
+      box.appendChild(header);
+
+      for (const e of g.entries) {
+        const row = document.createElement("div");
+        row.className = "item";
+        row.innerHTML = `
+          <div class="itemTop">
+            <div>
+              <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+              <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+              ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
+            </div>
+            <div class="right">
+              <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
+              <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+            </div>
+          </div>
+        `;
+        box.appendChild(row);
+      }
+    }
+    return;
+  }
+
+  // no group
+  for (const e of slice.slice(0, 200)) {
+    const row = document.createElement("div");
+    row.className = "item";
+    row.innerHTML = `
+      <div class="itemTop">
+        <div>
+          <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+          <div class="small">Day: <span class="mono">${escapeHtml(e.dayKey||dayKeyFromISO(e.createdAt)||"-")}</span> • VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+        </div>
+        <div class="right">
+          <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
+          <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+        </div>
+      </div>
+    `;
+    box.appendChild(row);
+  }
+}
+
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
 const DEFAULT_TYPES = []; // no presets; the app learns from each employee
 
@@ -1239,6 +1400,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    const empId = getEmpId();
+    if (empId) {
+      await backfillDayKeysForEmp(empId);
+    }
+
     // ===================== MAIN PAGE ONLY =====================
     if (IS_MAIN && has("logForm")) {
       await renderTypeDatalist();
@@ -1269,6 +1435,15 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
       try { setRangeMode(window.__RANGE_MODE__); }
       catch (e) { console.error("setRangeMode failed", e); }
+
+      document.getElementById("historyBtn")?.addEventListener("click", () => {
+        showHistory(true);
+        renderHistory();
+      });
+      document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
+      document.getElementById("histRange")?.addEventListener("change", renderHistory);
+      document.getElementById("histGroup")?.addEventListener("change", renderHistory);
+      document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');
