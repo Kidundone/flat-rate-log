@@ -300,6 +300,24 @@ function fileToImageFromDataUrl(dataUrl) {
   });
 }
 
+async function compressImageFileToDataUrl(file, maxW = 1200, quality = 0.75) {
+  const dataUrl = await fileToDataURL(file);
+  const img = await fileToImageFromDataUrl(dataUrl);
+
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, w, h);
+
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
 async function preprocessDataUrlForOCR(photoDataUrl) {
   const img = await fileToImageFromDataUrl(photoDataUrl);
 
@@ -511,6 +529,62 @@ async function backfillDayKeysForEmp(empId){
   return needsFix.length;
 }
 
+async function backfillDayKeysForEmpCursor(empId, { batch = 150 } = {}) {
+  const id = String(empId || "").trim();
+  if (!id) return 0;
+
+  const db = await openDB();
+  let changed = 0;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORES.entries, "readwrite");
+      const store = tx.objectStore(STORES.entries);
+
+      const req = store.openCursor();
+      let processed = 0;
+
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve();
+
+        const e = cursor.value;
+
+        if (String(e?.empId || "").trim() === id) {
+          const okDayKey = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(e.dayKey || ""));
+          if (!okDayKey) {
+            const fixed = dayKeyFromISO(e.createdAt);
+            if (fixed) {
+              e.dayKey = fixed;
+
+              const ws = startOfWeekFromDateKey(fixed);
+              e.weekStartKey = dateKey(ws);
+
+              cursor.update(e);
+              changed += 1;
+            }
+          }
+        }
+
+        processed += 1;
+
+        if (processed % batch === 0) {
+          setTimeout(() => cursor.continue(), 0);
+        } else {
+          cursor.continue();
+        }
+      };
+
+      req.onerror = () => reject(req.error);
+      tx.onabort = () => reject(tx.error || new Error("backfill aborted"));
+    });
+
+    return changed;
+  } finally {
+    db.close();
+  }
+}
+
 function startOfWeekFromDateKey(dayKeyStr){
   const [yy,mm,dd] = dayKeyStr.split("-").map(Number);
   const d = new Date(yy, mm-1, dd);
@@ -593,8 +667,8 @@ async function handleSave(ev) {
 
   let photoDataUrl = null;
   try {
-    const file = photoEl?.files?.[0];
-    if (file) photoDataUrl = await fileToDataURL(file);
+    const photoFile = photoEl?.files?.[0];
+    photoDataUrl = photoFile ? await compressImageFileToDataUrl(photoFile, 1200, 0.75) : null;
   } catch (e) {
     console.error("photo save failed", e);
   }
@@ -1305,7 +1379,8 @@ async function saveFlaggedHours(){
 async function wipeLocalOnly(){
   await clearStore(STORES.entries);
   await clearStore(STORES.types);
-  await renderPhotoGrid(true);
+  if (_photosRequested) await renderPhotoGrid(true, { updateStatus: true });
+  else clearPhotoGallery();
   await ensureDefaultTypes();
 }
 
@@ -1335,69 +1410,8 @@ async function wipeAllData(){
   await clearStore(STORES.types);
   await clearStore(STORES.weekflags);
   await clearStore(STORES.payroll);
-}
-
-// ===== More modal: iOS-safe open/close + tab init =====
-let _moreScrollY = 0;
-
-function lockBodyScrollForMore() {
-  _moreScrollY = window.scrollY || 0;
-  document.body.classList.add("modal-open");
-  document.body.style.position = "fixed";
-  document.body.style.top = `-${_moreScrollY}px`;
-  document.body.style.left = "0";
-  document.body.style.right = "0";
-}
-
-function unlockBodyScrollForMore() {
-  document.body.classList.remove("modal-open");
-  document.body.style.position = "";
-  const top = document.body.style.top;
-  document.body.style.top = "";
-  document.body.style.left = "";
-  document.body.style.right = "";
-  const y = _moreScrollY || 0;
-  _moreScrollY = 0;
-  window.scrollTo(0, y);
-}
-
-function initMoreTabs() {
-  const root = document.getElementById("moreModal");
-  if (!root) return;
-
-  const tabBtns = Array.from(root.querySelectorAll(".tabBtn"));
-  const panels  = Array.from(root.querySelectorAll(".tabPanel"));
-  if (!tabBtns.length || !panels.length) return;
-
-  function activate(id) {
-    panels.forEach(p => p.classList.toggle("active", p.id === id));
-    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === id));
-  }
-
-  // prevent double-binding if init runs more than once
-  tabBtns.forEach(btn => {
-    btn.onclick = () => activate(btn.dataset.tab);
-  });
-
-  activate("payrollTab");
-}
-
-function openMore() {
-  const modal = document.getElementById("moreModal");
-  if (!modal) return;
-  modal.classList.add("open");
-  lockBodyScrollForMore();
-
-  // Make sure the modal scroll container starts at top
-  const body = modal.querySelector(".modalBody");
-  if (body) body.scrollTop = 0;
-}
-
-function closeMore() {
-  const modal = document.getElementById("moreModal");
-  if (!modal) return;
-  modal.classList.remove("open");
-  unlockBodyScrollForMore();
+  if (_photosRequested) await renderPhotoGrid(true, { updateStatus: true });
+  else clearPhotoGallery();
 }
 
 function entryRefLabel(e){
@@ -1414,45 +1428,205 @@ function formatWhen(iso){
   try { return new Date(iso).toLocaleString(); } catch { return iso || ""; }
 }
 
-function renderPhotoGallery(entries){
+async function getRecentPhotoEntriesByEmp(empId, limit = 24) {
+  const id = String(empId || "").trim();
+  if (!id) return [];
+
+  const db = await openDB();
+  try {
+    return await new Promise((resolve, reject) => {
+      const out = [];
+      const tx = db.transaction(STORES.entries, "readonly");
+      const store = tx.objectStore(STORES.entries);
+
+      let source = store;
+      try {
+        source = store.index("createdAt");
+      } catch {}
+
+      const req = source.openCursor ? source.openCursor(null, "prev") : null;
+      if (!req) return resolve([]);
+
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve(out);
+
+        const e = cursor.value;
+        const matchEmp = String(e?.empId || "").trim() === id;
+        const photoUrl = entryPhotoUrl(e);
+        if (e && photoUrl && matchEmp) {
+          out.push(e);
+          if (out.length >= limit) return resolve(out);
+        }
+        cursor.continue();
+      };
+
+      req.onerror = () => reject(req.error);
+      tx.onabort = () => reject(tx.error || new Error("txn abort"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function setGalleryStatus(msg){
+  const el = document.getElementById("galleryStatus");
+  if (el) el.textContent = msg || "";
+}
+
+let _photosRequested = false;
+
+function clearPhotoGallery(){
   const el = document.getElementById("photoGallery");
-  if (!el) return;
+  if (el) el.innerHTML = "";
+  setGalleryStatus("");
+  _photosRequested = false;
+}
 
-  const withPhotos = (entries || [])
-    .filter(e => e && (e.photoDataUrl || e.proofPhotoDataUrl || e.photo))
-    .sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+function renderPhotoGallerySafe(entries){
+  const el = document.getElementById("photoGallery");
+  if (!el) return 0;
 
-  if (!withPhotos.length) {
-    el.innerHTML = `<div class="muted">No saved entry photos yet.</div>`;
+  if (!entries || !entries.length) {
+    el.innerHTML = `<div class="muted">No photos found for this employee.</div>`;
+    return 0;
+  }
+
+  el.innerHTML = "";
+  let count = 0;
+  for (const e of entries) {
+    const photoUrl = entryPhotoUrl(e);
+    if (!photoUrl) continue;
+
+    const img = document.createElement("img");
+    img.className = "thumb";
+    img.src = photoUrl;
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.addEventListener("click", () => openPhotoViewer(e));
+    el.appendChild(img);
+    count += 1;
+  }
+
+  if (!count) {
+    el.innerHTML = `<div class="muted">No photos found for this employee.</div>`;
+  }
+
+  return count;
+}
+
+async function renderPhotoGrid(allowAll = false, opts = {}){
+  const empId = getEmpId();
+  if (!empId) {
+    clearPhotoGallery();
+    setGalleryStatus("Enter Employee # to load photos.");
+    return 0;
+  }
+
+  try {
+    const limit = opts.limit || 24;
+    const entries = await getRecentPhotoEntriesByEmp(empId, limit);
+    const count = renderPhotoGallerySafe(entries);
+
+    if (opts.updateStatus) {
+      if (count > 0) setGalleryStatus(`Loaded ${count} photo${count === 1 ? "" : "s"}.`);
+      else setGalleryStatus("No photos found for this employee.");
+    }
+
+    return count;
+  } catch (e) {
+    console.warn("renderPhotoGrid failed:", e);
+    if (opts.updateStatus) setGalleryStatus("Failed to load photos.");
+    return 0;
+  }
+}
+
+async function renderReview(){
+  const empId = getEmpId();
+  if (!empId) { setStatusMsg("Enter Employee # to review work."); return; }
+
+  const range = document.getElementById("reviewRange")?.value || "week";
+  const group = document.getElementById("reviewGroup")?.value || "day";
+  const q = (document.getElementById("reviewSearch")?.value || "").trim().toLowerCase();
+
+  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
+    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+
+  let slice = all;
+  if (range === "week") {
+    const ws = startOfWeekLocal(new Date());
+    slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
+  } else if (range === "lastweek") {
+    const { ws } = getLastWeekRange();
+    slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
+  } else if (range === "month") {
+    const ms = startOfMonthLocal(new Date());
+    slice = all.filter(e => inMonth(e.dayKey || dayKeyFromISO(e.createdAt), ms));
+  }
+
+  if (q) slice = slice.filter(e => matchSearch(e, q));
+
+  const totals = computeTotals(slice);
+  const meta = document.getElementById("reviewMeta");
+  if (meta) meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
+
+  const list = document.getElementById("reviewList");
+  if (!list) return;
+
+  list.innerHTML = "";
+  if (!slice.length) { list.innerHTML = `<div class="muted">No entries match.</div>`; return; }
+
+  if (group === "day") {
+    const groups = groupByDay(slice);
+    for (const g of groups) {
+      const t = computeTotals(g.entries);
+      const head = document.createElement("div");
+      head.className = "item";
+      head.innerHTML = `
+        <div class="itemTop">
+          <div class="mono">${g.dayKey}</div>
+          <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
+        </div>`;
+      list.appendChild(head);
+
+      for (const e of g.entries) {
+        const row = document.createElement("div");
+        row.className = "item";
+        row.innerHTML = `
+          <div class="itemTop">
+            <div>
+              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+              <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+              ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
+            </div>
+            <div class="right">
+              <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
+              <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+            </div>
+          </div>`;
+        list.appendChild(row);
+      }
+    }
     return;
   }
 
-  el.innerHTML = withPhotos.slice(0, 60).map(e => {
-    const title = `${(e.refType || "RO")} ${(e.ro || "").toString().toUpperCase()} • ${(e.typeText || "").toString()}`;
-    const photoUrl = entryPhotoUrl(e);
-    return `
-      <img
-        class="thumb"
-        src="${photoUrl}"
-        alt="${title.replace(/"/g,'')}"
-        title="${title.replace(/"/g,'')}"
-        data-full="${photoUrl}"
-      />
-    `;
-  }).join("");
-
-  el.querySelectorAll("img[data-full]").forEach(img => {
-    img.addEventListener("click", () => {
-      const w = window.open();
-      if (w) w.document.write(`<img src="${img.dataset.full}" style="max-width:100%;height:auto" />`);
-    });
-  });
-}
-
-async function renderPhotoGrid(allowAll = false){
-  const all = await getAll(STORES.entries);
-  const entries = filterEntriesByEmp(all, getEmpId(), allowAll);
-  renderPhotoGallery(entries);
+  // no group
+  for (const e of slice.slice(0, 200)) {
+    const row = document.createElement("div");
+    row.className = "item";
+    row.innerHTML = `
+      <div class="itemTop">
+        <div>
+          <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+          <div class="small">${escapeHtml(e.dayKey||dayKeyFromISO(e.createdAt)||"-")} • VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+        </div>
+        <div class="right">
+          <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
+          <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+        </div>
+      </div>`;
+    list.appendChild(row);
+  }
 }
 
 async function exportAllCsvAdmin() {
@@ -1509,7 +1683,40 @@ function initPhotosUI(){
     if (e.target?.id === "photoViewer") closePhotoViewer();
   });
 
-  renderPhotoGrid();
+  clearPhotoGallery();
+
+  const loadBtn = document.getElementById("loadPhotosBtn");
+  if (loadBtn) {
+    loadBtn.addEventListener("click", async () => {
+      const empId = getEmpId();
+      if (!empId) {
+        alert("Enter Employee # first.");
+        return;
+      }
+
+      setGalleryStatus("Loading...");
+      loadBtn.disabled = true;
+      try {
+        const photos = await getRecentPhotoEntriesByEmp(empId, 24);
+        renderPhotoGallerySafe(photos);
+        _photosRequested = true;
+        setGalleryStatus(`Loaded ${photos.length} photo(s).`);
+      } catch (e) {
+        console.error("Load photos failed:", e);
+        _photosRequested = false;
+        setGalleryStatus("Load failed.");
+        alert("Photo load failed: " + (e?.message || e));
+      } finally {
+        loadBtn.disabled = false;
+      }
+    });
+  }
+
+  document.getElementById("clearGalleryBtn")?.addEventListener("click", () => {
+    clearPhotoGallery();
+    setGalleryStatus("");
+    closePhotoViewer();
+  });
 }
 
 /* -------------------- Boot -------------------- */
@@ -1531,12 +1738,13 @@ document.addEventListener("DOMContentLoaded", () => {
       empInput.addEventListener("input", () => {
         setActiveEmp(empInput.value.trim());
         if (PAGE === "main") refreshUI?.();
-        if (PAGE === "more") renderPhotoGrid?.(true);
+        if (PAGE === "more") {
+          renderReview?.();
+          if (_photosRequested) renderPhotoGrid?.(true, { updateStatus: true });
+          else clearPhotoGallery();
+        }
       });
     }
-
-    const empId = getEmpId();
-    if (empId) await backfillDayKeysForEmp(empId);
 
     // ================= MAIN PAGE ONLY =================
     if (PAGE === "main") {
@@ -1544,14 +1752,6 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error("handleSave missing on main page");
         return;
       }
-
-      initMoreTabs?.();
-
-      document.getElementById("moreBtn")?.addEventListener("click", openMore);
-      document.getElementById("closeMoreBtn")?.addEventListener("click", closeMore);
-      document.getElementById("moreModal")?.addEventListener("click", (e) => {
-        if (e.target && e.target.id === "moreModal") closeMore();
-      });
 
       await renderTypeDatalist();
       await renderTypesListInMore();
@@ -1610,17 +1810,65 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ================= MORE PAGE ONLY =================
     if (PAGE === "more") {
-      document.getElementById("exportCsvBtn")?.addEventListener("click", exportCSV);
-      document.getElementById("exportJsonBtn")?.addEventListener("click", exportJSON);
-      document.getElementById("refreshBtn")?.addEventListener("click", () => renderPhotoGrid(true));
+      const wrapMoreClick = (id, handler) => {
+        const el = document.getElementById(id);
+        if (!el) return console.log("missing", id);
 
-      document.getElementById("saveFlaggedBtn")?.addEventListener("click", saveFlaggedHours);
+        console.log(id, "orig handler type:", typeof handler);
 
-      document.getElementById("wipeBtn")?.addEventListener("click", wipeLocalOnly);
+        el.addEventListener("click", async (ev) => {
+          console.log("CLICK:", id, "start");
+          try {
+            const r = handler?.call(el, ev);
+            if (r?.then) await r;
+            console.log("CLICK:", id, "done");
+          } catch (e) {
+            console.log("CLICK ERROR:", id, e?.message || e, e);
+          }
+        });
+      };
+
+      wrapMoreClick("exportCsvBtn", exportCSV);
+      wrapMoreClick("exportJsonBtn", exportJSON);
+      wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
+      wrapMoreClick("wipeBtn", wipeLocalOnly);
+      document.getElementById("refreshBtn")?.addEventListener("click", () => {
+        if (!_photosRequested) {
+          setGalleryStatus("Tap Load Photos first.");
+          return;
+        }
+        renderPhotoGrid(true, { updateStatus: true });
+      });
+
       document.getElementById("wipeAllBtn")?.addEventListener("click", wipeAllData);
 
+      document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
+      document.getElementById("reviewRange")?.addEventListener("change", renderReview);
+      document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
+      document.getElementById("reviewSearch")?.addEventListener("input", () => {
+        clearTimeout(window.__REVIEW_T__);
+        window.__REVIEW_T__ = setTimeout(renderReview, 150);
+      });
+
+      document.getElementById("repairBtn")?.addEventListener("click", async () => {
+        const empId = getEmpId();
+        if (!empId) return alert("Enter Employee # first.");
+
+        setStatusMsg("Repairing… keep this page open.");
+        try {
+          const fixed = await backfillDayKeysForEmpCursor(empId, { batch: 150 });
+          alert(`Repair complete. Fixed ${fixed} entries.`);
+        } catch (e) {
+          console.error(e);
+          alert("Repair failed: " + (e?.message || e));
+        }
+        finally {
+          setStatusMsg("");
+        }
+      });
+
       initPhotosUI();
-      await renderPhotoGrid(true);
+      await renderReview();
       return;
     }
   })();

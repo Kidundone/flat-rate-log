@@ -34,6 +34,8 @@
 
   <main class="wrap">
 
+    <div class="muted small" id="statusMsg" style="padding:0 4px;"></div>
+
     <section class="card">
       <div class="h">Employee</div>
       <div class="muted">Required to load your saved entries/photos on this device.</div>
@@ -65,6 +67,7 @@
       <div class="row">
         <button class="btn" type="button" id="exportCsvBtn">Export CSV</button>
         <button class="btn" type="button" id="exportJsonBtn">Export JSON</button>
+        <button class="btn" type="button" id="repairBtn">Repair / Reindex Data</button>
       </div>
       <div class="row" style="margin-top:10px">
         <button class="btn" type="button" id="refreshBtn">Refresh Totals</button>
@@ -72,8 +75,42 @@
     </section>
 
     <section class="card">
+      <div class="h">Review Work</div>
+      <div class="muted">Search + filter your saved entries on this device.</div>
+
+      <div class="row" style="margin-top:10px">
+        <select id="reviewRange" class="btn" style="flex:1;min-width:160px">
+          <option value="week">This Week</option>
+          <option value="lastweek">Last Week</option>
+          <option value="month">This Month</option>
+          <option value="all">All Time</option>
+        </select>
+
+        <select id="reviewGroup" class="btn" style="flex:1;min-width:160px">
+          <option value="day">Group by Day</option>
+          <option value="none">No Group</option>
+        </select>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <input id="reviewSearch" placeholder="Search RO/Stock, VIN8, Type, Notes…" style="flex:1;min-width:200px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+        <button class="btn" type="button" id="reviewRefreshBtn">Refresh</button>
+      </div>
+
+      <div class="muted" id="reviewMeta" style="margin-top:10px"></div>
+      <div id="reviewList" class="list" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card">
       <div class="h">Saved Photos (Entries)</div>
-      <div class="muted">Tap a photo to open it full size.</div>
+      <div class="muted">Tap "Load Photos" to avoid iPhone crashes.</div>
+
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" type="button" id="loadPhotosBtn">Load Photos</button>
+        <button class="btn" type="button" id="clearGalleryBtn">Clear</button>
+        <div class="muted" id="galleryStatus" style="align-self:center"></div>
+      </div>
+
       <div id="photoGallery" class="gallery" style="margin-top:10px"></div>
     </section>
 
@@ -103,32 +140,6 @@
     </section>
 
   </main>
-
-  <script>
-  (function () {
-    function show(msg) {
-      try {
-        // show once, avoid infinite loops
-        if (window.__ERR_SHOWN__) return;
-        window.__ERR_SHOWN__ = true;
-        alert("MORE PAGE ERROR:\n\n" + msg);
-      } catch {}
-    }
-
-    window.addEventListener("error", function (e) {
-      const m = (e && e.message) ? e.message : String(e);
-      const src = e && e.filename ? e.filename : "";
-      const line = e && e.lineno ? e.lineno : "";
-      show(m + "\n" + src + ":" + line);
-    });
-
-    window.addEventListener("unhandledrejection", function (e) {
-      const r = e && e.reason ? e.reason : e;
-      const m = (r && r.message) ? r.message : String(r);
-      show("Unhandled Promise Rejection:\n" + m);
-    });
-  })();
-  </script>
 
   <script src="./app.20251222b.js?v=20251223_fix1" defer></script>
 </body>
