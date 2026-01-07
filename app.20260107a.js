@@ -34,6 +34,7 @@ window.addEventListener("unhandledrejection", (e) => {
 
 let rangeMode = "day";
 let currentRefType = "RO";
+let weekWhich = window.__WEEK_WHICH__ || "this"; // "this" | "last"
 
 function setRefType(t) {
   currentRefType = t === "STOCK" ? "STOCK" : "RO";
@@ -64,11 +65,16 @@ function num(v){
 function setRangeMode(m) {
   rangeMode = m;
   window.__RANGE_MODE__ = m;
+
   document.getElementById("rangeDayBtn")?.classList.toggle("active", m === "day");
   document.getElementById("rangeWeekBtn")?.classList.toggle("active", m === "week");
   document.getElementById("rangeMonthBtn")?.classList.toggle("active", m === "month");
   document.getElementById("rangeAllBtn")?.classList.toggle("active", m === "all");
-  if (typeof refreshUI === "function" && PAGE === "main") refreshUI();
+
+  const row = document.getElementById("weekWhichRow");
+  if (row) row.style.display = (m === "week") ? "inline-flex" : "none";
+
+  if (PAGE === "main") refreshUI();
 }
 
 function getRate(){
@@ -1234,13 +1240,20 @@ async function refreshUI(){
 
   let filtered = filterByMode(entries, mode);
 
+  const now = new Date();
+  let ws0 = startOfWeekLocal(now);
+  if ((window.__WEEK_WHICH__ || weekWhich) === "last") {
+    ws0 = new Date(ws0);
+    ws0.setDate(ws0.getDate() - 7);
+  }
+  const we0 = endOfWeekLocal(ws0);
+
   if (mode === "week") {
     // optional day filter inside week
     const pick = window.__WEEK_DAY_PICK__ || "";
     if (pick) filtered = filtered.filter(e => e.dayKey === pick);
 
     // render week breakdown (always uses full week, not the picked day)
-    const ws0 = startOfWeekLocal(new Date());
     const days = computeWeekBreakdown(entries.filter(e => inWeek(e.dayKey, ws0)), ws0);
     renderWeekBreakdown(days);
   } else {
@@ -1279,13 +1292,11 @@ async function refreshUI(){
   setText("todayCount", String(today.count));
 
   // Week
-  const ws = startOfWeekLocal(new Date());
-  const we = endOfWeekLocal(new Date());
-  const week = computeWeek(entries, ws);
+  const week = computeWeek(entries, ws0);
 
   setText("weekHours", round1(week.hours));
   setText("weekDollars", formatMoney(week.dollars));
-  setText("weekRange", `${dateKey(ws)} → ${dateKey(we)}`);
+  setText("weekRange", `${dateKey(ws0)} → ${dateKey(we0)}`);
 
   const flag = await getThisWeekFlag();
   const flagged = flag ? Number(flag.flaggedHours || 0) : 0;
@@ -1771,6 +1782,27 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
       document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
       document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
+
+      const syncWeekBtns = () => {
+        document.getElementById("weekThisBtn")?.classList.toggle("active", weekWhich === "this");
+        document.getElementById("weekLastBtn")?.classList.toggle("active", weekWhich === "last");
+      };
+
+      document.getElementById("weekThisBtn")?.addEventListener("click", () => {
+        weekWhich = "this";
+        window.__WEEK_WHICH__ = "this";
+        syncWeekBtns();
+        refreshUI();
+      });
+
+      document.getElementById("weekLastBtn")?.addEventListener("click", () => {
+        weekWhich = "last";
+        window.__WEEK_WHICH__ = "last";
+        syncWeekBtns();
+        refreshUI();
+      });
+
+      syncWeekBtns();
       setRangeMode(window.__RANGE_MODE__ || "day");
 
       document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
