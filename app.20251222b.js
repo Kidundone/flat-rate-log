@@ -14,7 +14,9 @@ let ACTIVE_EMP = (typeof localStorage !== "undefined" ? localStorage.getItem(EMP
 
 console.log("BUILD", "delta-fix-20251222b", new Date().toISOString());
 
-const PAGE = location.pathname.endsWith("more.html") ? "more" : "main";
+// ---- Page detect (GLOBAL) ----
+const PAGE = location.pathname.endsWith("/more.html") ? "more" : "main";
+window.PAGE = PAGE; // so console/debug works everywhere
 console.log("PAGE:", PAGE);
 const IS_MAIN = PAGE === "main";
 const IS_MORE = PAGE === "more";
@@ -1258,25 +1260,23 @@ async function registerSW() {
   try {
     const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
 
-    // iOS SAFETY: reg can exist but not be "ready"
-    if (reg && reg.active && typeof reg.update === "function") {
-      try {
-        await reg.update();
-      } catch (e) {
-        console.warn("SW update skipped (iOS safe):", e);
-      }
+    // Guard: iOS/Safari sometimes gives a reg that can't update yet
+    try {
+      if (reg && typeof reg.update === "function") await reg.update();
+    } catch (e) {
+      console.warn("SW update skipped:", e?.message || e);
     }
 
+    let reloaded = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      // reload once only
-      if (window.__SW_RELOADED__) return;
-      window.__SW_RELOADED__ = true;
-      location.reload();
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
     });
 
-    console.log("SW registered:", reg.scope);
+    console.log("SW registered:", reg?.scope || "(no scope)");
   } catch (e) {
-    console.warn("SW registration failed safely:", e);
+    console.warn("SW register failed (non-fatal):", e?.message || e);
   }
 }
 
