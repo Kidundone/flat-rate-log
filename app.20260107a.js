@@ -1829,14 +1829,58 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const form = document.getElementById("logForm");
       form?.addEventListener("submit", handleSave);
-      document.getElementById("saveBtn")?.addEventListener("click", handleSave);
       document.getElementById("clearBtn")?.addEventListener("click", handleClear);
+
+      // --- Rapid Log UX: toggle details + enable Save when required fields filled ---
+      // --- Rapid Log UX: toggle details + enable Save when required fields filled ---
+      function updateSaveEnabled(){
+        const empOk = !!getEmpId();
+        const refOk = !!(document.getElementById("ref")?.value || "").trim();
+        const typeOk = !!(document.getElementById("typeText")?.value || "").trim();
+        const hrsOk = num(document.getElementById("hours")?.value) > 0;
+
+        const btn = document.getElementById("saveBtn");
+        if (btn) btn.disabled = !(empOk && refOk && typeOk && hrsOk);
+      }
+
+      const detailsBtn = document.getElementById("toggleDetailsBtn");
+      const detailsPanel = document.getElementById("detailsPanel");
+
+      if (detailsBtn && detailsPanel) {
+        detailsPanel.style.display = "none";
+        detailsBtn.textContent = "More details";
+
+        detailsBtn.addEventListener("click", () => {
+          const open = detailsPanel.style.display !== "none";
+          detailsPanel.style.display = open ? "none" : "block";
+          detailsBtn.textContent = open ? "More details" : "Less";
+        });
+      }
+
+      ["empId","ref","typeText","hours"].forEach((id) => {
+        document.getElementById(id)?.addEventListener("input", updateSaveEnabled);
+        document.getElementById(id)?.addEventListener("change", updateSaveEnabled);
+      });
+
+      updateSaveEnabled();
 
       document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
       document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
       document.getElementById("histRange")?.addEventListener("change", renderHistory);
       document.getElementById("histGroup")?.addEventListener("change", renderHistory);
       document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
+
+      // Make Save work even if it's type="submit" but form onsubmit="return false;"
+      document.getElementById("logForm")?.addEventListener("submit", handleSave);
+
+      // Optional: Enter key saves from Rapid fields
+      ["ref","typeText","hours"].forEach((id) => {
+        document.getElementById(id)?.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          if (!document.getElementById("saveBtn")?.disabled) handleSave(e);
+        });
+      });
 
       initPhotosUI();
       await refreshUI();
@@ -1908,63 +1952,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })();
 });
-
-(() => {
-  const ref = document.getElementById("ref");
-  const hours = document.getElementById("hours");
-  const saveBtn = document.getElementById("saveBtn");
-  const toggleBtn = document.getElementById("toggleDetailsBtn");
-  const details = document.getElementById("detailsPanel");
-
-  if (!ref || !hours || !saveBtn || !toggleBtn || !details) return;
-
-  let open = false;
-
-  const setOpen = (v) => {
-    open = !!v;
-    details.style.display = open ? "block" : "none";
-    toggleBtn.textContent = open ? "Hide details" : "More details";
-  };
-
-  const isValid = () => {
-    const r = (ref.value || "").trim();
-    const h = Number((hours.value || "").trim());
-    return r.length >= 3 && Number.isFinite(h) && h > 0;
-  };
-
-  const refresh = () => {
-    saveBtn.disabled = !isValid();
-  };
-
-  const submitIfEnter = (e) => {
-    if (e.key !== "Enter") return;
-    // Let textarea use Enter normally
-    if ((e.target && e.target.tagName || "").toLowerCase() === "textarea") return;
-    e.preventDefault();
-    if (!saveBtn.disabled) saveBtn.click();
-  };
-
-  toggleBtn.addEventListener("click", () => setOpen(!open));
-  ref.addEventListener("input", refresh);
-  hours.addEventListener("input", refresh);
-  ref.addEventListener("keydown", submitIfEnter);
-  hours.addEventListener("keydown", submitIfEnter);
-
-  // Autofocus RO on load
-  setTimeout(() => ref.focus(), 0);
-
-  // After successful save, collapse details + refocus.
-  // We can't hook your internal save success, so we do best-effort:
-  // collapse on submit click; your existing code can re-open on error if needed.
-  saveBtn.addEventListener("click", () => {
-    // allow existing handler to run; then collapse/refocus after a tick
-    setTimeout(() => {
-      setOpen(false);
-      refresh();
-      ref.focus();
-    }, 0);
-  });
-
-  refresh();
-  setOpen(false);
-})();

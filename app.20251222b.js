@@ -1808,6 +1808,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!toggleBtn || !details || !refEl || !typeEl || !hoursEl || !saveBtn) return;
 
+        window.__FR26_WIRED__ = true;
+
         let open = false;
 
         const setOpen = (v) => {
@@ -1860,6 +1862,31 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         };
       })();
+
+      // --- Rapid Log UX: toggle details + enable Save when required fields filled ---
+      if (!window.__FR26_WIRED__) {
+        const detailsBtn = document.getElementById("toggleDetailsBtn");
+        const detailsPanel = document.getElementById("detailsPanel");
+        detailsBtn?.addEventListener("click", () => {
+          const open = detailsPanel && detailsPanel.style.display !== "none";
+          if (detailsPanel) detailsPanel.style.display = open ? "none" : "block";
+          detailsBtn.textContent = open ? "More" : "Less";
+        });
+
+        function updateSaveEnabled(){
+          const empOk = !!getEmpId();
+          const refOk = !!(document.getElementById("ref")?.value || "").trim();
+          const typeOk = !!(document.getElementById("typeText")?.value || "").trim();
+          const hrsOk = num(document.getElementById("hours")?.value) > 0;
+          const btn = document.getElementById("saveBtn");
+          if (btn) btn.disabled = !(empOk && refOk && typeOk && hrsOk);
+        }
+
+        ["empId","ref","typeText","hours"].forEach(id=>{
+          document.getElementById(id)?.addEventListener("input", updateSaveEnabled);
+        });
+        updateSaveEnabled();
+      }
 
       document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
       document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));

@@ -171,6 +171,91 @@
     .rangeTabs .segBtn {
       transition: transform .08s ease, box-shadow .08s ease;
     }
+    /* -------- iOS-26 style form -------- */
+    .fr26{ padding:0; overflow:hidden; }
+    .fr26Form{ display:flex; flex-direction:column; gap:0; }
+    .fr26Group{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04));
+      border-bottom:1px solid rgba(255,255,255,.08);
+      padding:14px 14px 10px;
+    }
+    .fr26Group + .fr26Group{ border-top:1px solid rgba(255,255,255,.06); }
+    .fr26GroupHeader{ font-weight:800; font-size:14px; letter-spacing:.2px; color:rgba(255,255,255,.92); margin-bottom:8px; }
+    .fr26Sub{ color:rgba(255,255,255,.62); font-size:13px; }
+    .fr26TopRow{
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      margin:4px 0 8px;
+    }
+    .fr26Row{
+      display:flex; flex-direction:column; gap:6px;
+      padding:10px 0;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .fr26Row:last-child{ border-bottom:0; }
+    .fr26RowMultiline textarea{ min-height:90px; }
+    .fr26Label{ font-size:13px; color:rgba(255,255,255,.7); font-weight:700; }
+    .fr26Input, .fr26Textarea, .fr26File{
+      width:100%;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.25);
+      color: var(--text);
+      padding:12px 12px;
+      font-size:16px;
+      outline:none;
+    }
+    .fr26Textarea{ resize: vertical; }
+    .fr26Hint{
+      font-size:12px;
+      color:rgba(255,255,255,.55);
+      margin:6px 0 0;
+      line-height:1.5;
+    }
+    .fr26Details{
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border-top:1px solid rgba(255,255,255,.08);
+    }
+    .fr26ActionBar{
+      position: sticky;
+      bottom: 10px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+      padding:12px 14px 14px;
+      background: rgba(10,14,25,.9);
+      backdrop-filter: blur(12px);
+      border-top:1px solid rgba(255,255,255,.08);
+      box-shadow: 0 -8px 24px rgba(0,0,0,.35);
+      z-index:5;
+    }
+    .fr26BtnPrimary{
+      padding:14px 16px;
+      border-radius:14px;
+      border:1px solid rgba(47,125,255,.55);
+      background: linear-gradient(180deg, rgba(47,125,255,1), rgba(47,125,255,.75));
+      color: var(--text);
+      font-weight: 750;
+      cursor:pointer;
+    }
+    .fr26BtnGhost{
+      padding:14px 16px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.08);
+      color: var(--text);
+      font-weight: 700;
+      cursor:pointer;
+    }
+    .fr26Chip{
+      padding:10px 12px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.08);
+      color: var(--text);
+      font-weight:700;
+      cursor:pointer;
+      white-space:nowrap;
+    }
     /* ===== More Modal: iPhone-safe, scrollable, no background bleed ===== */
     #moreModal.modalShell{
       position: fixed;
@@ -365,6 +450,156 @@
       color:#fff;
       font-weight:700;
     }
+    /* ===== iOS26-ish section reskin (Rapid Log) ===== */
+    .fr26{
+      padding: 14px;
+    }
+
+    .fr26Form{
+      position: relative;
+      padding-bottom: 92px; /* space for sticky action bar */
+    }
+
+    .fr26Group{
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.05);
+      border-radius: 18px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .fr26GroupHeader{
+      padding: 12px 14px 8px;
+      font-weight: 800;
+      letter-spacing: .2px;
+      color: rgba(255,255,255,.88);
+    }
+
+    .fr26Sub{
+      color: rgba(255,255,255,.55);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .fr26TopRow{
+      display:flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px 8px;
+    }
+
+    .fr26Row{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 12px 14px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.12);
+    }
+
+    .fr26Row:first-of-type{
+      border-top: none;
+    }
+
+    .fr26RowMultiline{
+      gap: 10px;
+    }
+
+    .fr26Label{
+      font-size: 12px;
+      color: rgba(255,255,255,.60);
+    }
+
+    .fr26Input,
+    .fr26Textarea{
+      width: 100%;
+      padding: 14px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22);
+      color: rgba(255,255,255,.92);
+      outline: none;
+    }
+
+    .fr26Textarea{
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    .fr26File{
+      width: 100%;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.22);
+      color: rgba(255,255,255,.80);
+    }
+
+    .fr26Hint{
+      padding: 10px 14px 12px;
+      color: rgba(255,255,255,.55);
+      font-size: 12px;
+    }
+
+    .fr26Chip{
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.90);
+      border-radius: 999px;
+      padding: 10px 12px;
+      font-weight: 750;
+    }
+
+    .fr26Details{
+      margin-top: 2px;
+    }
+
+    /* Sticky bottom action bar */
+    .fr26ActionBar{
+      position: sticky;
+      bottom: 10px;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(10,14,25,.78);
+      backdrop-filter: blur(12px);
+    }
+
+    .fr26BtnPrimary{
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(47,125,255,.55);
+      background: linear-gradient(180deg, rgba(47,125,255,1), rgba(47,125,255,.75));
+      color: rgba(255,255,255,.92);
+      font-weight: 800;
+    }
+
+    .fr26BtnGhost{
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.92);
+      font-weight: 750;
+    }
+
+    .fr26BtnPrimary:disabled{
+      opacity: .55;
+    }
+
+    /* Make your existing .card look less "boxed" in this section */
+    .fr26 .card{
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      padding: 0;
+      margin: 0;
+    }
   </style>
 </head>
 <body data-page="main">
@@ -441,24 +676,32 @@
     </section>
   </div>
 
-  <section class="card">
-    <form id="logForm" onsubmit="return false;">
-      <section class="card">
-        <label class="lbl" for="empId">Employee #</label>
-        <input id="empId" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off" />
-        <div class="hint">Required. Entries are stored under this number on this device.</div>
+  <section class="card fr26">
+    <form id="logForm" onsubmit="return false;" class="fr26Form">
+
+      <!-- Employee -->
+      <section class="fr26Group">
+        <div class="fr26GroupHeader">Employee</div>
+
+        <div class="fr26Row">
+          <label class="fr26Label" for="empId">Employee #</label>
+          <input id="empId" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off" class="fr26Input" />
+        </div>
+        <div class="fr26Hint">Required. Entries are stored under this number on this device.</div>
       </section>
 
-      <!-- Rapid Log (fast path) -->
-      <div class="card" style="padding:14px;">
-        <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0;">
-          <div class="mono" style="font-size:13px; opacity:.85;">Rapid Log</div>
-          <button id="toggleDetailsBtn" class="btn" type="button" style="padding:10px 12px;">More details</button>
+      <!-- Rapid Log -->
+      <section class="fr26Group">
+        <div class="fr26TopRow">
+          <div>
+            <div class="fr26GroupHeader" style="margin:0;">Rapid Log</div>
+            <div class="fr26Sub">Fast entry. Expand only when you need VIN/photo/notes.</div>
+          </div>
+          <button id="toggleDetailsBtn" class="fr26Chip" type="button">More</button>
         </div>
 
-        <!-- Fast path fields: keep existing IDs -->
-        <div class="row" style="margin-top:10px;">
-          <label class="lbl" for="ref">RO / Stock #</label>
+        <div class="fr26Row">
+          <label class="fr26Label" for="ref">RO / Stock #</label>
           <input
             id="ref"
             name="ref"
@@ -468,19 +711,28 @@
             autocapitalize="characters"
             spellcheck="false"
             required
+            class="fr26Input"
           />
-          <div class="hint">Letters + numbers allowed.</div>
         </div>
 
-        <div class="row" style="margin-top:12px;">
-          <label>Job Type (autocomplete)</label>
-          <input name="typeText" id="typeText" list="typeList" placeholder="Sold + FPF" inputmode="text" autocomplete="off" required />
+        <div class="fr26Row">
+          <label class="fr26Label" for="typeText">Job Type</label>
+          <input
+            name="typeText"
+            id="typeText"
+            list="typeList"
+            placeholder="Sold + FPF"
+            inputmode="text"
+            autocomplete="off"
+            required
+            class="fr26Input"
+          />
           <datalist id="typeList"></datalist>
-          <div class="muted typehint">Just type it. New types auto-save and show up next time.</div>
         </div>
+        <div class="fr26Hint">Just type it. New types auto-save and show up next time.</div>
 
-        <div class="row" style="margin-top:12px;">
-          <label class="lbl" for="hours">Hours (decimal)</label>
+        <div class="fr26Row">
+          <label class="fr26Label" for="hours">Hours</label>
           <input
             id="hours"
             name="hours"
@@ -490,62 +742,63 @@
             inputmode="decimal"
             placeholder="0.5"
             required
+            class="fr26Input"
           />
         </div>
+      </section>
 
-        <div class="row" style="margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-          <button id="saveBtn" class="btnPrimary" type="submit" disabled>Save Entry</button>
-          <button id="clearBtn" class="btnGhost" type="button">Clear</button>
-        </div>
+      <!-- Details panel (keeps same id) -->
+      <section id="detailsPanel" class="fr26Details" style="display:none;">
+        <div class="fr26Group">
+          <div class="fr26GroupHeader">Details</div>
 
-        <!-- Optional details -->
-        <div id="detailsPanel" style="margin-top:12px; display:none;">
-          <div class="divider" style="margin:12px 0;"></div>
-
-          <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0;">
-            <div class="mono" style="font-size:13px; opacity:.85;">Reference</div>
+          <div class="fr26TopRow" style="margin-top:6px;">
+            <div class="fr26Sub">Reference type</div>
             <div class="seg" role="tablist" aria-label="Reference type">
               <button id="refTypeRO" type="button" class="segBtn active">RO</button>
               <button id="refTypeSTK" type="button" class="segBtn">Stock</button>
             </div>
           </div>
 
-          <div class="grid2" style="margin-top:10px;">
-            <div>
-              <label class="lbl" for="vin8">VIN (last 8)</label>
-              <input
-                id="vin8"
-                name="vin8"
-                placeholder="1A2B3C4D"
-                maxlength="8"
-                inputmode="text"
-                autocomplete="off"
-                autocapitalize="characters"
-                spellcheck="false"
-              />
-              <div class="hint">Optional.</div>
-            </div>
-
-            <div>
-              <label>Rate ($)</label>
-              <input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" />
-            </div>
+          <div class="fr26Row">
+            <label class="fr26Label" for="vin8">VIN (last 8)</label>
+            <input
+              id="vin8"
+              name="vin8"
+              placeholder="1A2B3C4D"
+              maxlength="8"
+              inputmode="text"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              class="fr26Input"
+            />
           </div>
 
-          <div class="row grid2" style="margin-top:12px;">
-            <div>
-              <label>Proof Photo (optional)</label>
-              <input id="proofPhoto" name="photo" type="file" accept="image/*" capture="environment" />
-              <div class="muted" style="margin-top:6px;">Tip: 1 photo per RO is enough.</div>
-            </div>
+          <div class="fr26Row">
+            <label class="fr26Label" for="rateInput">Rate ($)</label>
+            <input id="rateInput" name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" class="fr26Input" />
           </div>
 
-          <div class="row" style="margin-top:12px;">
-            <label>Notes (optional)</label>
-            <textarea name="notes" placeholder="Anything that will matter later..."></textarea>
+          <div class="fr26Row">
+            <label class="fr26Label" for="proofPhoto">Proof Photo</label>
+            <input id="proofPhoto" name="photo" type="file" accept="image/*" capture="environment" class="fr26File" />
+          </div>
+          <div class="fr26Hint">Tip: 1 photo per RO is enough.</div>
+
+          <div class="fr26Row fr26RowMultiline">
+            <label class="fr26Label" for="notesBox">Notes</label>
+            <textarea id="notesBox" name="notes" placeholder="Anything that will matter later..." class="fr26Textarea"></textarea>
           </div>
         </div>
+      </section>
+
+      <!-- Sticky action bar -->
+      <div class="fr26ActionBar">
+        <button id="clearBtn" class="fr26BtnGhost" type="button">Clear</button>
+        <button id="saveBtn" class="fr26BtnPrimary" type="submit" disabled>Save</button>
       </div>
+
     </form>
   </section>
   <div id="toast" class="toast" aria-live="polite"></div>
