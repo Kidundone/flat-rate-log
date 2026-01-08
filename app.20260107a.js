@@ -34,7 +34,14 @@ window.addEventListener("unhandledrejection", (e) => {
 
 let rangeMode = "day";
 let currentRefType = "RO";
-let weekWhich = window.__WEEK_WHICH__ || "this"; // "this" | "last"
+let summaryRange = (window.__WEEK_WHICH__ === "last" || window.__WEEK_WHICH__ === "lastWeek") ? "lastWeek" : "thisWeek"; // "thisWeek" | "lastWeek"
+
+function setSummaryRange(next) {
+  summaryRange = (next === "lastWeek") ? "lastWeek" : "thisWeek";
+  window.__WEEK_WHICH__ = summaryRange;
+  console.log("summaryRange", summaryRange);
+  if (PAGE === "main") refreshUI();
+}
 
 function setRefType(t) {
   currentRefType = t === "STOCK" ? "STOCK" : "RO";
@@ -212,6 +219,14 @@ async function tx(storeName, mode = "readonly") {
   return { db, t, store, done };
 }
 
+function normalizeEntries(entries) {
+  return (entries || []).map((e) => {
+    if (typeof e?.createdAtMs === "number") return e;
+    const parsed = e?.createdAt ? Date.parse(e.createdAt) : (e?.date ? Date.parse(e.date) : NaN);
+    return { ...e, createdAtMs: Number.isFinite(parsed) ? parsed : Date.now() };
+  });
+}
+
 async function getAll(storeName) {
   const { db, store, done } = await tx(storeName, "readonly");
   try {
@@ -221,7 +236,7 @@ async function getAll(storeName) {
       r.onerror = () => reject(r.error);
     });
     await done; // wait for txn
-    return items;
+    return storeName === STORES.entries ? normalizeEntries(items) : items;
   } finally {
     db.close();
   }
@@ -468,6 +483,69 @@ function renderWeekBreakdown(days){
   });
 }
 
+// Week math: choose week start. Most payroll weeks start Monday.
+// If yours starts Sunday, set WEEK_START = 0.
+const WEEK_START = 1; // 0=Sun, 1=Mon
+
+function startOfWeek(date, weekStart = WEEK_START) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0..6
+  const diff = (day - weekStart + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function weekRangeFor(key, now = new Date()) {
+  const thisStart = startOfWeek(now);
+  const thisEnd = addDays(thisStart, 7); // exclusive
+  if (key === "thisWeek") return { start: thisStart, end: thisEnd };
+
+  const lastStart = addDays(thisStart, -7);
+  const lastEnd = thisStart; // exclusive
+  return { start: lastStart, end: lastEnd };
+}
+
+function inRange(tsMs, start, end) {
+  return tsMs >= start.getTime() && tsMs < end.getTime();
+}
+
+function weekKey(date) {
+  // key by start-of-week date in YYYY-MM-DD
+  const s = startOfWeek(date);
+  const y = s.getFullYear();
+  const m = String(s.getMonth() + 1).padStart(2, "0");
+  const d = String(s.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function loadPaidMap() {
+  try { return JSON.parse(localStorage.getItem("paidHoursByWeek") || "{}"); }
+  catch { return {}; }
+}
+
+function savePaidMap(map) {
+  localStorage.setItem("paidHoursByWeek", JSON.stringify(map));
+}
+
+function setPaidHoursForThisWeek(value) {
+  const map = loadPaidMap();
+  map[weekKey(new Date())] = Number(value) || 0;
+  savePaidMap(map);
+  if (typeof refreshUI === "function") refreshUI();
+}
+
+function getPaidHoursForWeekStart(startDate) {
+  const map = loadPaidMap();
+  return Number(map[weekKey(startDate)]) || 0;
+}
+
 /* -------------------- Week helpers (Mon–Sun) -------------------- */
 function dateKey(d){
   const y = d.getFullYear();
@@ -683,11 +761,13 @@ async function handleSave(ev) {
   }
 
   const createdAt = nowISO();
+  const createdAtMs = Date.now();
   const dayKey = dayKeyFromISO(createdAt);
   const entry = {
     id: uuid(),
     empId,
     createdAt,
+    createdAtMs,
     dayKey,
     weekStartKey: dateKey(startOfWeekLocal(new Date(createdAt))),
     refType: currentRefType,
@@ -1038,6 +1118,126 @@ function computeTotals(entries){
   };
 }
 
+function computeWeekComparison(entries, now = new Date()){
+  const { thisWeekKey, lastWeekKey } = getThisAndLastWeekKeys(now);
+
+  const thisWeekEntries = filterByWeekStartKey(entries, thisWeekKey);
+  const lastWeekEntries = filterByWeekStartKey(entries, lastWeekKey);
+
+  const thisTotals = computeTotals(thisWeekEntries);
+  const lastTotals = computeTotals(lastWeekEntries);
+
+  return {
+    keys: { thisWeekKey, lastWeekKey },
+    entries: { thisWeekEntries, lastWeekEntries },
+    totals: { thisTotals, lastTotals },
+    diff: {
+      hours: round1(thisTotals.hours - lastTotals.hours),
+      dollars: round2(thisTotals.dollars - lastTotals.dollars),
+      count: thisTotals.count - lastTotals.count,
+      avgHrs: round1(thisTotals.avgHrs - lastTotals.avgHrs)
+    }
+  };
+}
+
+function addDaysLocal(d, days){
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+}
+
+function weekStartKeyForDate(d){
+  // uses your existing helpers
+  return dateKey(startOfWeekLocal(d));
+}
+
+function getThisAndLastWeekKeys(now = new Date()){
+  const thisStart = startOfWeekLocal(now);
+  const lastStart = addDaysLocal(thisStart, -7);
+  return {
+    thisWeekKey: dateKey(thisStart),
+    lastWeekKey: dateKey(lastStart)
+  };
+}
+
+function filterByWeekStartKey(entries, weekStartKey){
+  return entries.filter(e => e && e.weekStartKey === weekStartKey);
+}
+
+function sumHours(entries) {
+  return entries.reduce((acc, e) => acc + (Number(e.hours) || 0), 0);
+}
+
+function getWeekStats(allEntries, now = new Date()) {
+  const entries = normalizeEntries(allEntries);
+
+  const rThis = weekRangeFor("thisWeek", now);
+  const rLast = weekRangeFor("lastWeek", now);
+
+  const thisWeekEntries = entries.filter(e => inRange(e.createdAtMs, rThis.start, rThis.end));
+  const lastWeekEntries = entries.filter(e => inRange(e.createdAtMs, rLast.start, rLast.end));
+
+  const thisHours = sumHours(thisWeekEntries);
+  const lastHours = sumHours(lastWeekEntries);
+  const diff = thisHours - lastHours;
+
+  return {
+    ranges: { this: rThis, last: rLast },
+    thisWeekEntries,
+    lastWeekEntries,
+    thisHours,
+    lastHours,
+    diff,
+  };
+}
+
+function renderEntriesList(entries) {
+  renderList(entries, "all");
+}
+
+function renderWeekHeader(allEntries) {
+  const stats = getWeekStats(allEntries);
+
+  const mainHours = summaryRange === "thisWeek" ? stats.thisHours : stats.lastHours;
+  const otherHours = summaryRange === "thisWeek" ? stats.lastHours : stats.thisHours;
+  const diff = stats.thisHours - stats.lastHours; // always this - last
+
+  const paidThis = getPaidHoursForWeekStart(stats.ranges.this.start);
+  const payrollDiff = stats.thisHours - paidThis;
+
+  const hoursMain = document.getElementById("hoursMain");
+  if (hoursMain) hoursMain.textContent = `${formatHours(mainHours)} hrs`;
+
+  const hoursCompare = document.getElementById("hoursCompare");
+  if (hoursCompare) hoursCompare.textContent = `Last Week: ${formatHours(otherHours)} hrs`;
+
+  const sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
+  const hoursDiff = document.getElementById("hoursDiff");
+  if (hoursDiff) hoursDiff.textContent = `Diff: ${sign}${formatHours(Math.abs(diff))} hrs`;
+
+  const paidHours = document.getElementById("paidHours");
+  if (paidHours) paidHours.textContent = `Paid: ${formatHours(paidThis)} hrs`;
+
+  const payrollSign = payrollDiff > 0 ? "+" : payrollDiff < 0 ? "−" : "";
+  const payrollDiffEl = document.getElementById("payrollDiff");
+  if (payrollDiffEl) {
+    payrollDiffEl.textContent =
+      `Payroll Diff: ${payrollSign}${formatHours(Math.abs(payrollDiff))} hrs`;
+  }
+
+  // Also render the list for the selected range
+  const list = summaryRange === "thisWeek" ? stats.thisWeekEntries : stats.lastWeekEntries;
+  renderEntriesList(list);
+
+  // Optional: show the date range string
+  const range = summaryRange === "thisWeek" ? stats.ranges.this : stats.ranges.last;
+  const rangeLabel = document.getElementById("rangeLabel");
+  if (rangeLabel) {
+    rangeLabel.textContent =
+      `${range.start.toLocaleDateString()} – ${addDays(range.end, -1).toLocaleDateString()}`;
+  }
+}
+
 function filterEntriesByEmp(entries, empId, allowAll = false){
   const id = String(empId ?? ACTIVE_EMP ?? "").trim();
   if (!id) return allowAll ? (entries || []) : [];
@@ -1243,7 +1443,7 @@ async function refreshUI(){
   let ws = startOfWeekLocal(now);
   let we = endOfWeekLocal(now);
   const ms = startOfMonthLocal(now);
-  if ((window.__WEEK_WHICH__ || weekWhich) === "last") {
+  if (summaryRange === "lastWeek") {
     ws = new Date(ws);
     ws.setDate(ws.getDate() - 7);
     we = endOfWeekLocal(ws);
@@ -1251,10 +1451,23 @@ async function refreshUI(){
 
   let filtered = filterByMode(entries, mode);
 
+  let wc = null;
+  let shownEntries = filtered;
+  let shownTotals = null;
+  if (mode === "week") {
+    wc = computeWeekComparison(entries, now);
+    console.log("WC keys", wc.keys);
+    console.log("ThisWeek hrs", wc.totals.thisTotals.hours, "count", wc.totals.thisTotals.count);
+    console.log("LastWeek hrs", wc.totals.lastTotals.hours, "count", wc.totals.lastTotals.count);
+    console.log("Diff hrs", wc.diff.hours);
+    shownEntries = summaryRange === "lastWeek" ? wc.entries.lastWeekEntries : wc.entries.thisWeekEntries;
+    shownTotals = summaryRange === "lastWeek" ? wc.totals.lastTotals : wc.totals.thisTotals;
+  }
+
   if (mode === "week") {
     // optional day filter inside week
     const pick = window.__WEEK_DAY_PICK__ || "";
-    if (pick) filtered = filtered.filter(e => e.dayKey === pick);
+    if (pick) shownEntries = shownEntries.filter(e => e.dayKey === pick);
 
     // render week breakdown (always uses full week, not the picked day)
     const days = computeWeekBreakdown(entries.filter(e => inWeek(e.dayKey, ws)), ws);
@@ -1268,16 +1481,22 @@ async function refreshUI(){
 
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = searchInput?.value || "";
-  const searched = applySearch(filtered, q);
+  const searched = applySearch(shownEntries, q);
 
   window.__RANGE_FILTERED__ = searched; // replace for list + totals
-  const totals = computeTotals(searched);
+  let totals = computeTotals(searched);
+  let diffStr = "";
+  if (mode === "week" && wc && shownTotals) {
+    totals = shownTotals;
+    const diffHrs = wc.diff.hours;
+    diffStr = diffHrs > 0 ? `+${diffHrs}` : `${diffHrs}`;
+  }
 
   const r1 = (n) => (Math.round(Number(n || 0) * 10) / 10).toFixed(1);
 
   const title =
     mode === "day" ? "Today" :
-    mode === "week" ? "This Week" :
+    mode === "week" ? (summaryRange === "lastWeek" ? "Last Week" : "This Week") :
     mode === "month" ? "This Month" : "All Time";
 
   setText("rangeTitle", title);
@@ -1299,6 +1518,7 @@ async function refreshUI(){
   setText("weekHours", round1(week.hours));
   setText("weekDollars", formatMoney(week.dollars));
   setText("weekRange", `${dateKey(ws)} → ${dateKey(we)}`);
+  if (diffStr) setText("weekDelta", `Diff: ${diffStr} hrs`);
 
   const flag = await getThisWeekFlag();
   const flagged = flag ? Number(flag.flaggedHours || 0) : 0;
@@ -1331,7 +1551,13 @@ async function refreshUI(){
     status.textContent = `Showing: ${rangeLabel}${qtxt} • ${searched.length} entries`;
   }
 
-  renderList(searched, listMode);
+  const hasWeekHeader =
+    !!document.getElementById("hoursMain") ||
+    !!document.getElementById("hoursCompare") ||
+    !!document.getElementById("hoursDiff") ||
+    !!document.getElementById("rangeLabel");
+  if (hasWeekHeader) renderWeekHeader(entries);
+  else renderList(shownEntries, listMode);
 
   // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
@@ -1779,22 +2005,18 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
 
       const syncWeekBtns = () => {
-        document.getElementById("weekThisBtn")?.classList.toggle("active", weekWhich === "this");
-        document.getElementById("weekLastBtn")?.classList.toggle("active", weekWhich === "last");
+        document.getElementById("weekThisBtn")?.classList.toggle("active", summaryRange === "thisWeek");
+        document.getElementById("weekLastBtn")?.classList.toggle("active", summaryRange === "lastWeek");
       };
 
       document.getElementById("weekThisBtn")?.addEventListener("click", () => {
-        weekWhich = "this";
-        window.__WEEK_WHICH__ = "this";
+        setSummaryRange("thisWeek");
         syncWeekBtns();
-        refreshUI();
       });
 
       document.getElementById("weekLastBtn")?.addEventListener("click", () => {
-        weekWhich = "last";
-        window.__WEEK_WHICH__ = "last";
+        setSummaryRange("lastWeek");
         syncWeekBtns();
-        refreshUI();
       });
 
       syncWeekBtns();

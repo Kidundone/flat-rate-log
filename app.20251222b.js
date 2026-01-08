@@ -96,9 +96,9 @@ function round1(n){
 function round2(n){
   return Math.round((Number(n) || 0) * 100) / 100;
 }
-function formatHours(n){
-  const x = round1(n);
-  return (x % 1 === 0) ? String(x.toFixed(0)) : String(x.toFixed(1));
+function formatHours(n) {
+  // 1 decimal like 44.3
+  return (Math.round(Number(n || 0) * 10) / 10).toFixed(1);
 }
 function formatDayLabel(dayKey){
   if (!dayKey) return "";
@@ -201,6 +201,15 @@ async function tx(storeName, mode = "readonly") {
   });
 
   return { db, t, store, done };
+}
+
+function normalizeEntries(entries) {
+  return (entries || []).map((e) => {
+    if (typeof e?.createdAtMs === "number") return e;
+    // Try to parse existing date fields if present; fallback to "now" (not ideal but prevents crashes)
+    const parsed = e?.date ? Date.parse(e.date) : (e?.createdAt ? Date.parse(e.createdAt) : NaN);
+    return { ...e, createdAtMs: Number.isFinite(parsed) ? parsed : Date.now() };
+  });
 }
 
 async function getAll(storeName) {
@@ -459,6 +468,39 @@ function renderWeekBreakdown(days){
   });
 }
 
+// Week math: choose week start. Most payroll weeks start Monday.
+// If yours starts Sunday, set WEEK_START = 0.
+const WEEK_START = 1; // 0=Sun, 1=Mon
+
+function startOfWeek(date, weekStart = WEEK_START) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0..6
+  const diff = (day - weekStart + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function weekRangeFor(key, now = new Date()) {
+  const thisStart = startOfWeek(now);
+  const thisEnd = addDays(thisStart, 7); // exclusive
+  if (key === "thisWeek") return { start: thisStart, end: thisEnd };
+
+  const lastStart = addDays(thisStart, -7);
+  const lastEnd = thisStart; // exclusive
+  return { start: lastStart, end: lastEnd };
+}
+
+function inRange(tsMs, start, end) {
+  return tsMs >= start.getTime() && tsMs < end.getTime();
+}
+
 /* -------------------- Week helpers (Mon–Sun) -------------------- */
 function dateKey(d){
   const y = d.getFullYear();
@@ -674,11 +716,13 @@ async function handleSave(ev) {
   }
 
   const createdAt = nowISO();
+  const createdAtMs = Date.now();
   const dayKey = dayKeyFromISO(createdAt);
   const entry = {
     id: uuid(),
     empId,
     createdAt,
+    createdAtMs,
     dayKey,
     weekStartKey: dateKey(startOfWeekLocal(new Date(createdAt))),
     refType: currentRefType,
@@ -1026,6 +1070,33 @@ function computeTotals(entries){
     dollars: round2(dollars),
     count,
     avgHrs
+  };
+}
+
+function sumHours(entries) {
+  return entries.reduce((acc, e) => acc + (Number(e.hours) || 0), 0);
+}
+
+function getWeekStats(allEntries, now = new Date()) {
+  const entries = normalizeEntries(allEntries);
+
+  const rThis = weekRangeFor("thisWeek", now);
+  const rLast = weekRangeFor("lastWeek", now);
+
+  const thisWeekEntries = entries.filter(e => inRange(e.createdAtMs, rThis.start, rThis.end));
+  const lastWeekEntries = entries.filter(e => inRange(e.createdAtMs, rLast.start, rLast.end));
+
+  const thisHours = sumHours(thisWeekEntries);
+  const lastHours = sumHours(lastWeekEntries);
+  const diff = thisHours - lastHours;
+
+  return {
+    ranges: { this: rThis, last: rLast },
+    thisWeekEntries,
+    lastWeekEntries,
+    thisHours,
+    lastHours,
+    diff,
   };
 }
 
