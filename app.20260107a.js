@@ -1238,15 +1238,18 @@ async function refreshUI(){
   const mode = window.__RANGE_MODE__ || rangeMode || "day";
   rangeMode = mode;
 
-  let filtered = filterByMode(entries, mode);
-
   const now = new Date();
-  let ws0 = startOfWeekLocal(now);
+  const dayKey = todayKeyLocal();
+  let ws = startOfWeekLocal(now);
+  let we = endOfWeekLocal(now);
+  const ms = startOfMonthLocal(now);
   if ((window.__WEEK_WHICH__ || weekWhich) === "last") {
-    ws0 = new Date(ws0);
-    ws0.setDate(ws0.getDate() - 7);
+    ws = new Date(ws);
+    ws.setDate(ws.getDate() - 7);
+    we = endOfWeekLocal(ws);
   }
-  const we0 = endOfWeekLocal(ws0);
+
+  let filtered = filterByMode(entries, mode);
 
   if (mode === "week") {
     // optional day filter inside week
@@ -1254,7 +1257,7 @@ async function refreshUI(){
     if (pick) filtered = filtered.filter(e => e.dayKey === pick);
 
     // render week breakdown (always uses full week, not the picked day)
-    const days = computeWeekBreakdown(entries.filter(e => inWeek(e.dayKey, ws0)), ws0);
+    const days = computeWeekBreakdown(entries.filter(e => inWeek(e.dayKey, ws)), ws);
     renderWeekBreakdown(days);
   } else {
     // hide week breakdown when not in week mode
@@ -1285,18 +1288,17 @@ async function refreshUI(){
   setText("rangeSub", rangeSubLabel(mode));
 
   // Today
-  const dayKey = todayKeyLocal();
   const today = computeToday(entries, dayKey);
   setText("todayHours", round1(today.hours));
   setText("todayDollars", formatMoney(today.dollars));
   setText("todayCount", String(today.count));
 
   // Week
-  const week = computeWeek(entries, ws0);
+  const week = computeWeek(entries, ws);
 
   setText("weekHours", round1(week.hours));
   setText("weekDollars", formatMoney(week.dollars));
-  setText("weekRange", `${dateKey(ws0)} → ${dateKey(we0)}`);
+  setText("weekRange", `${dateKey(ws)} → ${dateKey(we)}`);
 
   const flag = await getThisWeekFlag();
   const flagged = flag ? Number(flag.flaggedHours || 0) : 0;
@@ -1330,13 +1332,6 @@ async function refreshUI(){
   }
 
   renderList(searched, listMode);
-
-  if (mode === "week") {
-    renderWeekBreakdown(computeWeekBreakdown(filtered, ws));
-  } else {
-    renderWeekBreakdown([]);
-    window.__WEEK_DAY_PICK__ = "";
-  }
 
   // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
