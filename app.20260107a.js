@@ -1,4 +1,4 @@
-window.BUILD = "20260107a";
+window.BUILD = "20260107a-hotfix1";
 console.log("BUILD", window.BUILD, new Date().toISOString());
 
 const DB_NAME = "frlog";
@@ -1345,9 +1345,9 @@ async function registerSW() {
 
     // Guard: iOS/Safari sometimes gives a reg that can't update yet
     try {
-      if (reg && typeof reg.update === "function") await reg.update();
+      if (reg?.active) await reg.update();
     } catch (e) {
-      console.warn("SW update skipped:", e?.message || e);
+      // Safari can throw even when registration is fine; ignore.
     }
 
     let reloaded = false;
@@ -1823,16 +1823,14 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const form = document.getElementById("logForm");
-      form?.addEventListener("submit", handleSave);
       document.getElementById("clearBtn")?.addEventListener("click", handleClear);
 
       // --- Rapid Log UX: toggle details + enable Save when required fields filled ---
-      // --- Rapid Log UX: toggle details + enable Save when required fields filled ---
       function updateSaveEnabled(){
-        const empOk = !!getEmpId();
-        const refOk = !!(document.getElementById("ref")?.value || "").trim();
+        const empOk  = !!getEmpId();
+        const refOk  = !!(document.getElementById("ref")?.value || "").trim();
         const typeOk = !!(document.getElementById("typeText")?.value || "").trim();
-        const hrsOk = num(document.getElementById("hours")?.value) > 0;
+        const hrsOk  = num(document.getElementById("hours")?.value) > 0;
 
         const btn = document.getElementById("saveBtn");
         if (btn) btn.disabled = !(empOk && refOk && typeOk && hrsOk);
@@ -1841,41 +1839,42 @@ document.addEventListener("DOMContentLoaded", () => {
       const detailsBtn = document.getElementById("toggleDetailsBtn");
       const detailsPanel = document.getElementById("detailsPanel");
 
+      // Init collapsed
       if (detailsBtn && detailsPanel) {
         detailsPanel.style.display = "none";
         detailsBtn.textContent = "More details";
 
         detailsBtn.addEventListener("click", () => {
-          const open = detailsPanel.style.display !== "none";
-          detailsPanel.style.display = open ? "none" : "block";
-          detailsBtn.textContent = open ? "More details" : "Less";
+          const isOpen = detailsPanel.style.display !== "none";
+          detailsPanel.style.display = isOpen ? "none" : "block";
+          detailsBtn.textContent = isOpen ? "More details" : "Less";
         });
       }
 
+      // Enable Save as user types
       ["empId","ref","typeText","hours"].forEach((id) => {
-        document.getElementById(id)?.addEventListener("input", updateSaveEnabled);
-        document.getElementById(id)?.addEventListener("change", updateSaveEnabled);
+        const el = document.getElementById(id);
+        el?.addEventListener("input", updateSaveEnabled);
+        el?.addEventListener("change", updateSaveEnabled);
       });
-
       updateSaveEnabled();
+
+      // Enter key: submit the form (NOT handleSave directly)
+      // This avoids double-save and respects your existing submit handler.
+      ["ref","typeText","hours"].forEach((id) => {
+        document.getElementById(id)?.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          const btn = document.getElementById("saveBtn");
+          if (btn && !btn.disabled) btn.click(); // triggers your existing handler path
+        });
+      });
 
       document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
       document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
       document.getElementById("histRange")?.addEventListener("change", renderHistory);
       document.getElementById("histGroup")?.addEventListener("change", renderHistory);
       document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
-
-      // Make Save work even if it's type="submit" but form onsubmit="return false;"
-      document.getElementById("logForm")?.addEventListener("submit", handleSave);
-
-      // Optional: Enter key saves from Rapid fields
-      ["ref","typeText","hours"].forEach((id) => {
-        document.getElementById(id)?.addEventListener("keydown", (e) => {
-          if (e.key !== "Enter") return;
-          e.preventDefault();
-          if (!document.getElementById("saveBtn")?.disabled) handleSave(e);
-        });
-      });
 
       initPhotosUI();
       await refreshUI();
