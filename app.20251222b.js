@@ -1794,8 +1794,72 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const form = document.getElementById("logForm");
       form?.addEventListener("submit", handleSave);
-      document.getElementById("saveBtn")?.addEventListener("click", handleSave);
       document.getElementById("clearBtn")?.addEventListener("click", handleClear);
+
+      // ---------- Rapid Log UI wiring (safe even if elements missing) ----------
+      (() => {
+        const toggleBtn = document.getElementById("toggleDetailsBtn");
+        const details = document.getElementById("detailsPanel");
+
+        const refEl = document.getElementById("ref");
+        const typeEl = document.getElementById("typeText");
+        const hoursEl = document.getElementById("hours");
+        const saveBtn = document.getElementById("saveBtn");
+
+        if (!toggleBtn || !details || !refEl || !typeEl || !hoursEl || !saveBtn) return;
+
+        let open = false;
+
+        const setOpen = (v) => {
+          open = !!v;
+          details.style.display = open ? "block" : "none";
+          toggleBtn.textContent = open ? "Hide details" : "More details";
+        };
+
+        const isValid = () => {
+          const ref = (refEl.value || "").trim();
+          const type = (typeEl.value || "").trim();
+          const hrs = num(hoursEl.value);
+          return ref.length >= 3 && type.length >= 2 && Number.isFinite(hrs) && hrs > 0;
+        };
+
+        const refresh = () => {
+          saveBtn.disabled = !isValid();
+        };
+
+        toggleBtn.addEventListener("click", () => setOpen(!open));
+        refEl.addEventListener("input", refresh);
+        typeEl.addEventListener("input", () => { refresh(); maybeAutofillFromType(typeEl.value); });
+        hoursEl.addEventListener("input", refresh);
+
+        // Enter-to-save from Ref/Type/Hours (not textarea)
+        const enterToSave = (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          if (!saveBtn.disabled) (document.getElementById("logForm") || saveBtn).dispatchEvent(new Event("submit", { cancelable: true }));
+        };
+        refEl.addEventListener("keydown", enterToSave);
+        typeEl.addEventListener("keydown", enterToSave);
+        hoursEl.addEventListener("keydown", enterToSave);
+
+        // Start collapsed
+        setOpen(false);
+        refresh();
+
+        // Focus ref on load
+        setTimeout(() => refEl.focus(), 0);
+
+        // Collapse only on *successful* save: hook toast("Saved") side-effect by wrapping toast.
+        // This avoids collapsing on validation errors.
+        const _toast = window.toast;
+        window.toast = (msg) => {
+          _toast(msg);
+          if (String(msg).toLowerCase() === "saved") {
+            setOpen(false);
+            setTimeout(() => refEl.focus(), 0);
+          }
+        };
+      })();
 
       document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
       document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));

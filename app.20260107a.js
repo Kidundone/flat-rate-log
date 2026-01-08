@@ -1908,3 +1908,63 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })();
 });
+
+(() => {
+  const ref = document.getElementById("ref");
+  const hours = document.getElementById("hours");
+  const saveBtn = document.getElementById("saveBtn");
+  const toggleBtn = document.getElementById("toggleDetailsBtn");
+  const details = document.getElementById("detailsPanel");
+
+  if (!ref || !hours || !saveBtn || !toggleBtn || !details) return;
+
+  let open = false;
+
+  const setOpen = (v) => {
+    open = !!v;
+    details.style.display = open ? "block" : "none";
+    toggleBtn.textContent = open ? "Hide details" : "More details";
+  };
+
+  const isValid = () => {
+    const r = (ref.value || "").trim();
+    const h = Number((hours.value || "").trim());
+    return r.length >= 3 && Number.isFinite(h) && h > 0;
+  };
+
+  const refresh = () => {
+    saveBtn.disabled = !isValid();
+  };
+
+  const submitIfEnter = (e) => {
+    if (e.key !== "Enter") return;
+    // Let textarea use Enter normally
+    if ((e.target && e.target.tagName || "").toLowerCase() === "textarea") return;
+    e.preventDefault();
+    if (!saveBtn.disabled) saveBtn.click();
+  };
+
+  toggleBtn.addEventListener("click", () => setOpen(!open));
+  ref.addEventListener("input", refresh);
+  hours.addEventListener("input", refresh);
+  ref.addEventListener("keydown", submitIfEnter);
+  hours.addEventListener("keydown", submitIfEnter);
+
+  // Autofocus RO on load
+  setTimeout(() => ref.focus(), 0);
+
+  // After successful save, collapse details + refocus.
+  // We can't hook your internal save success, so we do best-effort:
+  // collapse on submit click; your existing code can re-open on error if needed.
+  saveBtn.addEventListener("click", () => {
+    // allow existing handler to run; then collapse/refocus after a tick
+    setTimeout(() => {
+      setOpen(false);
+      refresh();
+      ref.focus();
+    }, 0);
+  });
+
+  refresh();
+  setOpen(false);
+})();

@@ -449,58 +449,38 @@
         <div class="hint">Required. Entries are stored under this number on this device.</div>
       </section>
 
+      <!-- Rapid Log (fast path) -->
       <div class="card" style="padding:14px;">
-        <div class="row" style="justify-content:space-between; align-items:center; gap:10px;">
-          <div class="mono" style="font-size:13px; opacity:.85;">Reference</div>
-
-          <div class="seg" role="tablist" aria-label="Reference type">
-            <button id="refTypeRO" type="button" class="segBtn active">RO</button>
-            <button id="refTypeSTK" type="button" class="segBtn">Stock</button>
-          </div>
+        <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0;">
+          <div class="mono" style="font-size:13px; opacity:.85;">Rapid Log</div>
+          <button id="toggleDetailsBtn" class="btn" type="button" style="padding:10px 12px;">More details</button>
         </div>
 
-        <div class="grid2" style="margin-top:10px;">
-          <div>
-            <label class="lbl" for="ref">RO / Stock #</label>
-            <input
-              id="ref"
-              name="ref"
-              placeholder="e.g. 123456 or AB12C"
-              inputmode="text"
-              autocomplete="off"
-              autocapitalize="characters"
-              spellcheck="false"
-              required
-            />
-            <div class="hint">Letters + numbers allowed.</div>
-          </div>
-
-          <div>
-            <label class="lbl" for="vin8">VIN (last 8)</label>
-            <input
-              id="vin8"
-              name="vin8"
-              placeholder="1A2B3C4D"
-              maxlength="8"
-              inputmode="text"
-              autocomplete="off"
-              autocapitalize="characters"
-              spellcheck="false"
-            />
-            <div class="hint">Optional.</div>
-          </div>
+        <!-- Fast path fields: keep existing IDs -->
+        <div class="row" style="margin-top:10px;">
+          <label class="lbl" for="ref">RO / Stock #</label>
+          <input
+            id="ref"
+            name="ref"
+            placeholder="e.g. 123456 or AB12C"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            required
+          />
+          <div class="hint">Letters + numbers allowed.</div>
         </div>
-      </div>
 
-      <div class="row grid3">
-        <div>
+        <div class="row" style="margin-top:12px;">
           <label>Job Type (autocomplete)</label>
           <input name="typeText" id="typeText" list="typeList" placeholder="Sold + FPF" inputmode="text" autocomplete="off" required />
           <datalist id="typeList"></datalist>
           <div class="muted typehint">Just type it. New types auto-save and show up next time.</div>
         </div>
-        <div>
-          <label>Hours (decimal)</label>
+
+        <div class="row" style="margin-top:12px;">
+          <label class="lbl" for="hours">Hours (decimal)</label>
           <input
             id="hours"
             name="hours"
@@ -512,27 +492,59 @@
             required
           />
         </div>
-        <div>
-          <label>Rate ($)</label>
-          <input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" required />
-        </div>
-      </div>
 
-      <div class="row grid2">
-        <div>
-          <label>Proof Photo (optional)</label>
-          <input id="proofPhoto" name="photo" type="file" accept="image/*" capture="environment" />
-          <div class="muted" style="margin-top:6px;">Tip: 1 photo per RO is enough.</div>
+        <div class="row" style="margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+          <button id="saveBtn" class="btnPrimary" type="submit" disabled>Save Entry</button>
+          <button id="clearBtn" class="btnGhost" type="button">Clear</button>
         </div>
-        <div>
-          <label>Notes (optional)</label>
-          <textarea name="notes" placeholder="Anything that will matter later..."></textarea>
-        </div>
-      </div>
 
-      <div class="row" style="margin-top:12px; gap:10px;">
-        <button id="saveBtn" class="btnPrimary" type="submit">Save Entry</button>
-        <button id="clearBtn" class="btnGhost" type="button">Clear</button>
+        <!-- Optional details -->
+        <div id="detailsPanel" style="margin-top:12px; display:none;">
+          <div class="divider" style="margin:12px 0;"></div>
+
+          <div class="row" style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0;">
+            <div class="mono" style="font-size:13px; opacity:.85;">Reference</div>
+            <div class="seg" role="tablist" aria-label="Reference type">
+              <button id="refTypeRO" type="button" class="segBtn active">RO</button>
+              <button id="refTypeSTK" type="button" class="segBtn">Stock</button>
+            </div>
+          </div>
+
+          <div class="grid2" style="margin-top:10px;">
+            <div>
+              <label class="lbl" for="vin8">VIN (last 8)</label>
+              <input
+                id="vin8"
+                name="vin8"
+                placeholder="1A2B3C4D"
+                maxlength="8"
+                inputmode="text"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+              />
+              <div class="hint">Optional.</div>
+            </div>
+
+            <div>
+              <label>Rate ($)</label>
+              <input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" />
+            </div>
+          </div>
+
+          <div class="row grid2" style="margin-top:12px;">
+            <div>
+              <label>Proof Photo (optional)</label>
+              <input id="proofPhoto" name="photo" type="file" accept="image/*" capture="environment" />
+              <div class="muted" style="margin-top:6px;">Tip: 1 photo per RO is enough.</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <label>Notes (optional)</label>
+            <textarea name="notes" placeholder="Anything that will matter later..."></textarea>
+          </div>
+        </div>
       </div>
     </form>
   </section>
