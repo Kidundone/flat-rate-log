@@ -2045,40 +2045,24 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       const logForm = document.getElementById("logForm");
-      const saveBtn = document.getElementById("saveBtn");
 
-      // HOTFIX: ensure Save triggers handleSave via form submit
-      try {
-        if (logForm && typeof handleSave === "function") {
+      // HOTFIX: wire Save exactly once (avoid double/triple save)
+      if (logForm && typeof handleSave === "function") {
+        if (!logForm.dataset.saveWired) {
+          logForm.dataset.saveWired = "1";
+
           logForm.addEventListener("submit", function (e) {
             e.preventDefault();
-            handleSave();
+
+            // prevent re-entry (double submit)
+            if (window.__saving) return;
+            window.__saving = true;
+
+            Promise.resolve(handleSave())
+              .catch((err) => console.error("handleSave failed", err))
+              .finally(() => { window.__saving = false; });
           });
         }
-        if (saveBtn && logForm) {
-          saveBtn.addEventListener("click", function (e) {
-            e.preventDefault();
-            if (typeof logForm.requestSubmit === "function") logForm.requestSubmit();
-            else logForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-          });
-        }
-      } catch (e) {
-        console.error("save wiring failed", e);
-      }
-
-      // --- HOTFIX: wire Save button + form submit to handleSave ---
-      if (logForm && typeof handleSave === "function") {
-        logForm.addEventListener("submit", function (e) {
-          e.preventDefault();
-          handleSave();
-        });
-      }
-
-      if (saveBtn && typeof handleSave === "function") {
-        saveBtn.addEventListener("click", function (e) {
-          e.preventDefault();
-          handleSave();
-        });
       }
       document.getElementById("clearBtn")?.addEventListener("click", handleClear);
 
