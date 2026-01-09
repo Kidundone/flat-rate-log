@@ -2044,7 +2044,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.target && e.target.id === "photoModal") closePhotoModal();
       });
 
-      const form = document.getElementById("logForm");
+      const logForm = document.getElementById("logForm");
+      const saveBtn = document.getElementById("saveBtn");
+
+      // --- HOTFIX: wire Save button + form submit to handleSave ---
+      if (logForm && typeof handleSave === "function") {
+        logForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+          handleSave();
+        });
+      }
+
+      if (saveBtn && typeof handleSave === "function") {
+        saveBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          handleSave();
+        });
+      }
       document.getElementById("clearBtn")?.addEventListener("click", handleClear);
 
       // --- Rapid Log UX: toggle details + enable Save when required fields filled ---
