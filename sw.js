@@ -6,7 +6,7 @@ self.addEventListener("install", (e) => {
     "./",
     "./index.html",
     "./more.html",
-    "./app.20260107a.js",
+    "./app.ef36c5f936.js",
     "./manifest.webmanifest",
     "./icon-192.png",
     "./icon-512.png"
