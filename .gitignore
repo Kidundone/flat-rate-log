@@ -1,2 +1,10 @@
 # Local Netlify folder
 .netlify
+
+# Backend junk
+backend/.venv/
+backend/flatrate.db
+backend/*.db
+backend/*.sqlite
+backend/__pycache__/
+backend/**/*.pyc

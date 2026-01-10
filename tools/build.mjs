@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 
-const SRC_JS = "app.ef36c5f936.js";          // <-- change to your current source bundle name
+const SRC_JS = "app.f5603b3119.js";          // <-- change to your current source bundle name
 const HTML_FILES = ["index.html", "more.html"];
 const SW_FILE = "service-worker.js";        // <-- change if yours is named differently
 
