@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, date
 from typing import Optional, List
 
@@ -10,7 +11,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-ENGINE = create_engine("sqlite:///./flatrate.db", connect_args={"check_same_thread": False})
+db_url = os.getenv("DATABASE_URL", "sqlite:///./flatrate.db")
+
+# Render sometimes provides postgres://; SQLAlchemy wants postgresql://
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
+ENGINE = create_engine(db_url, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False)
 Base = declarative_base()
 
