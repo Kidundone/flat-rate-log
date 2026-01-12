@@ -17,11 +17,11 @@ async function apiCreateLog(entry) {
   return res.json();
 }
 
-async function apiUpdateLog(id, entry) {
+async function apiUpdateLog(id, log) {
   const res = await fetch(`${API_BASE}/logs/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(entry),
+    body: JSON.stringify(log),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -842,6 +842,24 @@ function startEditEntry(entry) {
   if (saveBtn) saveBtn.disabled = false;
 }
 
+document.addEventListener("click", (ev) => {
+  const btn = ev.target?.closest?.("[data-edit-id]");
+  if (!btn) return;
+
+  const idStr = btn.getAttribute("data-edit-id");
+  const id = Number(idStr);
+  if (!id || Number.isNaN(id)) return;
+
+  // Prefer backend entries if you maintain them
+  const pool = Array.isArray(BACKEND_ENTRIES) ? BACKEND_ENTRIES : (Array.isArray(window.ENTRIES) ? window.ENTRIES : null);
+
+  // If you don't have a global entries list, fall back to BACKEND_ENTRIES only
+  const entry = (pool || BACKEND_ENTRIES || []).find(e => Number(e.id) === id);
+  if (!entry) return;
+
+  startEditEntry(entry);
+});
+
 function handleClear(ev) {
   if (ev) ev.preventDefault();
   setEditingEntry(null);
@@ -883,12 +901,14 @@ async function loadEntries() {
 }
 
 async function saveEntry(entry) {
+  const wasEditing = !!EDITING_ID;
   // Backend-first: write proof to DB, not localStorage.
   if (USE_BACKEND) {
     const payload = normalizeEntryForApi(entry);
     if (!payload.work_date) throw new Error("Missing work_date/date on entry");
 
-    await apiCreateLog(payload);
+    if (EDITING_ID) await apiUpdateLog(EDITING_ID, payload);
+    else await apiCreateLog(payload);
 
     // Refresh in-memory list from backend so UI matches source of truth
     const serverLogs = await apiListLogs();
@@ -906,43 +926,20 @@ async function saveEntry(entry) {
     else if (typeof renderEntries === "function") renderEntries();
     else if (typeof refreshUI === "function") refreshUI(mapped);
     // else: do nothing (you must wire your render call)
+    if (wasEditing) setEditingEntry(null);
     return;
   }
 
   // Fallback: old local storage path (keep until backend is deployed)
   await put(STORES.entries, entry);
   await upsertTypeDefaults(entry.typeText || entry.type || "", entry.hours, entry.rate);
-  toast("Saved");
-  handleClear();
-  await refreshUI();
-}
-
-async function updateEntry(entry) {
-  if (USE_BACKEND) {
-    const targetId = EDITING_ID ?? entry.id;
-    if (!targetId) throw new Error("Missing edit id");
-    const payload = normalizeEntryForApi(entry);
-    if (!payload.work_date) throw new Error("Missing work_date/date on entry");
-
-    await apiUpdateLog(targetId, payload);
-
-    const serverLogs = await apiListLogs();
-    const mapped = serverLogs.map(mapServerLogToEntry);
-    BACKEND_ENTRIES = mapped;
-
-    if (typeof render === "function") render();
-    else if (typeof renderEntries === "function") renderEntries();
-    else if (typeof refreshUI === "function") refreshUI(mapped);
-
+  if (wasEditing) {
     setEditingEntry(null);
     toast("Updated");
-    return;
+  } else {
+    toast("Saved");
+    handleClear();
   }
-
-  await put(STORES.entries, entry);
-  await upsertTypeDefaults(entry.typeText || entry.type || "", entry.hours, entry.rate);
-  setEditingEntry(null);
-  toast("Updated");
   await refreshUI();
 }
 
@@ -1007,8 +1004,7 @@ async function handleSave(ev) {
     location: baseEntry.location ?? null
   };
 
-  if (isEditing) await updateEntry(entry);
-  else await saveEntry(entry);
+  await saveEntry(entry);
 }
 
 function showHistory(open=true){
@@ -1076,16 +1072,18 @@ async function renderHistory(){
         row.innerHTML = `
           <div class="itemTop">
             <div>
-              <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
               <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
               ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
             </div>
             <div class="right">
               <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+              <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+              </div>
             </div>
-          </div>
-        `;
+          </div>`;
         box.appendChild(row);
       }
     }
@@ -1105,6 +1103,9 @@ async function renderHistory(){
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+          <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+          </div>
         </div>
       </div>
     `;
@@ -2064,6 +2065,9 @@ async function renderReview(){
             <div class="right">
               <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+              <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+              </div>
             </div>
           </div>`;
         list.appendChild(row);
@@ -2085,6 +2089,9 @@ async function renderReview(){
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+          <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+          </div>
         </div>
       </div>`;
     list.appendChild(row);
