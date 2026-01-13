@@ -2,7 +2,7 @@ import os
 from datetime import datetime, date
 from typing import Optional, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,14 @@ class BulkImport(BaseModel):
 
 app = FastAPI(title="FlatRateTracker Backend", version="0.1.0")
 
+def require_api_key(x_api_key: str | None = Header(default=None)):
+    expected = os.getenv("API_KEY")
+    # If API_KEY isn't set (local dev), leave it open so you don't brick yourself.
+    if not expected:
+        return
+    if x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -67,7 +75,7 @@ def health():
     return {"ok": True}
 
 @app.get("/logs", response_model=List[WorkLogOut])
-def list_logs(from_date: Optional[date] = None, to_date: Optional[date] = None):
+def list_logs(from_date: Optional[date] = None, to_date: Optional[date] = None, _: None = Depends(require_api_key)):
     db = SessionLocal()
     try:
         q = db.query(WorkLog)
@@ -94,7 +102,7 @@ def list_logs(from_date: Optional[date] = None, to_date: Optional[date] = None):
         db.close()
 
 @app.post("/logs", response_model=WorkLogOut)
-def create_log(item: WorkLogIn):
+def create_log(item: WorkLogIn, _: None = Depends(require_api_key)):
     db = SessionLocal()
     try:
         row = WorkLog(
@@ -124,7 +132,7 @@ def create_log(item: WorkLogIn):
         db.close()
 
 @app.put("/logs/{log_id}", response_model=WorkLogOut)
-def update_log(log_id: int, item: WorkLogIn):
+def update_log(log_id: int, item: WorkLogIn, _: None = Depends(require_api_key)):
     db = SessionLocal()
     try:
         row = db.query(WorkLog).filter(WorkLog.id == log_id).first()
@@ -156,7 +164,7 @@ def update_log(log_id: int, item: WorkLogIn):
         db.close()
 
 @app.delete("/logs/{log_id}")
-def delete_log(log_id: int):
+def delete_log(log_id: int, _: None = Depends(require_api_key)):
     db = SessionLocal()
     try:
         row = db.query(WorkLog).filter(WorkLog.id == log_id).first()
@@ -169,7 +177,7 @@ def delete_log(log_id: int):
         db.close()
 
 @app.post("/import")
-def bulk_import(payload: BulkImport):
+def bulk_import(payload: BulkImport, _: None = Depends(require_api_key)):
     db = SessionLocal()
     try:
         created = 0
