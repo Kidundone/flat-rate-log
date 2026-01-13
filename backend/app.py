@@ -72,7 +72,7 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "has_api_key": bool(os.getenv("API_KEY"))}
 
 @app.get("/logs", response_model=List[WorkLogOut])
 def list_logs(from_date: Optional[date] = None, to_date: Optional[date] = None, _: None = Depends(require_api_key)):
