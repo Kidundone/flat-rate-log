@@ -11,13 +11,27 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Call once on load (or from your init)
 async function sbEnsureSignedIn() {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) return session;
+  // hard timeout so the app never freezes
+  const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("AUTH_TIMEOUT")), ms));
 
-  // simplest for testers: anonymous sign-in (no email)
-  const { data, error } = await sb.auth.signInAnonymously();
-  if (error) throw error;
-  return data.session;
+  // 1) Try getSession quickly
+  try {
+    const { data, error } = await Promise.race([sb.auth.getSession(), timeout(2000)]);
+    if (!error && data?.session) return data.session;
+  } catch (e) {
+    // ignore and fall through
+  }
+
+  // 2) Try anonymous sign-in (also timeboxed)
+  try {
+    const { data, error } = await Promise.race([sb.auth.signInAnonymously(), timeout(3000)]);
+    if (error) throw error;
+    return data.session;
+  } catch (e) {
+    // IMPORTANT: don't block reads/writes; return null
+    console.warn("Auth not ready; continuing without session:", e);
+    return null;
+  }
 }
 
 function mapEntryToRow(payload) {
@@ -34,7 +48,7 @@ function mapEntryToRow(payload) {
 
 // LIST
 async function apiListLogs() {
-  await sbEnsureSignedIn();
+  await sbEnsureSignedIn(); // best effort; may return null
   const { data, error } = await sb
     .from("work_logs")
     .select("*")
