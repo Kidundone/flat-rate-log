@@ -105,21 +105,18 @@ function normalizeEntryForApi(entry) {
 }
 
 function mapServerLogToEntry(r) {
-  const createdAt = r.created_at
-    ? new Date(r.created_at).toISOString()
-    : (r.work_date ? new Date(r.work_date).toISOString() : nowISO());
-  const dayKey = r.work_date || dayKeyFromISO(createdAt) || "";
+  const createdAt = r.created_at || new Date().toISOString();
+  const dayKey = r.work_date; // already YYYY-MM-DD
   const hours = Number(r.flat_hours || 0);
-  const earnings = Number(r.cash_amount || 0);
-  const rate = hours ? round2(earnings / hours) : 0;
+  const rate = 15; // or your default
 
   return {
-    id: r.id,
+    id: String(r.id),
     empId: getEmpId(),
     createdAt,
-    createdAtMs: Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : Date.now(),
+    createdAtMs: Date.parse(createdAt) || Date.now(),
     dayKey,
-    weekStartKey: dateKey(startOfWeekLocal(new Date(createdAt))),
+    weekStartKey: dateKey(startOfWeekLocal(new Date(dayKey))),
     refType: "RO",
     ref: r.ro_number || "",
     ro: r.ro_number || "",
@@ -128,8 +125,9 @@ function mapServerLogToEntry(r) {
     typeText: r.category || "work",
     hours: round1(hours),
     rate: round2(rate),
-    earnings: round2(earnings),
+    earnings: round2(hours * rate),
     notes: r.description || "",
+    cash_amount: Number(r.cash_amount || 0),
     photoDataUrl: null,
     location: r.location || null,
   };
@@ -964,21 +962,15 @@ async function renderLogs(logs) {
 }
 
 async function loadEntries() {
-  if (USE_BACKEND) {
-    try {
-      const serverLogs = await apiListLogs();
-      const mapped = serverLogs.map(mapServerLogToEntry);
-      BACKEND_ENTRIES = mapped;
-      return mapped;
-    } catch (e) {
-      console.warn("loadEntries failed; continuing UI", e);
-      BACKEND_ENTRIES = [];
-      return [];
-    }
+  try {
+    const rows = await apiListLogs();
+    const mapped = rows.map(mapServerLogToEntry); // ensure this maps supabase row -> your entry format
+    BACKEND_ENTRIES = mapped;
+    return mapped;
+  } catch (e) {
+    console.warn("loadEntries failed; continuing UI", e);
+    return [];
   }
-
-  BACKEND_ENTRIES = null;
-  return await getAll(STORES.entries);
 }
 
 async function saveEntry(entry) {
