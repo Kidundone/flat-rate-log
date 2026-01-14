@@ -1,116 +1,40 @@
 window.BUILD = "20260107a-hotfix1";
 console.log("BUILD", window.BUILD, new Date().toISOString());
 
-const API_BASE = "https://flat-rate-log.onrender.com";
-const API_KEY = "PASTE_THE_SAME_KEY_HERE";
 const USE_BACKEND = true;
 
-const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.com";
+// --- Supabase ---
+const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_BURbEbtZF7z-apmQ1hPY6Q_4wLKZPdc";
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-async function sbSignIn(email) {
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: location.origin + location.pathname },
-  });
+// Call once on load (or from your init)
+async function sbEnsureSignedIn() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) return session;
+
+  // simplest for testers: anonymous sign-in (no email)
+  const { data, error } = await sb.auth.signInAnonymously();
   if (error) throw error;
-}
-
-async function sbSignOut() {
-  await sb.auth.signOut();
-}
-
-async function sbSession() {
-  const { data } = await sb.auth.getSession();
   return data.session;
 }
 
-// --- TEMP AUTH (sessionStorage prompt) ---
-const API_KEY_STORAGE = "fr_api_key_v1";
-
-function getApiKey() {
-  try { return sessionStorage.getItem(API_KEY_STORAGE) || ""; } catch { return ""; }
-}
-
-function setApiKey(k) {
-  try { sessionStorage.setItem(API_KEY_STORAGE, k); } catch {}
-}
-
-function requireApiKey() {
-  let k = getApiKey();
-  if (!k) {
-    k = prompt("Enter API key for Flat-Rate backend:") || "";
-    k = k.trim();
-    if (k) setApiKey(k);
-  }
-  return k;
-}
-
-async function apiFetch(path, opts = {}) {
-  const headers = new Headers(opts.headers || {});
-  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
-
-  const key = requireApiKey();
-  if (key) headers.set("X-API-Key", key);
-
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
-
-  if (res.status === 401) {
-    // bad key: clear and retry once after re-prompt
-    try { sessionStorage.removeItem(API_KEY_STORAGE); } catch {}
-    const key2 = requireApiKey();
-    if (key2) {
-      headers.set("X-API-Key", key2);
-      return fetch(`${API_BASE}${path}`, { ...opts, headers });
-    }
-  }
-
-  return res;
-}
-let BACKEND_ENTRIES = null;
-let EDITING_ID = null; // null = creating new
-let EDITING_ENTRY = null;
-
-function apiHeadersJson() {
+function mapEntryToRow(payload) {
   return {
-    "Content-Type": "application/json",
-    "X-API-Key": API_KEY,
+    work_date: payload.work_date,          // "YYYY-MM-DD"
+    category: payload.category || "work",
+    ro_number: payload.ro_number || null,
+    description: payload.description || null,
+    flat_hours: Number(payload.flat_hours || 0),
+    cash_amount: Number(payload.cash_amount || 0),
+    location: payload.location || null,
   };
 }
 
-function apiHeaders() {
-  return { "X-API-Key": API_KEY };
-}
-
-function rowToEntry(r){
-  return {
-    id: r.id,
-    createdAt: r.created_at,
-    dayKey: r.work_date,
-    work_date: r.work_date,
-    category: r.category,
-    ro_number: r.ro_number,
-    description: r.description,
-    flat_hours: r.flat_hours,
-    cash_amount: r.cash_amount,
-    location: r.location
-  };
-}
-
-function entryToRow(e){
-  return {
-    work_date: e.work_date || e.dayKey,
-    category: e.category || "work",
-    ro_number: e.ro_number || e.ref || e.ro || null,
-    description: e.description || e.notes || null,
-    flat_hours: Number(e.flat_hours ?? e.hours ?? 0),
-    cash_amount: Number(e.cash_amount ?? 0),
-    location: e.location || null
-  };
-}
-
-async function apiListLogs(){
+// LIST
+async function apiListLogs() {
+  await sbEnsureSignedIn();
   const { data, error } = await sb
     .from("work_logs")
     .select("*")
@@ -118,39 +42,39 @@ async function apiListLogs(){
     .order("id", { ascending: false });
 
   if (error) throw error;
-  return (data || []).map(rowToEntry);
+  return data || [];
 }
 
-async function apiCreateLog(entry){
-  const row = entryToRow(entry);
-  const { data, error } = await sb
-    .from("work_logs")
-    .insert(row)
-    .select("*")
-    .single();
-
+// CREATE
+async function apiCreateLog(payload) {
+  await sbEnsureSignedIn();
+  const row = mapEntryToRow(payload);
+  const { data, error } = await sb.from("work_logs").insert([row]).select().single();
   if (error) throw error;
-  return rowToEntry(data);
+  return data;
 }
 
-async function apiUpdateLog(id, entry){
-  const row = entryToRow(entry);
-  const { data, error } = await sb
-    .from("work_logs")
-    .update(row)
-    .eq("id", id)
-    .select("*")
-    .single();
-
+// UPDATE
+async function apiUpdateLog(id, payload) {
+  await sbEnsureSignedIn();
+  const row = mapEntryToRow(payload);
+  const { data, error } = await sb.from("work_logs").update(row).eq("id", id).select().single();
   if (error) throw error;
-  return rowToEntry(data);
+  return data;
 }
 
-async function apiDeleteLog(id){
+// DELETE (optional)
+async function apiDeleteLog(id) {
+  await sbEnsureSignedIn();
   const { error } = await sb.from("work_logs").delete().eq("id", id);
   if (error) throw error;
-  return { deleted: true };
+  return true;
 }
+
+let BACKEND_ENTRIES = null;
+let EDITING_ID = null; // null = creating new
+let EDITING_ENTRY = null;
+
 
 function normalizeEntryForApi(entry) {
   // Map your existing entry object into the backend schema.
