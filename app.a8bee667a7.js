@@ -80,7 +80,12 @@ async function apiUpdateLog(id, payload) {
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
-  const { error } = await sb.from("work_logs").delete().eq("id", id);
+
+  const { error } = await sb
+    .from("work_logs")
+    .update({ is_deleted: true })
+    .eq("id", id);
+
   if (error) throw error;
   return true;
 }
@@ -111,7 +116,7 @@ function mapServerLogToEntry(r) {
   const rate = 15; // or your default
 
   return {
-    id: String(r.id),
+    id: r.id, // do NOT generate uuid() or local ID
     empId: getEmpId(),
     createdAt,
     createdAtMs: Date.parse(createdAt) || Date.now(),
