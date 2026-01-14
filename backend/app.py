@@ -1,13 +1,16 @@
+import csv
+import io
 import os
 from datetime import datetime, date
 from typing import Optional, List
 
 from fastapi import FastAPI, Depends, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, DateTime, Date, Text
+    create_engine, Column, Integer, String, Float, DateTime, Date, Text, Boolean
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -26,6 +29,8 @@ class WorkLog(Base):
     __tablename__ = "work_logs"
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
     work_date = Column(Date, nullable=False)
     category = Column(String(64), default="work", nullable=False)
     ro_number = Column(String(64), nullable=True)
@@ -48,6 +53,8 @@ class WorkLogIn(BaseModel):
 class WorkLogOut(WorkLogIn):
     id: int
     created_at: datetime
+    updated_at: datetime
+    is_deleted: bool
 
 class BulkImport(BaseModel):
     items: List[WorkLogIn]
@@ -78,7 +85,7 @@ def health():
 def list_logs(from_date: Optional[date] = None, to_date: Optional[date] = None, _: None = Depends(require_api_key)):
     db = SessionLocal()
     try:
-        q = db.query(WorkLog)
+        q = db.query(WorkLog).filter(WorkLog.is_deleted == False)
         if from_date:
             q = q.filter(WorkLog.work_date >= from_date)
         if to_date:
@@ -88,6 +95,8 @@ def list_logs(from_date: Optional[date] = None, to_date: Optional[date] = None, 
             WorkLogOut(
                 id=r.id,
                 created_at=r.created_at,
+                updated_at=r.updated_at,
+                is_deleted=r.is_deleted,
                 work_date=r.work_date,
                 category=r.category,
                 ro_number=r.ro_number,
@@ -120,6 +129,8 @@ def create_log(item: WorkLogIn, _: None = Depends(require_api_key)):
         return WorkLogOut(
             id=row.id,
             created_at=row.created_at,
+            updated_at=row.updated_at,
+            is_deleted=row.is_deleted,
             work_date=row.work_date,
             category=row.category,
             ro_number=row.ro_number,
@@ -146,12 +157,15 @@ def update_log(log_id: int, item: WorkLogIn, _: None = Depends(require_api_key))
         row.flat_hours = item.flat_hours
         row.cash_amount = item.cash_amount
         row.location = item.location
+        row.updated_at = datetime.utcnow()
 
         db.commit()
         db.refresh(row)
         return WorkLogOut(
             id=row.id,
             created_at=row.created_at,
+            updated_at=row.updated_at,
+            is_deleted=row.is_deleted,
             work_date=row.work_date,
             category=row.category,
             ro_number=row.ro_number,
@@ -170,9 +184,49 @@ def delete_log(log_id: int, _: None = Depends(require_api_key)):
         row = db.query(WorkLog).filter(WorkLog.id == log_id).first()
         if not row:
             raise HTTPException(status_code=404, detail="Not found")
-        db.delete(row)
+        row.is_deleted = True
+        row.updated_at = datetime.utcnow()
         db.commit()
-        return {"deleted": True, "id": log_id}
+        return {"deleted": True, "id": log_id, "soft": True}
+    finally:
+        db.close()
+
+@app.get("/export.csv")
+def export_csv(from_date: Optional[date] = None, to_date: Optional[date] = None, _: None = Depends(require_api_key)):
+    db = SessionLocal()
+    try:
+        q = db.query(WorkLog).filter(WorkLog.is_deleted == False)
+        if from_date:
+            q = q.filter(WorkLog.work_date >= from_date)
+        if to_date:
+            q = q.filter(WorkLog.work_date <= to_date)
+
+        rows = q.order_by(WorkLog.work_date.asc(), WorkLog.id.asc()).all()
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["id","created_at","updated_at","work_date","category","ro_number","description","flat_hours","cash_amount","location"])
+        for r in rows:
+            w.writerow([
+                r.id,
+                r.created_at.isoformat() if r.created_at else "",
+                r.updated_at.isoformat() if r.updated_at else "",
+                r.work_date.isoformat() if r.work_date else "",
+                r.category or "",
+                r.ro_number or "",
+                (r.description or "").replace("\n"," ").strip(),
+                r.flat_hours,
+                r.cash_amount,
+                r.location or ""
+            ])
+        buf.seek(0)
+
+        filename = "flatrate_export.csv"
+        return StreamingResponse(
+            iter([buf.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
     finally:
         db.close()
 

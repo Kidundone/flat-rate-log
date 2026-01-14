@@ -5,6 +5,27 @@ const API_BASE = "https://flat-rate-log.onrender.com";
 const API_KEY = "PASTE_THE_SAME_KEY_HERE";
 const USE_BACKEND = true;
 
+const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.com";
+const SUPABASE_ANON_KEY = "sb_publishable_BURbEbtZF7z-apmQ1hPY6Q_4wLKZPdc";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function sbSignIn(email) {
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: location.origin + location.pathname },
+  });
+  if (error) throw error;
+}
+
+async function sbSignOut() {
+  await sb.auth.signOut();
+}
+
+async function sbSession() {
+  const { data } = await sb.auth.getSession();
+  return data.session;
+}
+
 // --- TEMP AUTH (sessionStorage prompt) ---
 const API_KEY_STORAGE = "fr_api_key_v1";
 
@@ -62,38 +83,73 @@ function apiHeaders() {
   return { "X-API-Key": API_KEY };
 }
 
-async function apiListLogs(params = {}) {
-  const qs = new URLSearchParams();
-  if (params.from_date) qs.set("from_date", params.from_date);
-  if (params.to_date) qs.set("to_date", params.to_date);
-
-  const res = await apiFetch(`/logs${qs.toString() ? `?${qs}` : ""}`, { method: "GET" });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+function rowToEntry(r){
+  return {
+    id: r.id,
+    createdAt: r.created_at,
+    dayKey: r.work_date,
+    work_date: r.work_date,
+    category: r.category,
+    ro_number: r.ro_number,
+    description: r.description,
+    flat_hours: r.flat_hours,
+    cash_amount: r.cash_amount,
+    location: r.location
+  };
 }
 
-async function apiCreateLog(payload) {
-  const res = await apiFetch("/logs", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+function entryToRow(e){
+  return {
+    work_date: e.work_date || e.dayKey,
+    category: e.category || "work",
+    ro_number: e.ro_number || e.ref || e.ro || null,
+    description: e.description || e.notes || null,
+    flat_hours: Number(e.flat_hours ?? e.hours ?? 0),
+    cash_amount: Number(e.cash_amount ?? 0),
+    location: e.location || null
+  };
 }
 
-async function apiUpdateLog(id, payload) {
-  const res = await apiFetch(`/logs/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+async function apiListLogs(){
+  const { data, error } = await sb
+    .from("work_logs")
+    .select("*")
+    .order("work_date", { ascending: false })
+    .order("id", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(rowToEntry);
 }
 
-async function apiDeleteLog(id) {
-  const res = await apiFetch(`/logs/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+async function apiCreateLog(entry){
+  const row = entryToRow(entry);
+  const { data, error } = await sb
+    .from("work_logs")
+    .insert(row)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return rowToEntry(data);
+}
+
+async function apiUpdateLog(id, entry){
+  const row = entryToRow(entry);
+  const { data, error } = await sb
+    .from("work_logs")
+    .update(row)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return rowToEntry(data);
+}
+
+async function apiDeleteLog(id){
+  const { error } = await sb.from("work_logs").delete().eq("id", id);
+  if (error) throw error;
+  return { deleted: true };
 }
 
 function normalizeEntryForApi(entry) {

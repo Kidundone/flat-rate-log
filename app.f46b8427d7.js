@@ -4,6 +4,70 @@ console.log("BUILD", window.BUILD, new Date().toISOString());
 const API_BASE = "https://flat-rate-log.onrender.com";
 const API_KEY = "PASTE_THE_SAME_KEY_HERE";
 const USE_BACKEND = true;
+
+const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.com";
+const SUPABASE_ANON_KEY = "sb_publishable_BURbEbtZF7z-apmQ1hPY6Q_4wLKZPdc";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function sbSignIn(email) {
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: location.origin + location.pathname },
+  });
+  if (error) throw error;
+}
+
+async function sbSignOut() {
+  await sb.auth.signOut();
+}
+
+async function sbSession() {
+  const { data } = await sb.auth.getSession();
+  return data.session;
+}
+
+// --- TEMP AUTH (sessionStorage prompt) ---
+const API_KEY_STORAGE = "fr_api_key_v1";
+
+function getApiKey() {
+  try { return sessionStorage.getItem(API_KEY_STORAGE) || ""; } catch { return ""; }
+}
+
+function setApiKey(k) {
+  try { sessionStorage.setItem(API_KEY_STORAGE, k); } catch {}
+}
+
+function requireApiKey() {
+  let k = getApiKey();
+  if (!k) {
+    k = prompt("Enter API key for Flat-Rate backend:") || "";
+    k = k.trim();
+    if (k) setApiKey(k);
+  }
+  return k;
+}
+
+async function apiFetch(path, opts = {}) {
+  const headers = new Headers(opts.headers || {});
+  headers.set("Content-Type", headers.get("Content-Type") || "application/json");
+
+  const key = requireApiKey();
+  if (key) headers.set("X-API-Key", key);
+
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+
+  if (res.status === 401) {
+    // bad key: clear and retry once after re-prompt
+    try { sessionStorage.removeItem(API_KEY_STORAGE); } catch {}
+    const key2 = requireApiKey();
+    if (key2) {
+      headers.set("X-API-Key", key2);
+      return fetch(`${API_BASE}${path}`, { ...opts, headers });
+    }
+  }
+
+  return res;
+}
 let BACKEND_ENTRIES = null;
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
@@ -19,36 +83,73 @@ function apiHeaders() {
   return { "X-API-Key": API_KEY };
 }
 
-async function apiCreateLog(entry) {
-  const res = await fetch(`${API_BASE}/logs`, {
-    method: "POST",
-    headers: apiHeadersJson(),
-    body: JSON.stringify(entry),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+function rowToEntry(r){
+  return {
+    id: r.id,
+    createdAt: r.created_at,
+    dayKey: r.work_date,
+    work_date: r.work_date,
+    category: r.category,
+    ro_number: r.ro_number,
+    description: r.description,
+    flat_hours: r.flat_hours,
+    cash_amount: r.cash_amount,
+    location: r.location
+  };
 }
 
-async function apiUpdateLog(id, log) {
-  const res = await fetch(`${API_BASE}/logs/${id}`, {
-    method: "PUT",
-    headers: apiHeadersJson(),
-    body: JSON.stringify(log),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+function entryToRow(e){
+  return {
+    work_date: e.work_date || e.dayKey,
+    category: e.category || "work",
+    ro_number: e.ro_number || e.ref || e.ro || null,
+    description: e.description || e.notes || null,
+    flat_hours: Number(e.flat_hours ?? e.hours ?? 0),
+    cash_amount: Number(e.cash_amount ?? 0),
+    location: e.location || null
+  };
 }
 
-async function apiListLogs(fromDate, toDate) {
-  const params = new URLSearchParams();
-  if (fromDate) params.set("from_date", fromDate);
-  if (toDate) params.set("to_date", toDate);
+async function apiListLogs(){
+  const { data, error } = await sb
+    .from("work_logs")
+    .select("*")
+    .order("work_date", { ascending: false })
+    .order("id", { ascending: false });
 
-  const res = await fetch(`${API_BASE}/logs?${params.toString()}`, {
-    headers: apiHeaders(),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  if (error) throw error;
+  return (data || []).map(rowToEntry);
+}
+
+async function apiCreateLog(entry){
+  const row = entryToRow(entry);
+  const { data, error } = await sb
+    .from("work_logs")
+    .insert(row)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return rowToEntry(data);
+}
+
+async function apiUpdateLog(id, entry){
+  const row = entryToRow(entry);
+  const { data, error } = await sb
+    .from("work_logs")
+    .update(row)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return rowToEntry(data);
+}
+
+async function apiDeleteLog(id){
+  const { error } = await sb.from("work_logs").delete().eq("id", id);
+  if (error) throw error;
+  return { deleted: true };
 }
 
 function normalizeEntryForApi(entry) {
@@ -874,6 +975,28 @@ document.addEventListener("click", (ev) => {
   startEditEntry(entry);
 });
 
+document.addEventListener("click", async (ev) => {
+  const delBtn = ev.target?.closest?.("[data-del-id]");
+  if (!delBtn) return;
+
+  const idStr = delBtn.getAttribute("data-del-id");
+  const id = Number(idStr);
+  if (!id || Number.isNaN(id)) return;
+
+  if (!confirm("Delete this entry? (You can’t undo yet)")) return;
+
+  try {
+    await apiDeleteLog(id);
+    if (EDITING_ID && Number(EDITING_ID) === id) handleClear();
+    const mapped = await loadEntries();
+    await refreshUI(mapped);
+    toast("Deleted");
+  } catch (e) {
+    console.error(e);
+    toast("Delete failed");
+  }
+});
+
 function handleClear(ev) {
   if (ev) ev.preventDefault();
   setEditingEntry(null);
@@ -904,10 +1027,16 @@ async function renderLogs(logs) {
 
 async function loadEntries() {
   if (USE_BACKEND) {
-    const serverLogs = await apiListLogs();
-    const mapped = serverLogs.map(mapServerLogToEntry);
-    BACKEND_ENTRIES = mapped;
-    return mapped;
+    try {
+      const serverLogs = await apiListLogs();
+      const mapped = serverLogs.map(mapServerLogToEntry);
+      BACKEND_ENTRIES = mapped;
+      return mapped;
+    } catch (e) {
+      console.warn("loadEntries failed; continuing UI", e);
+      BACKEND_ENTRIES = [];
+      return [];
+    }
   }
 
   BACKEND_ENTRIES = null;
@@ -916,37 +1045,33 @@ async function loadEntries() {
 
 async function saveEntry(entry) {
   const wasEditing = !!EDITING_ID;
+
   // Backend-first: write proof to DB, not localStorage.
   if (USE_BACKEND) {
     const payload = normalizeEntryForApi(entry);
     if (!payload.work_date) throw new Error("Missing work_date/date on entry");
 
-    if (EDITING_ID) await apiUpdateLog(EDITING_ID, payload);
-    else await apiCreateLog(payload);
+    if (EDITING_ID) {
+      await apiUpdateLog(EDITING_ID, payload);
+      toast("Updated");
+    } else {
+      await apiCreateLog(payload);
+      toast("Saved");
+    }
 
-    // Refresh in-memory list from backend so UI matches source of truth
-    const serverLogs = await apiListLogs();
+    setEditingEntry(null);
+    handleClear(); // clears form + exits edit mode visuals
 
-    // Convert backend rows back into your app's entry shape.
-    // If your app can render backend shape directly, skip this mapping and render serverLogs.
-    const mapped = serverLogs.map(mapServerLogToEntry);
-    BACKEND_ENTRIES = mapped;
-
-    // Update your app's in-memory entries
-    // If your app uses a different variable name than `entries`, change this line.
-    // Re-render using YOUR render function name:
-    // Replace `render()` with whatever you actually call to refresh the UI.
-    if (typeof render === "function") render();
-    else if (typeof renderEntries === "function") renderEntries();
-    else if (typeof refreshUI === "function") refreshUI(mapped);
-    // else: do nothing (you must wire your render call)
-    if (wasEditing) setEditingEntry(null);
+    // Source of truth refresh
+    const mapped = await loadEntries();
+    await refreshUI(mapped);
     return;
   }
 
   // Fallback: old local storage path (keep until backend is deployed)
   await put(STORES.entries, entry);
   await upsertTypeDefaults(entry.typeText || entry.type || "", entry.hours, entry.rate);
+
   if (wasEditing) {
     setEditingEntry(null);
     toast("Updated");
@@ -954,6 +1079,7 @@ async function saveEntry(entry) {
     toast("Saved");
     handleClear();
   }
+
   await refreshUI();
 }
 
@@ -998,7 +1124,9 @@ async function handleSave(ev) {
   const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
   const entry = {
     ...baseEntry,
-    id: isEditing ? (baseEntry.id || EDITING_ID || uuid()) : uuid(),
+    // IMPORTANT: never generate a new id while editing.
+    // If you do, you'll create duplicates and edits won't "stick".
+    id: isEditing ? (baseEntry.id ?? EDITING_ID) : uuid(),
     empId,
     createdAt,
     createdAtMs,
@@ -1095,6 +1223,7 @@ async function renderHistory(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+                <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
               </div>
             </div>
           </div>`;
@@ -1119,6 +1248,7 @@ async function renderHistory(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+            <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
           </div>
         </div>
       </div>
@@ -1580,10 +1710,11 @@ function renderList(entries, mode){
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
+    const deleteBtn = `<button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>`;
     const viewPhotoBtn = e.photoDataUrl
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
-    const actionButtons = [editBtn, viewPhotoBtn].filter(Boolean).join(" ");
+    const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
     div.innerHTML = `
       <div class="itemTop">
         <div>
@@ -2081,6 +2212,7 @@ async function renderReview(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+                <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
               </div>
             </div>
           </div>`;
@@ -2105,6 +2237,7 @@ async function renderReview(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+            <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
           </div>
         </div>
       </div>`;
