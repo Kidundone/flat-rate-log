@@ -377,13 +377,20 @@ function toast(msg){
   setTimeout(() => t.classList.remove("show"), 1400);
 }
 
+// --- Photo selection (camera / library / files) ---
 let SELECTED_PHOTO_FILE = null;
 
-function setSelectedFile(file) {
+function setSelectedPhotoFile(file, label = "") {
   SELECTED_PHOTO_FILE = file || null;
+
+  console.log("SELECTED_PHOTO_FILE set:", file?.name, file?.type);
+
   const lbl = document.getElementById("photoPickedLabel");
-  if (lbl) lbl.textContent = file ? `${file.name} (${Math.round(file.size/1024)} KB)` : "No photo selected";
-  console.log("SELECTED_PHOTO_FILE set:", SELECTED_PHOTO_FILE?.name, SELECTED_PHOTO_FILE?.size);
+  if (lbl) {
+    lbl.textContent = file
+      ? `Selected: ${label || file.name} (${Math.round(file.size / 1024)} KB)`
+      : "No photo selected";
+  }
 }
 
 function clearPickedPhoto() {
@@ -393,26 +400,57 @@ function clearPickedPhoto() {
   if (cam) cam.value = "";
   if (pick) pick.value = "";
   if (file) file.value = "";
-  setSelectedFile(null);
+  setSelectedPhotoFile(null);
 }
 
 function wirePhotoPickers() {
-  const btnPickPhoto = document.getElementById("btnPickPhoto");
-  const btnTakePhoto = document.getElementById("btnTakePhoto");
-  const btnPickFile = document.getElementById("btnPickFile");
+  const btnTake = document.getElementById("btnTakePhoto");
+  const btnPick = document.getElementById("btnPickPhoto");
+  const btnFile = document.getElementById("btnPickFile");
 
-  const photoPicker = document.getElementById("photoPicker");
-  const photoCamera = document.getElementById("photoCamera");
-  const photoFile = document.getElementById("photoFile");
+  const camInput = document.getElementById("photoCamera"); // <input type="file">
+  const pickInput = document.getElementById("photoPicker"); // <input type="file">
+  const fileInput = document.getElementById("photoFile");   // <input type="file"> (optional)
 
-  btnPickPhoto?.addEventListener("click", () => photoPicker?.click());
-  btnTakePhoto?.addEventListener("click", () => photoCamera?.click());
-  btnPickFile?.addEventListener("click", () => photoFile?.click());
+  // Ensure attributes (helps iOS)
+  if (camInput) {
+    camInput.accept = "image/*";
+    camInput.capture = "environment"; // forces camera on mobile
+  }
+  if (pickInput) pickInput.accept = "image/*";
+  if (fileInput) fileInput.accept = "image/*,application/pdf";
 
-  // IMPORTANT: change events are what iOS actually triggers
-  photoPicker?.addEventListener("change", () => setSelectedFile(photoPicker.files?.[0]));
-  photoCamera?.addEventListener("change", () => setSelectedFile(photoCamera.files?.[0]));
-  photoFile?.addEventListener("change", () => setSelectedFile(photoFile.files?.[0]));
+  const onPick = (input, label) => {
+    if (!input) return;
+    input.addEventListener("change", () => {
+      const f = input.files && input.files[0] ? input.files[0] : null;
+      setSelectedPhotoFile(f, label);
+      // reset input so picking the same file again still fires change
+      input.value = "";
+    });
+  };
+
+  onPick(camInput, "Camera");
+  onPick(pickInput, "Library");
+  onPick(fileInput, "Files");
+
+  btnTake?.addEventListener("click", (e) => {
+    e.preventDefault();
+    setSelectedPhotoFile(null);
+    camInput?.click();
+  });
+
+  btnPick?.addEventListener("click", (e) => {
+    e.preventDefault();
+    setSelectedPhotoFile(null);
+    pickInput?.click();
+  });
+
+  btnFile?.addEventListener("click", (e) => {
+    e.preventDefault();
+    setSelectedPhotoFile(null);
+    fileInput?.click();
+  });
 }
 
 function num(v){
@@ -1353,7 +1391,7 @@ async function handleSave(ev) {
     };
 
     await saveEntry(entry);
-    setSelectedFile(null);
+    setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
     document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
@@ -2648,7 +2686,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
       setRefType(document.getElementById("refTypeSTK")?.classList.contains("active") ? "STOCK" : "RO");
       wirePhotoPickers();
-      setSelectedFile(null);
+      setSelectedPhotoFile(null);
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');
