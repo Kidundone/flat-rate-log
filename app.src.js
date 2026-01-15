@@ -393,6 +393,10 @@ function setSelectedPhotoFile(file, label = "") {
   }
 }
 
+function setSelectedPhoto(file, label = "") {
+  setSelectedPhotoFile(file, label);
+}
+
 function clearPickedPhoto() {
   const cam = document.getElementById("photoCamera");
   const pick = document.getElementById("photoPicker");
@@ -408,49 +412,28 @@ function wirePhotoPickers() {
   const btnPick = document.getElementById("btnPickPhoto");
   const btnFile = document.getElementById("btnPickFile");
 
-  const camInput = document.getElementById("photoCamera"); // <input type="file">
-  const pickInput = document.getElementById("photoPicker"); // <input type="file">
-  const fileInput = document.getElementById("photoFile");   // <input type="file"> (optional)
+  const inCamera = document.getElementById("photoCamera");
+  const inPicker = document.getElementById("photoPicker");
+  const inFile   = document.getElementById("photoFile");
 
-  // Ensure attributes (helps iOS)
-  if (camInput) {
-    camInput.accept = "image/*";
-    camInput.capture = "environment"; // forces camera on mobile
-  }
-  if (pickInput) pickInput.accept = "image/*";
-  if (fileInput) fileInput.accept = "image/*,application/pdf";
+  if (!inCamera || !inPicker || !inFile) return;
 
-  const onPick = (input, label) => {
-    if (!input) return;
-    input.addEventListener("change", () => {
-      const f = input.files && input.files[0] ? input.files[0] : null;
-      setSelectedPhotoFile(f, label);
-      // reset input so picking the same file again still fires change
-      input.value = "";
-    });
-  };
+  // IMPORTANT: accept attrs help iOS show correct picker
+  inCamera.setAttribute("accept", "image/*");
+  inCamera.setAttribute("capture", "environment");
 
-  onPick(camInput, "Camera");
-  onPick(pickInput, "Library");
-  onPick(fileInput, "Files");
+  inPicker.setAttribute("accept", "image/*");
+  inFile.setAttribute("accept", "image/*");
 
-  btnTake?.addEventListener("click", (e) => {
-    e.preventDefault();
-    setSelectedPhotoFile(null);
-    camInput?.click();
-  });
+  // Buttons must trigger input click from a user gesture
+  btnTake?.addEventListener("click", (e) => { e.preventDefault(); inCamera.click(); });
+  btnPick?.addEventListener("click", (e) => { e.preventDefault(); inPicker.click(); });
+  btnFile?.addEventListener("click", (e) => { e.preventDefault(); inFile.click(); });
 
-  btnPick?.addEventListener("click", (e) => {
-    e.preventDefault();
-    setSelectedPhotoFile(null);
-    pickInput?.click();
-  });
-
-  btnFile?.addEventListener("click", (e) => {
-    e.preventDefault();
-    setSelectedPhotoFile(null);
-    fileInput?.click();
-  });
+  // Change handlers (this is what you’re missing/broken)
+  inCamera.addEventListener("change", () => setSelectedPhoto(inCamera.files?.[0] || null, "camera"));
+  inPicker.addEventListener("change", () => setSelectedPhoto(inPicker.files?.[0] || null, "library"));
+  inFile.addEventListener("change",   () => setSelectedPhoto(inFile.files?.[0]   || null, "file"));
 }
 
 function num(v){
@@ -1338,6 +1321,10 @@ async function handleSave(ev) {
     const typeEl = document.getElementById("typeText");
     const hoursEl = document.getElementById("hours");
     const rateEl = document.querySelector('input[name="rate"]');
+    const photoEl = document.getElementById("proofPhoto")
+      || document.getElementById("photoPicker")
+      || document.getElementById("photoCamera")
+      || document.getElementById("photoFile");
     const notesEl = document.querySelector('textarea[name="notes"]');
 
     const ref = (refEl?.value || "").trim();
@@ -1351,7 +1338,10 @@ async function handleSave(ev) {
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-    const photoFile = SELECTED_PHOTO_FILE;
+    const photoFile =
+      SELECTED_PHOTO_FILE
+      || photoEl?.files?.[0]
+      || null;
     const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
     const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
     const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
