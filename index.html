@@ -783,17 +783,16 @@
 
           <div class="fr26Row">
             <label class="fr26Label">Proof Photo</label>
-            <div class="photoPickRow" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-              <button type="button" class="btn" id="btnTakePhoto">Take Photo</button>
-              <button type="button" class="btn" id="btnPickPhoto">Photo Library</button>
-              <button type="button" class="btn" id="btnPickFile">Files</button>
+            <button id="btnPickPhoto" type="button">Pick Photo</button>
+            <input id="photoPicker" type="file" accept="image/*" style="display:none">
 
-              <span class="muted small" id="photoPickedLabel" style="margin-left:6px;"></span>
+            <button id="btnTakePhoto" type="button">Take Photo</button>
+            <input id="photoCamera" type="file" accept="image/*" capture="environment" style="display:none">
 
-              <!-- hidden inputs -->
-              <input id="photoCamera" type="file" accept="image/*" capture="environment" style="display:none" />
-              <input id="photoPicker" type="file" accept="image/*" style="display:none" />
-            </div>
+            <button id="btnPickFile" type="button">Pick File</button>
+            <input id="photoFile" type="file" accept="image/*,application/pdf" style="display:none">
+
+            <div id="photoPickedLabel" class="muted"></div>
           </div>
           <div class="fr26Hint">Tip: 1 photo per RO is enough.</div>
 

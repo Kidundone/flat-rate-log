@@ -379,57 +379,40 @@ function toast(msg){
 
 let SELECTED_PHOTO_FILE = null;
 
-function setPickedLabel(file) {
-  const el = document.getElementById("photoPickedLabel");
-  if (!el) return;
-  if (!file) { el.textContent = ""; return; }
-  const kb = Math.round((file.size || 0) / 1024);
-  el.textContent = `Selected: ${file.name || "photo"} (${kb} KB)`;
+function setSelectedFile(file) {
+  SELECTED_PHOTO_FILE = file || null;
+  const lbl = document.getElementById("photoPickedLabel");
+  if (lbl) lbl.textContent = file ? `${file.name} (${Math.round(file.size/1024)} KB)` : "No photo selected";
+  console.log("SELECTED_PHOTO_FILE set:", SELECTED_PHOTO_FILE?.name, SELECTED_PHOTO_FILE?.size);
 }
 
 function clearPickedPhoto() {
-  SELECTED_PHOTO_FILE = null;
   const cam = document.getElementById("photoCamera");
   const pick = document.getElementById("photoPicker");
+  const file = document.getElementById("photoFile");
   if (cam) cam.value = "";
   if (pick) pick.value = "";
-  setPickedLabel(null);
+  if (file) file.value = "";
+  setSelectedFile(null);
 }
 
 function wirePhotoPickers() {
-  const cam = document.getElementById("photoCamera");
-  const pick = document.getElementById("photoPicker");
+  const btnPickPhoto = document.getElementById("btnPickPhoto");
+  const btnTakePhoto = document.getElementById("btnTakePhoto");
+  const btnPickFile = document.getElementById("btnPickFile");
 
-  const takeBtn = document.getElementById("btnTakePhoto");
-  const libBtn  = document.getElementById("btnPickPhoto");
-  const fileBtn = document.getElementById("btnPickFile");
+  const photoPicker = document.getElementById("photoPicker");
+  const photoCamera = document.getElementById("photoCamera");
+  const photoFile = document.getElementById("photoFile");
 
-  // Hard safety: ensure buttons never submit a form
-  [takeBtn, libBtn, fileBtn].forEach(b => { if (b) b.type = "button"; });
+  btnPickPhoto?.addEventListener("click", () => photoPicker?.click());
+  btnTakePhoto?.addEventListener("click", () => photoCamera?.click());
+  btnPickFile?.addEventListener("click", () => photoFile?.click());
 
-  const onPick = (input) => {
-    const f = input?.files?.[0] || null;
-    console.log("INPUT CHANGE", input?.id, f);
-    if (!f) return;
-    SELECTED_PHOTO_FILE = f;
-    setPickedLabel(f);
-    toast?.("Photo selected");
-  };
-
-  // Remove old listeners by reassigning handlers (simple + effective)
-  if (cam) cam.onchange = () => onPick(cam);
-  if (pick) pick.onchange = () => onPick(pick);
-
-  const open = (input, ev) => {
-    ev?.preventDefault();
-    ev?.stopPropagation();
-    console.log("OPEN PICKER", input?.id);
-    input?.click();
-  };
-
-  takeBtn?.addEventListener("click", (ev) => open(cam, ev), { passive: false });
-  libBtn?.addEventListener("click", (ev) => open(pick, ev), { passive: false });
-  fileBtn?.addEventListener("click", (ev) => open(pick, ev), { passive: false });
+  // IMPORTANT: change events are what iOS actually triggers
+  photoPicker?.addEventListener("change", () => setSelectedFile(photoPicker.files?.[0]));
+  photoCamera?.addEventListener("change", () => setSelectedFile(photoCamera.files?.[0]));
+  photoFile?.addEventListener("change", () => setSelectedFile(photoFile.files?.[0]));
 }
 
 function num(v){
@@ -1370,6 +1353,10 @@ async function handleSave(ev) {
     };
 
     await saveEntry(entry);
+    setSelectedFile(null);
+    document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
+    document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
+    document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
   } finally {
     SAVING = false;
   }
@@ -2661,6 +2648,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
       setRefType(document.getElementById("refTypeSTK")?.classList.contains("active") ? "STOCK" : "RO");
       wirePhotoPickers();
+      setSelectedFile(null);
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');
