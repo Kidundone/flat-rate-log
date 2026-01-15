@@ -400,20 +400,36 @@ function wirePhotoPickers() {
   const cam = document.getElementById("photoCamera");
   const pick = document.getElementById("photoPicker");
 
-  document.getElementById("btnTakePhoto")?.addEventListener("click", () => cam?.click());
-  document.getElementById("btnPickPhoto")?.addEventListener("click", () => pick?.click());
-  document.getElementById("btnPickFile")?.addEventListener("click", () => pick?.click());
+  const takeBtn = document.getElementById("btnTakePhoto");
+  const libBtn  = document.getElementById("btnPickPhoto");
+  const fileBtn = document.getElementById("btnPickFile");
+
+  // Hard safety: ensure buttons never submit a form
+  [takeBtn, libBtn, fileBtn].forEach(b => { if (b) b.type = "button"; });
 
   const onPick = (input) => {
     const f = input?.files?.[0] || null;
+    console.log("INPUT CHANGE", input?.id, f);
     if (!f) return;
     SELECTED_PHOTO_FILE = f;
     setPickedLabel(f);
     toast?.("Photo selected");
   };
 
-  cam?.addEventListener("change", () => onPick(cam));
-  pick?.addEventListener("change", () => onPick(pick));
+  // Remove old listeners by reassigning handlers (simple + effective)
+  if (cam) cam.onchange = () => onPick(cam);
+  if (pick) pick.onchange = () => onPick(pick);
+
+  const open = (input, ev) => {
+    ev?.preventDefault();
+    ev?.stopPropagation();
+    console.log("OPEN PICKER", input?.id);
+    input?.click();
+  };
+
+  takeBtn?.addEventListener("click", (ev) => open(cam, ev), { passive: false });
+  libBtn?.addEventListener("click", (ev) => open(pick, ev), { passive: false });
+  fileBtn?.addEventListener("click", (ev) => open(pick, ev), { passive: false });
 }
 
 function num(v){
