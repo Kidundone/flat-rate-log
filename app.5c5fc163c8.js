@@ -20,8 +20,61 @@ async function sbEnsureSignedIn() {
 }
 
 async function sbUid() {
-  const session = await sbEnsureSignedIn();
-  return session.user.id;
+  const { data: { session } } = await sb.auth.getSession();
+  if (session?.user?.id) return session.user.id;
+
+  const { data, error } = await sb.auth.signInAnonymously();
+  if (error) throw error;
+  return data.session.user.id;
+}
+
+function extFromFile(file) {
+  const n = String(file?.name || "");
+  const dot = n.lastIndexOf(".");
+  const ext = dot >= 0 ? n.slice(dot + 1).toLowerCase() : "";
+  return (ext && ext.length <= 5) ? ext : "jpg";
+}
+
+async function sbUploadProof(file, logId, workDate, ro) {
+  if (!file) return null;
+
+  const uid = await sbUid();
+  const ext = extFromFile(file);
+
+  // Stable path so updates overwrite cleanly
+  const safe = String(ro || "RO").replace(/[^a-zA-Z0-9_-]/g, "");
+  const path = `${uid}/${workDate || "date"}_${safe}_${logId}.${ext}`;
+
+  const { error } = await sb.storage
+    .from("proofs")
+    .upload(path, file, {
+      upsert: true,
+      cacheControl: "3600",
+      contentType: file.type || "image/jpeg",
+    });
+
+  if (error) throw error;
+  return path;
+}
+
+async function sbSignedUrl(path, seconds = 60 * 60) {
+  if (!path) return null;
+  const { data, error } = await sb.storage.from("proofs").createSignedUrl(path, seconds);
+  if (error) throw error;
+  return data?.signedUrl || null;
+}
+
+async function sbListRows() {
+  await sbEnsureSignedIn();
+  const { data, error } = await sb
+    .from("work_logs")
+    .select("*")
+    .eq("is_deleted", false)
+    .order("work_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
 }
 
 function safeName(s) {
@@ -65,7 +118,7 @@ function sbProofPhotoUrl(photoPath) {
   return data?.publicUrl || null;
 }
 
-function mapEntryToRow(payload, userId, photoPath) {
+function mapEntryToRow(payload, userId) {
   return {
     user_id: userId,
     work_date: payload.work_date,
@@ -76,83 +129,104 @@ function mapEntryToRow(payload, userId, photoPath) {
     cash_amount: Number(payload.cash_amount || 0),
     location: payload.location || null,
     vin8: payload.vin8 || null,
-    photo_path: photoPath || payload.photo_path || null,
+    photo_path: payload.photo_path || null,
   };
 }
 
 // LIST
 async function apiListLogs() {
-  await sbEnsureSignedIn();
-  const { data, error } = await sb
-    .from("work_logs")
-    .select("*")
-    .order("work_date", { ascending: false })
-    .order("id", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
+  return sbListRows();
 }
 
 // CREATE
 async function apiCreateLog(payload, photoFile) {
-  const uid = await sbUid();
+  await sbEnsureSignedIn();
 
-  const photoPath = photoFile
-    ? await sbUploadProofPhoto(photoFile, { ro: payload.ro_number, workDate: payload.work_date })
-    : null;
-
-  const row = mapEntryToRow(payload, uid, photoPath);
-
-  const { data, error } = await sb
+  // 1) Create row first (no photo_path yet)
+  const { data: created, error: e1 } = await sb
     .from("work_logs")
-    .insert([row])
-    .select()
+    .insert([{
+      user_id: (await sbUid()),
+      work_date: payload.work_date,
+      category: payload.category || "work",
+      ro_number: payload.ro_number || null,
+      description: payload.description || null,
+      flat_hours: Number(payload.flat_hours || 0),
+      cash_amount: Number(payload.cash_amount || 0),
+      location: payload.location || null,
+      vin8: payload.vin8 || null,
+      is_deleted: false,
+      photo_path: null,
+    }])
+    .select("*")
     .single();
 
-  if (error) throw error;
-  return data;
+  if (e1) throw e1;
+
+  // 2) Upload photo and write path back
+  if (photoFile) {
+    const path = await sbUploadProof(photoFile, created.id, created.work_date, created.ro_number);
+    const { data: updated, error: e2 } = await sb
+      .from("work_logs")
+      .update({ photo_path: path })
+      .eq("id", created.id)
+      .select("*")
+      .single();
+
+    if (e2) throw e2;
+    return updated;
+  }
+
+  return created;
 }
 
 // UPDATE
 async function apiUpdateLog(id, payload, photoFile) {
-  const uid = await sbUid();
+  await sbEnsureSignedIn();
 
-  // Get existing so we can optionally replace/remove photo
-  const { data: existing, error: e1 } = await sb
+  // Update fields first
+  const { data: updated, error: e1 } = await sb
     .from("work_logs")
-    .select("photo_path")
+    .update({
+      work_date: payload.work_date,
+      category: payload.category || "work",
+      ro_number: payload.ro_number || null,
+      description: payload.description || null,
+      flat_hours: Number(payload.flat_hours || 0),
+      cash_amount: Number(payload.cash_amount || 0),
+      location: payload.location || null,
+      vin8: payload.vin8 || null,
+    })
     .eq("id", id)
+    .select("*")
     .single();
+
   if (e1) throw e1;
 
-  let photoPath = existing?.photo_path || null;
-
-  // If a new photo selected, upload new and delete old
+  // If new photo, upload + save path
   if (photoFile) {
-    const newPath = await sbUploadProofPhoto(photoFile, { ro: payload.ro_number, workDate: payload.work_date });
-    if (photoPath && photoPath !== newPath) {
-      try { await sbDeleteProofPhoto(photoPath); } catch {}
-    }
-    photoPath = newPath;
+    const path = await sbUploadProof(photoFile, updated.id, updated.work_date, updated.ro_number);
+    const { data: updated2, error: e2 } = await sb
+      .from("work_logs")
+      .update({ photo_path: path })
+      .eq("id", updated.id)
+      .select("*")
+      .single();
+
+    if (e2) throw e2;
+    return updated2;
   }
 
-  const row = mapEntryToRow(payload, uid, photoPath);
-
-  const { data, error } = await sb
-    .from("work_logs")
-    .update(row)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
+  return updated;
 }
 
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
-  const { error } = await sb.from("work_logs").delete().eq("id", id);
+  const { error } = await sb
+    .from("work_logs")
+    .update({ is_deleted: true })
+    .eq("id", id);
   if (error) throw error;
   return true;
 }
@@ -1738,7 +1812,7 @@ function renderList(entries, mode){
     const refDisplay = `${refLabel}: ${refVal}`;
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
-    const viewPhotoBtn = e.photoDataUrl
+    const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
@@ -1759,7 +1833,7 @@ function renderList(entries, mode){
     const editBtnEl = row.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
     row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
-    if (e.photoDataUrl) {
+    if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhotoModal(e));
     }
@@ -1799,13 +1873,15 @@ function renderList(entries, mode){
   }
 }
 
-function openPhotoModal(entry){
+async function openPhotoModal(entry){
   const shell = document.getElementById("photoModal");
   const img = document.getElementById("photoImg");
   const meta = document.getElementById("photoMeta");
   if (!shell || !img) return;
 
-  img.src = entry.photoDataUrl;
+  const url = await entryPhotoUrl(entry);
+  if (!url) { toast("No photo."); return; }
+  img.src = url;
 
   const when = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "";
   const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
@@ -2056,8 +2132,20 @@ function entryRefLabel(e){
   return kind ? `${kind} ${ref}` : `${ref}`;
 }
 
-function entryPhotoUrl(e){
-  return e.photoDataUrl || e.proofPhotoDataUrl || sbProofPhotoUrl(e.photo_path || e.photoPath || e.photo) || null;
+async function entryPhotoUrl(entry) {
+  // If already a data URL (legacy), use it
+  if (entry?.photoDataUrl && String(entry.photoDataUrl).startsWith("data:")) return entry.photoDataUrl;
+
+  // If Supabase storage path exists, get signed URL
+  if (entry?.photo_path) {
+    try { return await sbSignedUrl(entry.photo_path, 60 * 30); } catch {}
+  }
+  return null;
+}
+
+function entryHasPhoto(entry) {
+  if (entry?.photoDataUrl && String(entry.photoDataUrl).startsWith("data:")) return true;
+  return !!entry?.photo_path;
 }
 
 function formatWhen(iso){
@@ -2089,8 +2177,8 @@ async function getRecentPhotoEntriesByEmp(empId, limit = 24) {
 
         const e = cursor.value;
         const matchEmp = String(e?.empId || "").trim() === id;
-        const photoUrl = entryPhotoUrl(e);
-        if (e && photoUrl && matchEmp) {
+        const hasPhoto = entryHasPhoto(e);
+        if (e && hasPhoto && matchEmp) {
           out.push(e);
           if (out.length >= limit) return resolve(out);
         }
@@ -2119,7 +2207,7 @@ function clearPhotoGallery(){
   _photosRequested = false;
 }
 
-function renderPhotoGallerySafe(entries){
+async function renderPhotoGallerySafe(entries){
   const el = document.getElementById("photoGallery");
   if (!el) return 0;
 
@@ -2131,7 +2219,7 @@ function renderPhotoGallerySafe(entries){
   el.innerHTML = "";
   let count = 0;
   for (const e of entries) {
-    const photoUrl = entryPhotoUrl(e);
+    const photoUrl = await entryPhotoUrl(e);
     if (!photoUrl) continue;
 
     const img = document.createElement("img");
@@ -2162,7 +2250,7 @@ async function renderPhotoGrid(allowAll = false, opts = {}){
   try {
     const limit = opts.limit || 24;
     const entries = await getRecentPhotoEntriesByEmp(empId, limit);
-    const count = renderPhotoGallerySafe(entries);
+    const count = await renderPhotoGallerySafe(entries);
 
     if (opts.updateStatus) {
       if (count > 0) setGalleryStatus(`Loaded ${count} photo${count === 1 ? "" : "s"}.`);
@@ -2283,7 +2371,7 @@ async function exportAllCsvAdmin() {
   downloadText(`flat_rate_log_ALL_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
 }
 
-function openPhotoViewer(e){
+async function openPhotoViewer(e){
   const shell = document.getElementById("photoViewer");
   const img = document.getElementById("photoFull");
   const meta = document.getElementById("photoMeta");
@@ -2292,7 +2380,8 @@ function openPhotoViewer(e){
 
   if (!shell || !img || !meta || !dl) return;
 
-  const url = entryPhotoUrl(e);
+  const url = await entryPhotoUrl(e);
+  if (!url) { toast("No photo."); return; }
   img.src = url;
 
   const label = entryRefLabel(e);
@@ -2344,9 +2433,9 @@ function initPhotosUI(){
       loadBtn.disabled = true;
       try {
         const photos = await getRecentPhotoEntriesByEmp(empId, 24);
-        renderPhotoGallerySafe(photos);
+        const count = await renderPhotoGallerySafe(photos);
         _photosRequested = true;
-        setGalleryStatus(`Loaded ${photos.length} photo(s).`);
+        setGalleryStatus(`Loaded ${count} photo(s).`);
       } catch (e) {
         console.error("Load photos failed:", e);
         _photosRequested = false;
