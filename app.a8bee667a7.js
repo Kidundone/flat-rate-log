@@ -11,44 +11,37 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Call once on load (or from your init)
 async function sbEnsureSignedIn() {
-  // hard timeout so the app never freezes
-  const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("AUTH_TIMEOUT")), ms));
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) return session;
 
-  // 1) Try getSession quickly
-  try {
-    const { data, error } = await Promise.race([sb.auth.getSession(), timeout(2000)]);
-    if (!error && data?.session) return data.session;
-  } catch (e) {
-    // ignore and fall through
-  }
-
-  // 2) Try anonymous sign-in (also timeboxed)
-  try {
-    const { data, error } = await Promise.race([sb.auth.signInAnonymously(), timeout(3000)]);
-    if (error) throw error;
-    return data.session;
-  } catch (e) {
-    // IMPORTANT: don't block reads/writes; return null
-    console.warn("Auth not ready; continuing without session:", e);
-    return null;
-  }
+  const { data, error } = await sb.auth.signInAnonymously();
+  if (error) throw error;
+  return data.session;
 }
 
-function mapEntryToRow(payload) {
+async function sbUid() {
+  const session = await sbEnsureSignedIn();
+  return session.user.id;
+}
+
+function mapEntryToRow(payload, userId, photoPath) {
   return {
-    work_date: payload.work_date,          // "YYYY-MM-DD"
+    user_id: userId,
+    work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
     location: payload.location || null,
+    vin8: payload.vin8 || null,
+    photo_path: photoPath || payload.photo_path || null,
   };
 }
 
 // LIST
 async function apiListLogs() {
-  await sbEnsureSignedIn(); // best effort; may return null
+  await sbEnsureSignedIn();
   const { data, error } = await sb
     .from("work_logs")
     .select("*")
@@ -61,8 +54,8 @@ async function apiListLogs() {
 
 // CREATE
 async function apiCreateLog(payload) {
-  await sbEnsureSignedIn();
-  const row = mapEntryToRow(payload);
+  const userId = await sbUid();
+  const row = mapEntryToRow(payload, userId);
   const { data, error } = await sb.from("work_logs").insert([row]).select().single();
   if (error) throw error;
   return data;
@@ -70,8 +63,8 @@ async function apiCreateLog(payload) {
 
 // UPDATE
 async function apiUpdateLog(id, payload) {
-  await sbEnsureSignedIn();
-  const row = mapEntryToRow(payload);
+  const userId = await sbUid();
+  const row = mapEntryToRow(payload, userId);
   const { data, error } = await sb.from("work_logs").update(row).eq("id", id).select().single();
   if (error) throw error;
   return data;
@@ -106,6 +99,8 @@ function normalizeEntryForApi(entry) {
     flat_hours: Number(entry.hours || entry.flat || entry.flat_hours || 0),
     cash_amount: Number(entry.earnings || entry.cash || entry.cash_amount || 0),
     location: entry.location || null,
+    vin8: entry.vin8 || null,
+    photo_path: entry.photo_path || entry.photoPath || null,
   };
 }
 
@@ -125,7 +120,7 @@ function mapServerLogToEntry(r) {
     refType: "RO",
     ref: r.ro_number || "",
     ro: r.ro_number || "",
-    vin8: "",
+    vin8: r.vin8 || "",
     type: r.category || "work",
     typeText: r.category || "work",
     hours: round1(hours),
@@ -134,6 +129,7 @@ function mapServerLogToEntry(r) {
     notes: r.description || "",
     cash_amount: Number(r.cash_amount || 0),
     photoDataUrl: null,
+    photo_path: r.photo_path || null,
     location: r.location || null,
   };
 }
@@ -1964,7 +1960,7 @@ function entryRefLabel(e){
 }
 
 function entryPhotoUrl(e){
-  return e.photoDataUrl || e.proofPhotoDataUrl || e.photo || null;
+  return e.photoDataUrl || e.proofPhotoDataUrl || e.photo_path || e.photoPath || e.photo || null;
 }
 
 function formatWhen(iso){
