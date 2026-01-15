@@ -24,6 +24,47 @@ async function sbUid() {
   return session.user.id;
 }
 
+function safeName(s) {
+  return String(s || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+}
+
+async function sbUploadProofPhoto(file, { ro, workDate } = {}) {
+  if (!file) return null;
+
+  const uid = await sbUid();
+
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const base = safeName(`${workDate || "date"}_${ro || "RO"}_${Date.now()}`);
+  const path = `${uid}/${base}.${ext}`; // creates folders automatically
+
+  const { error } = await sb.storage
+    .from("proofs")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type || "image/jpeg",
+    });
+
+  if (error) throw error;
+  return path;
+}
+
+async function sbDeleteProofPhoto(photoPath) {
+  if (!photoPath) return;
+  const { error } = await sb.storage.from("proofs").remove([photoPath]);
+  if (error) throw error;
+}
+
+function sbProofPhotoUrl(photoPath) {
+  if (!photoPath) return null;
+  if (/^data:/i.test(photoPath) || /^https?:\/\//i.test(photoPath)) return photoPath;
+  const { data } = sb.storage.from("proofs").getPublicUrl(photoPath);
+  return data?.publicUrl || null;
+}
+
 function mapEntryToRow(payload, userId, photoPath) {
   return {
     user_id: userId,
@@ -53,19 +94,57 @@ async function apiListLogs() {
 }
 
 // CREATE
-async function apiCreateLog(payload) {
-  const userId = await sbUid();
-  const row = mapEntryToRow(payload, userId);
-  const { data, error } = await sb.from("work_logs").insert([row]).select().single();
+async function apiCreateLog(payload, photoFile) {
+  const uid = await sbUid();
+
+  const photoPath = photoFile
+    ? await sbUploadProofPhoto(photoFile, { ro: payload.ro_number, workDate: payload.work_date })
+    : null;
+
+  const row = mapEntryToRow(payload, uid, photoPath);
+
+  const { data, error } = await sb
+    .from("work_logs")
+    .insert([row])
+    .select()
+    .single();
+
   if (error) throw error;
   return data;
 }
 
 // UPDATE
-async function apiUpdateLog(id, payload) {
-  const userId = await sbUid();
-  const row = mapEntryToRow(payload, userId);
-  const { data, error } = await sb.from("work_logs").update(row).eq("id", id).select().single();
+async function apiUpdateLog(id, payload, photoFile) {
+  const uid = await sbUid();
+
+  // Get existing so we can optionally replace/remove photo
+  const { data: existing, error: e1 } = await sb
+    .from("work_logs")
+    .select("photo_path")
+    .eq("id", id)
+    .single();
+  if (e1) throw e1;
+
+  let photoPath = existing?.photo_path || null;
+
+  // If a new photo selected, upload new and delete old
+  if (photoFile) {
+    const newPath = await sbUploadProofPhoto(photoFile, { ro: payload.ro_number, workDate: payload.work_date });
+    if (photoPath && photoPath !== newPath) {
+      try { await sbDeleteProofPhoto(photoPath); } catch {}
+    }
+    photoPath = newPath;
+  }
+
+  const row = mapEntryToRow(payload, uid, photoPath);
+
+  const { data, error } = await sb
+    .from("work_logs")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .single();
+
   if (error) throw error;
   return data;
 }
@@ -74,12 +153,22 @@ async function apiUpdateLog(id, payload) {
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
 
-  const { error } = await sb
+  // Get photo_path first
+  const { data: existing, error: e1 } = await sb
     .from("work_logs")
-    .update({ is_deleted: true })
-    .eq("id", id);
+    .select("photo_path")
+    .eq("id", id)
+    .single();
+  if (e1) throw e1;
 
+  const { error } = await sb.from("work_logs").delete().eq("id", id);
   if (error) throw error;
+
+  // Optional: delete the photo from storage too
+  if (existing?.photo_path) {
+    try { await sbDeleteProofPhoto(existing.photo_path); } catch {}
+  }
+
   return true;
 }
 
@@ -974,7 +1063,7 @@ async function loadEntries() {
   }
 }
 
-async function saveEntry(entry) {
+async function saveEntry(entry, photoFile) {
   const wasEditing = !!EDITING_ID;
 
   // Backend-first: write proof to DB, not localStorage.
@@ -983,10 +1072,10 @@ async function saveEntry(entry) {
     if (!payload.work_date) throw new Error("Missing work_date/date on entry");
 
     if (EDITING_ID) {
-      await apiUpdateLog(EDITING_ID, payload);
+      await apiUpdateLog(EDITING_ID, payload, photoFile);
       toast("Updated");
     } else {
-      await apiCreateLog(payload);
+      await apiCreateLog(payload, photoFile);
       toast("Saved");
     }
 
@@ -1042,17 +1131,20 @@ async function handleSave(ev) {
   if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
   const photoFile = photoEl?.files?.[0];
-  let photoDataUrl = null;
-  try {
-    photoDataUrl = photoFile ? await compressImageFileToDataUrl(photoFile, 1200, 0.75) : null;
-  } catch (e) {
-    console.error("photo save failed", e);
-  }
-  if (isEditing && !photoDataUrl) photoDataUrl = baseEntry.photoDataUrl || null;
-
   const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
   const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
   const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
+  let photoDataUrl = null;
+  if (!USE_BACKEND) {
+    try {
+      photoDataUrl = photoFile ? await compressImageFileToDataUrl(photoFile, 1200, 0.75) : null;
+    } catch (e) {
+      console.error("photo save failed", e);
+      toast("Photo save failed");
+      return;
+    }
+    if (isEditing && !photoDataUrl) photoDataUrl = baseEntry.photoDataUrl || null;
+  }
   const entry = {
     ...baseEntry,
     // IMPORTANT: never generate a new id while editing.
@@ -1077,7 +1169,7 @@ async function handleSave(ev) {
     location: baseEntry.location ?? null
   };
 
-  await saveEntry(entry);
+  await saveEntry(entry, photoFile);
 }
 
 function showHistory(open=true){
@@ -1960,7 +2052,7 @@ function entryRefLabel(e){
 }
 
 function entryPhotoUrl(e){
-  return e.photoDataUrl || e.proofPhotoDataUrl || e.photo_path || e.photoPath || e.photo || null;
+  return e.photoDataUrl || e.proofPhotoDataUrl || sbProofPhotoUrl(e.photo_path || e.photoPath || e.photo) || null;
 }
 
 function formatWhen(iso){

@@ -152,23 +152,8 @@ async function apiUpdateLog(id, payload, photoFile) {
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
-
-  // Get photo_path first
-  const { data: existing, error: e1 } = await sb
-    .from("work_logs")
-    .select("photo_path")
-    .eq("id", id)
-    .single();
-  if (e1) throw e1;
-
   const { error } = await sb.from("work_logs").delete().eq("id", id);
   if (error) throw error;
-
-  // Optional: delete the photo from storage too
-  if (existing?.photo_path) {
-    try { await sbDeleteProofPhoto(existing.photo_path); } catch {}
-  }
-
   return true;
 }
 
@@ -1023,6 +1008,32 @@ document.addEventListener("click", async (ev) => {
   }
 });
 
+async function handleDeleteEntry(entry, ev) {
+  if (ev) ev.preventDefault();
+  if (!entry || entry.id == null) return toast("Missing id; can't delete.");
+
+  if (!confirm(`Delete this entry?\n${entry.ro || entry.ref || ""}`)) return;
+
+  try {
+    if (USE_BACKEND) {
+      await apiDeleteLog(entry.id);
+      if (typeof deletePhotoLocal === "function") deletePhotoLocal(entry.id);
+
+      const mapped = await loadEntries();
+      await refreshUI(mapped);
+      toast("Deleted");
+      return;
+    }
+
+    await del(STORES.entries, entry.id);
+    await refreshUI();
+    toast("Deleted");
+  } catch (e) {
+    console.error("DELETE FAILED:", e);
+    toast("Delete failed (check console).");
+  }
+}
+
 function handleClear(ev) {
   if (ev) ev.preventDefault();
   setEditingEntry(null);
@@ -1246,10 +1257,14 @@ async function renderHistory(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+                <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
               </div>
             </div>
           </div>`;
+        row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          handleDeleteEntry(e, ev);
+        });
         box.appendChild(row);
       }
     }
@@ -1271,11 +1286,15 @@ async function renderHistory(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+            <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
           </div>
         </div>
       </div>
     `;
+    row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      handleDeleteEntry(e, ev);
+    });
     box.appendChild(row);
   }
 }
@@ -1733,7 +1752,7 @@ function renderList(entries, mode){
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
-    const deleteBtn = `<button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>`;
+    const deleteBtn = `<button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>`;
     const viewPhotoBtn = e.photoDataUrl
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
@@ -1754,6 +1773,13 @@ function renderList(entries, mode){
     `;
     const editBtnEl = div.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
+    const delBtnEl = div.querySelector('button[data-del]');
+    if (delBtnEl) {
+      delBtnEl.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        handleDeleteEntry(e, ev);
+      });
+    }
     if (e.photoDataUrl) {
       const btn = div.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhotoModal(e));
@@ -2235,10 +2261,14 @@ async function renderReview(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+                <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
               </div>
             </div>
           </div>`;
+        row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          handleDeleteEntry(e, ev);
+        });
         list.appendChild(row);
       }
     }
@@ -2260,10 +2290,14 @@ async function renderReview(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn" data-del-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+            <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
           </div>
         </div>
       </div>`;
+    row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      handleDeleteEntry(e, ev);
+    });
     list.appendChild(row);
   }
 }
