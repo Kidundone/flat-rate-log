@@ -226,8 +226,24 @@ async function uploadProofForLog(savedRow, file) {
   const withTimeout = (p, ms) =>
     Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("UPLOAD_TIMEOUT")), ms))]);
 
+  const compressed = await compressImageFile(file, {
+    maxWidth: 1280,
+    quality: 0.75
+  });
+  console.log(
+    "photo size KB:",
+    Math.round(file.size / 1024),
+    "→",
+    Math.round(compressed.size / 1024)
+  );
+
   const path = await withTimeout(
-    sbUploadProof(file, savedRow.id, savedRow.work_date, savedRow.ro_number),
+    sbUploadProof(
+      compressed,
+      savedRow.id,
+      savedRow.work_date,
+      savedRow.ro_number
+    ),
     20000
   );
 
@@ -621,6 +637,48 @@ function fileToImageFromDataUrl(dataUrl) {
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = dataUrl;
+  });
+}
+
+async function compressImageFile(file, {
+  maxWidth = 1280,
+  quality = 0.75,
+  mime = "image/jpeg",
+} = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      let { width, height } = img;
+
+      if (width > maxWidth) {
+        height = Math.round(height * (maxWidth / width));
+        width = maxWidth;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error("Compression failed"));
+          const out = new File([blob], "proof.jpg", { type: mime });
+          resolve(out);
+        },
+        mime,
+        quality
+      );
+
+      URL.revokeObjectURL(url);
+    };
+
+    img.onerror = () => reject(new Error("Image load failed"));
+    img.src = url;
   });
 }
 
