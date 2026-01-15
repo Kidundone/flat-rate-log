@@ -24,6 +24,19 @@ async function sbUid() {
   return session.user.id;
 }
 
+async function sbListRows() {
+  await sbEnsureSignedIn();
+  const { data, error } = await sb
+    .from("work_logs")
+    .select("*")
+    .eq("is_deleted", false)
+    .order("work_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
 function safeName(s) {
   return String(s || "")
     .trim()
@@ -82,15 +95,7 @@ function mapEntryToRow(payload, userId, photoPath) {
 
 // LIST
 async function apiListLogs() {
-  await sbEnsureSignedIn();
-  const { data, error } = await sb
-    .from("work_logs")
-    .select("*")
-    .order("work_date", { ascending: false })
-    .order("id", { ascending: false });
-
-  if (error) throw error;
-  return data || [];
+  return sbListRows();
 }
 
 // CREATE
@@ -152,7 +157,10 @@ async function apiUpdateLog(id, payload, photoFile) {
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
-  const { error } = await sb.from("work_logs").delete().eq("id", id);
+  const { error } = await sb
+    .from("work_logs")
+    .update({ is_deleted: true })
+    .eq("id", id);
   if (error) throw error;
   return true;
 }
