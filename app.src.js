@@ -435,8 +435,8 @@ function normalizeEntries(entries) {
 }
 
 async function getAll(storeName) {
-  if (storeName === STORES.entries && USE_BACKEND && Array.isArray(BACKEND_ENTRIES)) {
-    return normalizeEntries(BACKEND_ENTRIES);
+  if (storeName === STORES.entries && USE_BACKEND) {
+    return normalizeEntries(Array.isArray(BACKEND_ENTRIES) ? BACKEND_ENTRIES : []);
   }
   const { db, store, done } = await tx(storeName, "readonly");
   try {
@@ -1009,28 +1009,24 @@ document.addEventListener("click", async (ev) => {
 });
 
 async function handleDeleteEntry(entry, ev) {
-  if (ev) ev.preventDefault();
-  if (!entry || entry.id == null) return toast("Missing id; can't delete.");
+  ev?.preventDefault();
+  ev?.stopPropagation();
 
-  if (!confirm(`Delete this entry?\n${entry.ro || entry.ref || ""}`)) return;
+  if (!entry || entry.id == null) return toast("Missing id.");
+
+  if (!confirm("Delete this entry?")) return;
 
   try {
-    if (USE_BACKEND) {
-      await apiDeleteLog(entry.id);
-      if (typeof deletePhotoLocal === "function") deletePhotoLocal(entry.id);
+    await apiDeleteLog(entry.id);
 
-      const mapped = await loadEntries();
-      await refreshUI(mapped);
-      toast("Deleted");
-      return;
-    }
+    // ALWAYS reload from source of truth
+    const entries = await loadEntries();
+    await refreshUI(entries);
 
-    await del(STORES.entries, entry.id);
-    await refreshUI();
     toast("Deleted");
   } catch (e) {
-    console.error("DELETE FAILED:", e);
-    toast("Delete failed (check console).");
+    console.error("Delete failed:", e);
+    toast("Delete failed (see console)");
   }
 }
 
@@ -1063,15 +1059,10 @@ async function renderLogs(logs) {
 }
 
 async function loadEntries() {
-  try {
-    const rows = await apiListLogs();
-    const mapped = rows.map(mapServerLogToEntry); // ensure this maps supabase row -> your entry format
-    BACKEND_ENTRIES = mapped;
-    return mapped;
-  } catch (e) {
-    console.warn("loadEntries failed; continuing UI", e);
-    return [];
-  }
+  const rows = await apiListLogs();
+  const mapped = rows.map(mapServerLogToEntry);
+  BACKEND_ENTRIES = mapped;
+  return mapped;
 }
 
 async function saveEntry(entry, photoFile) {
@@ -1257,14 +1248,11 @@ async function renderHistory(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+                <button class="btn danger" data-del="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
-        row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          handleDeleteEntry(e, ev);
-        });
+        row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
         box.appendChild(row);
       }
     }
@@ -1286,15 +1274,12 @@ async function renderHistory(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+            <button class="btn danger" data-del="${e.id}">Delete</button>
           </div>
         </div>
       </div>
     `;
-    row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      handleDeleteEntry(e, ev);
-    });
+    row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
     box.appendChild(row);
   }
 }
@@ -1745,19 +1730,19 @@ function renderList(entries, mode){
   }
 
   const buildEntry = (e) => {
-    const div = document.createElement("div");
-    div.className = "item";
+    const row = document.createElement("div");
+    row.className = "item";
     const ts = new Date(e.createdAt).toLocaleString();
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
-    const deleteBtn = `<button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>`;
+    const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = e.photoDataUrl
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
-    div.innerHTML = `
+    row.innerHTML = `
       <div class="itemTop">
         <div>
           <div><span class="mono">${refDisplay}</span> <span class="muted">(${escapeHtml(e.type)})</span></div>
@@ -1771,20 +1756,14 @@ function renderList(entries, mode){
         </div>
       </div>
     `;
-    const editBtnEl = div.querySelector('button[data-action="edit"]');
+    const editBtnEl = row.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
-    const delBtnEl = div.querySelector('button[data-del]');
-    if (delBtnEl) {
-      delBtnEl.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        handleDeleteEntry(e, ev);
-      });
-    }
+    row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
     if (e.photoDataUrl) {
-      const btn = div.querySelector('button[data-action="view-photo"]');
+      const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhotoModal(e));
     }
-    return div;
+    return row;
   };
 
   const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
@@ -2261,14 +2240,11 @@ async function renderReview(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+                <button class="btn danger" data-del="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
-        row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          handleDeleteEntry(e, ev);
-        });
+        row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
         list.appendChild(row);
       }
     }
@@ -2290,14 +2266,11 @@ async function renderReview(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Delete</button>
+            <button class="btn danger" data-del="${e.id}">Delete</button>
           </div>
         </div>
       </div>`;
-    row.querySelector("[data-del]")?.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      handleDeleteEntry(e, ev);
-    });
+    row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
     list.appendChild(row);
   }
 }
