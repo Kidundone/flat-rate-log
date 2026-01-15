@@ -220,6 +220,21 @@ async function apiUpdateLog(id, payload, photoFile) {
   return updated;
 }
 
+async function uploadProofForLog(savedRow, file) {
+  await sbEnsureSignedIn();
+
+  const withTimeout = (p, ms) =>
+    Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("UPLOAD_TIMEOUT")), ms))]);
+
+  const path = await withTimeout(
+    sbUploadProof(file, savedRow.id, savedRow.work_date, savedRow.ro_number),
+    20000
+  );
+
+  const { error } = await sb.from("work_logs").update({ photo_path: path }).eq("id", savedRow.id);
+  if (error) throw error;
+}
+
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
@@ -234,6 +249,7 @@ async function apiDeleteLog(id) {
 let BACKEND_ENTRIES = null;
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
+let SAVING = false;
 
 
 function normalizeEntryForApi(entry) {
@@ -1139,107 +1155,114 @@ async function loadEntries() {
   return mapped;
 }
 
-async function saveEntry(entry, photoFile) {
-  const wasEditing = !!EDITING_ID;
-
-  // Backend-first: write proof to DB, not localStorage.
-  if (USE_BACKEND) {
-    const payload = normalizeEntryForApi(entry);
-    if (!payload.work_date) throw new Error("Missing work_date/date on entry");
-
-    let saved;
-    if (EDITING_ID) saved = await apiUpdateLog(EDITING_ID, payload, photoFile);
-    else saved = await apiCreateLog(payload, photoFile);
-
-    setEditingEntry(null);
-    const mapped = await loadEntries();
-    await refreshUI(mapped);
-    handleClear();
+async function saveEntry(entry) {
+  if (!USE_BACKEND) {
+    await put(STORES.entries, entry);
+    await refreshUI();
     return;
   }
 
-  // Fallback: old local storage path (keep until backend is deployed)
-  await put(STORES.entries, entry);
-  await upsertTypeDefaults(entry.typeText || entry.type || "", entry.hours, entry.rate);
+  const payload = normalizeEntryForApi(entry);
+  const photoFile = document.getElementById("proofPhoto")?.files?.[0] || null;
 
-  if (wasEditing) {
-    setEditingEntry(null);
-    toast("Updated");
-  } else {
-    toast("Saved");
-    handleClear();
+  // SAVE LOG FIRST
+  let saved;
+  if (EDITING_ID) saved = await apiUpdateLog(EDITING_ID, payload, null);
+  else saved = await apiCreateLog(payload, null);
+
+  setEditingEntry(null);
+
+  // Immediate UI refresh
+  const mapped = await loadEntries();
+  await refreshUI(mapped);
+  handleClear();
+  toast("Saved");
+
+  // PHOTO UPLOAD ASYNC (do NOT await)
+  if (photoFile) {
+    toast("Uploading photo...");
+    uploadProofForLog(saved, photoFile)
+      .then(() => toast("Photo saved"))
+      .catch(err => {
+        console.error(err);
+        toast("Photo failed (log saved)");
+      });
   }
-
-  await refreshUI();
 }
 
 async function handleSave(ev) {
-  if (ev) ev.preventDefault();
-  const empId = getEmpId();
-  if (!empId) { toast("Employee # required"); return; }
+  ev?.preventDefault();
+  if (SAVING) return;
+  SAVING = true;
+  try {
+    const empId = getEmpId();
+    if (!empId) { toast("Employee # required"); return; }
 
-  const isEditing = !!EDITING_ID;
-  const baseEntry = isEditing ? (EDITING_ENTRY || {}) : {};
+    const isEditing = !!EDITING_ID;
+    const baseEntry = isEditing ? (EDITING_ENTRY || {}) : {};
 
-  const refEl = document.getElementById("ref");
-  const vinEl = document.getElementById("vin8");
-  const typeEl = document.getElementById("typeText");
-  const hoursEl = document.getElementById("hours");
-  const rateEl = document.querySelector('input[name="rate"]');
-  const photoEl = document.getElementById("proofPhoto");
-  const notesEl = document.querySelector('textarea[name="notes"]');
+    const refEl = document.getElementById("ref");
+    const vinEl = document.getElementById("vin8");
+    const typeEl = document.getElementById("typeText");
+    const hoursEl = document.getElementById("hours");
+    const rateEl = document.querySelector('input[name="rate"]');
+    const photoEl = document.getElementById("proofPhoto");
+    const notesEl = document.querySelector('textarea[name="notes"]');
 
-  const ref = (refEl?.value || "").trim();
-  const vin8 = (vinEl?.value || "").trim().toUpperCase();
-  const typeName = (typeEl?.value || "").trim();
-  const hoursVal = num(hoursEl?.value);
-  const rateVal = num(rateEl?.value) || 15;
-  const notes = (notesEl?.value || "").trim();
+    const ref = (refEl?.value || "").trim();
+    const vin8 = (vinEl?.value || "").trim().toUpperCase();
+    const typeName = (typeEl?.value || "").trim();
+    const hoursVal = num(hoursEl?.value);
+    const rateVal = num(rateEl?.value) || 15;
+    const notes = (notesEl?.value || "").trim();
 
-  if (!ref) { toast("Ref required"); return; }
-  if (!typeName) { toast("Type required"); return; }
-  if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
+    if (!ref) { toast("Ref required"); return; }
+    if (!typeName) { toast("Type required"); return; }
+    if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-  const photoFile = photoEl?.files?.[0];
-  const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
-  const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
-  const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
-  let photoDataUrl = null;
-  if (!USE_BACKEND) {
-    try {
-      photoDataUrl = photoFile ? await compressImageFileToDataUrl(photoFile, 1200, 0.75) : null;
-    } catch (e) {
-      console.error("photo save failed", e);
-      toast("Photo save failed");
-      return;
+    const photoFile = photoEl?.files?.[0];
+    const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
+    const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
+    const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
+    let photoDataUrl = null;
+    if (!USE_BACKEND) {
+      try {
+        photoDataUrl = photoFile ? await compressImageFileToDataUrl(photoFile, 1200, 0.75) : null;
+      } catch (e) {
+        console.error("photo save failed", e);
+        toast("Photo save failed");
+        return;
+      }
+      if (isEditing && !photoDataUrl) photoDataUrl = baseEntry.photoDataUrl || null;
     }
-    if (isEditing && !photoDataUrl) photoDataUrl = baseEntry.photoDataUrl || null;
-  }
-  const entry = {
-    ...baseEntry,
-    // IMPORTANT: never generate a new id while editing.
-    // If you do, you'll create duplicates and edits won't "stick".
-    id: isEditing ? (baseEntry.id ?? EDITING_ID) : uuid(),
-    empId,
-    createdAt,
-    createdAtMs,
-    dayKey,
-    weekStartKey: baseEntry.weekStartKey || dateKey(startOfWeekLocal(new Date(createdAt))),
-    refType: currentRefType,
-    ref,
-    ro: ref,
-    vin8,
-    type: typeName,
-    typeText: typeName,
-    hours: round1(hoursVal),
-    rate: round2(rateVal),
-    earnings: round2(hoursVal * rateVal),
-    notes,
-    photoDataUrl,
-    location: baseEntry.location ?? null
-  };
+    const entry = {
+      ...baseEntry,
+      // IMPORTANT: never generate a new id while editing.
+      // If you do, you'll create duplicates and edits won't "stick".
+      id: isEditing ? (baseEntry.id ?? EDITING_ID) : uuid(),
+      empId,
+      createdAt,
+      createdAtMs,
+      dayKey,
+      weekStartKey: baseEntry.weekStartKey || dateKey(startOfWeekLocal(new Date(createdAt))),
+      refType: currentRefType,
+      ref,
+      ro: ref,
+      vin8,
+      type: typeName,
+      typeText: typeName,
+      hours: round1(hoursVal),
+      rate: round2(rateVal),
+      earnings: round2(hoursVal * rateVal),
+      notes,
+      photoDataUrl,
+      location: baseEntry.location ?? null
+    };
 
-  await saveEntry(entry, photoFile);
+    await saveEntry(entry);
+  } finally {
+    SAVING = false;
+  }
 }
 
 function showHistory(open=true){
