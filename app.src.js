@@ -377,6 +377,45 @@ function toast(msg){
   setTimeout(() => t.classList.remove("show"), 1400);
 }
 
+let SELECTED_PHOTO_FILE = null;
+
+function setPickedLabel(file) {
+  const el = document.getElementById("photoPickedLabel");
+  if (!el) return;
+  if (!file) { el.textContent = ""; return; }
+  const kb = Math.round((file.size || 0) / 1024);
+  el.textContent = `Selected: ${file.name || "photo"} (${kb} KB)`;
+}
+
+function clearPickedPhoto() {
+  SELECTED_PHOTO_FILE = null;
+  const cam = document.getElementById("photoCamera");
+  const pick = document.getElementById("photoPicker");
+  if (cam) cam.value = "";
+  if (pick) pick.value = "";
+  setPickedLabel(null);
+}
+
+function wirePhotoPickers() {
+  const cam = document.getElementById("photoCamera");
+  const pick = document.getElementById("photoPicker");
+
+  document.getElementById("btnTakePhoto")?.addEventListener("click", () => cam?.click());
+  document.getElementById("btnPickPhoto")?.addEventListener("click", () => pick?.click());
+  document.getElementById("btnPickFile")?.addEventListener("click", () => pick?.click());
+
+  const onPick = (input) => {
+    const f = input?.files?.[0] || null;
+    if (!f) return;
+    SELECTED_PHOTO_FILE = f;
+    setPickedLabel(f);
+    toast?.("Photo selected");
+  };
+
+  cam?.addEventListener("change", () => onPick(cam));
+  pick?.addEventListener("change", () => onPick(pick));
+}
+
 function num(v){
   const x = parseFloat(v);
   return Number.isFinite(x) ? x : 0;
@@ -1088,7 +1127,6 @@ function startEditEntry(entry) {
   const typeEl = document.getElementById("typeText");
   const hoursEl = document.getElementById("hours");
   const rateEl = document.querySelector('input[name="rate"]');
-  const photoEl = document.getElementById("proofPhoto");
   const notesEl = document.querySelector('textarea[name="notes"]');
 
   if (empInputEl && entry.empId) {
@@ -1101,7 +1139,7 @@ function startEditEntry(entry) {
   if (hoursEl) { hoursEl.value = entry.hours != null ? String(entry.hours) : ""; hoursEl.dataset.touched = "1"; }
   if (rateEl) { rateEl.value = entry.rate != null ? String(entry.rate) : "15"; rateEl.dataset.touched = "1"; }
   if (notesEl) notesEl.value = entry.notes || "";
-  if (photoEl) photoEl.value = "";
+  clearPickedPhoto();
 
   setRefType(entry.refType || "RO");
 
@@ -1187,7 +1225,6 @@ function handleClear(ev) {
   const typeEl = document.getElementById("typeText");
   const hoursEl = document.getElementById("hours");
   const rateEl = document.querySelector('input[name="rate"]');
-  const photoEl = document.getElementById("proofPhoto");
   const notesEl = document.querySelector('textarea[name="notes"]');
 
   if (refEl) refEl.value = "";
@@ -1196,7 +1233,7 @@ function handleClear(ev) {
   if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
   if (rateEl) { rateEl.value = "15"; rateEl.dataset.touched = ""; }
   if (notesEl) notesEl.value = "";
-  if (photoEl) photoEl.value = "";
+  clearPickedPhoto();
   if (empInputEl) empInputEl.value = getEmpId();
   setRefType("RO");
 }
@@ -1221,7 +1258,7 @@ async function saveEntry(entry) {
   }
 
   const payload = normalizeEntryForApi(entry);
-  const photoFile = document.getElementById("proofPhoto")?.files?.[0] || null;
+  const photoFile = SELECTED_PHOTO_FILE || null;
 
   // SAVE LOG FIRST
   let saved;
@@ -1233,7 +1270,6 @@ async function saveEntry(entry) {
   // Immediate UI refresh
   const mapped = await loadEntries();
   await refreshUI(mapped);
-  handleClear();
   toast("Saved");
 
   // PHOTO UPLOAD ASYNC (do NOT await)
@@ -1246,6 +1282,7 @@ async function saveEntry(entry) {
         toast("Photo failed (log saved)");
       });
   }
+  handleClear();
 }
 
 async function handleSave(ev) {
@@ -1264,7 +1301,6 @@ async function handleSave(ev) {
     const typeEl = document.getElementById("typeText");
     const hoursEl = document.getElementById("hours");
     const rateEl = document.querySelector('input[name="rate"]');
-    const photoEl = document.getElementById("proofPhoto");
     const notesEl = document.querySelector('textarea[name="notes"]');
 
     const ref = (refEl?.value || "").trim();
@@ -1278,7 +1314,7 @@ async function handleSave(ev) {
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-    const photoFile = photoEl?.files?.[0];
+    const photoFile = SELECTED_PHOTO_FILE;
     const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
     const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
     const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
@@ -2608,6 +2644,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
       document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
       setRefType(document.getElementById("refTypeSTK")?.classList.contains("active") ? "STOCK" : "RO");
+      wirePhotoPickers();
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');

@@ -782,8 +782,18 @@
           </div>
 
           <div class="fr26Row">
-            <label class="fr26Label" for="proofPhoto">Proof Photo</label>
-            <input id="proofPhoto" name="photo" type="file" accept="image/*" capture="environment" class="fr26File" />
+            <label class="fr26Label">Proof Photo</label>
+            <div class="photoPickRow" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <button type="button" class="btn" id="btnTakePhoto">Take Photo</button>
+              <button type="button" class="btn" id="btnPickPhoto">Photo Library</button>
+              <button type="button" class="btn" id="btnPickFile">Files</button>
+
+              <span class="muted small" id="photoPickedLabel" style="margin-left:6px;"></span>
+
+              <!-- hidden inputs -->
+              <input id="photoCamera" type="file" accept="image/*" capture="environment" style="display:none" />
+              <input id="photoPicker" type="file" accept="image/*" style="display:none" />
+            </div>
           </div>
           <div class="fr26Hint">Tip: 1 photo per RO is enough.</div>
 
@@ -883,6 +893,6 @@
 
 <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="/flat-rate-log/app.c09e8f652e.js" defer></script>
+<script src="/flat-rate-log/app.2e762e0646.js" defer></script>
 </body>
 </html>
