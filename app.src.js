@@ -1147,20 +1147,14 @@ async function saveEntry(entry, photoFile) {
     const payload = normalizeEntryForApi(entry);
     if (!payload.work_date) throw new Error("Missing work_date/date on entry");
 
-    if (EDITING_ID) {
-      await apiUpdateLog(EDITING_ID, payload, photoFile);
-      toast("Updated");
-    } else {
-      await apiCreateLog(payload, photoFile);
-      toast("Saved");
-    }
+    let saved;
+    if (EDITING_ID) saved = await apiUpdateLog(EDITING_ID, payload, photoFile);
+    else saved = await apiCreateLog(payload, photoFile);
 
     setEditingEntry(null);
-    handleClear(); // clears form + exits edit mode visuals
-
-    // Source of truth refresh
     const mapped = await loadEntries();
     await refreshUI(mapped);
+    handleClear();
     return;
   }
 
@@ -2376,33 +2370,35 @@ async function openPhotoViewer(e){
   const img = document.getElementById("photoFull");
   const meta = document.getElementById("photoMeta");
   const dl = document.getElementById("downloadPhotoBtn");
-  const copyBtn = document.getElementById("copyPhotoBtn");
 
   if (!shell || !img || !meta || !dl) return;
 
-  const url = await entryPhotoUrl(e);
-  if (!url) { toast("No photo."); return; }
-  img.src = url;
+  try {
+    let url = null;
 
-  const label = entryRefLabel(e);
-  const when = formatWhen(e.createdAt || e.ts || e.when);
-  const type = e.typeText || e.type || "";
-  meta.textContent = `${label} • ${type} • ${when}`;
-
-  dl.href = url;
-
-  copyBtn?.addEventListener("click", async () => {
-    try{
-      const blob = await (await fetch(url)).blob();
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-      toast("Copied.");
-    } catch {
-      toast("Copy failed.");
+    // legacy local photo
+    if (e.photoDataUrl && String(e.photoDataUrl).startsWith("data:")) {
+      url = e.photoDataUrl;
+    } else if (e.photo_path) {
+      const { data, error } = await sb.storage.from("proofs").createSignedUrl(e.photo_path, 60 * 30);
+      if (error) throw error;
+      url = data.signedUrl;
     }
-  }, { once:true });
 
-  shell.style.display = "block";
-  shell.classList.add("open");
+    if (!url) return toast("No photo saved.");
+
+    img.src = url;
+    dl.href = url;
+
+    const label = `${e.ro || e.ref || ""}`.trim();
+    meta.textContent = `${label} • ${e.work_date || e.dayKey || ""}`;
+
+    shell.style.display = "block";
+    shell.classList.add("open");
+  } catch (err) {
+    console.error(err);
+    toast("Photo load failed");
+  }
 }
 
 function closePhotoViewer(){
