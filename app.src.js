@@ -93,7 +93,7 @@ async function sbListRows(ownerKey, empId) {
     .select("*")
     .eq("owner_key", ownerKey)
     .eq("employee_number", empId)
-    .eq("is_deleted", false)
+    .or("is_deleted.is.null,is_deleted.eq.false")
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
 
