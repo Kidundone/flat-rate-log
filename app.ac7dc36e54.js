@@ -3,17 +3,27 @@ console.log("BUILD", window.BUILD, new Date().toISOString());
 
 const USE_BACKEND = true;
 
-function getOwnerKey() {
-  const KEY = "fr_owner_key";
-  let v = localStorage.getItem(KEY);
-  if (!v) {
-    v = crypto?.randomUUID?.() || ("ok_" + Math.random().toString(16).slice(2) + Date.now().toString(16));
-    localStorage.setItem(KEY, v);
+function getOwnerKeyForEmp(empIdRaw) {
+  const empId = String(empIdRaw || "").trim();
+  if (!empId) return null;
+
+  const MAP_KEY = "fr_owner_keys_by_emp";
+  let map = {};
+  try { map = JSON.parse(localStorage.getItem(MAP_KEY) || "{}"); } catch {}
+
+  if (!map[empId]) {
+    map[empId] = crypto?.randomUUID?.() || ("ok_" + Math.random().toString(16).slice(2) + Date.now().toString(16));
+    localStorage.setItem(MAP_KEY, JSON.stringify(map));
   }
-  return v;
+  return map[empId];
 }
 
-const OWNER_KEY = getOwnerKey();
+function getOwnerKeyForActiveEmp() {
+  const empId = document.getElementById("empId").value;
+  const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) throw new Error("Employee # required");
+  return ownerKey;
+}
 
 // --- Supabase ---
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
@@ -77,11 +87,13 @@ async function sbSignedUrl(path, seconds = 60 * 60) {
 }
 
 async function sbListRows() {
+  const ownerKey = getOwnerKeyForActiveEmp();
+  if (!ownerKey) return [];
   await sbEnsureSignedIn();
   const { data, error } = await sb
     .from("work_logs")
     .select("*")
-    .eq("owner_key", OWNER_KEY)
+    .eq("owner_key", ownerKey)
     .eq("is_deleted", false)
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -154,12 +166,14 @@ async function apiListLogs() {
 // CREATE
 async function apiCreateLog(payload, photoFile) {
   await sbEnsureSignedIn();
+  const ownerKey = getOwnerKeyForActiveEmp();
+  if (!ownerKey) throw new Error("Missing owner key");
 
   // 1) Create row first (no photo_path yet)
   const { data: created, error: e1 } = await sb
     .from("work_logs")
     .insert([{
-      owner_key: OWNER_KEY,
+      owner_key: ownerKey,
       user_id: (await sbUid()),
       work_date: payload.work_date,
       category: payload.category || "work",
@@ -184,7 +198,7 @@ async function apiCreateLog(payload, photoFile) {
       .from("work_logs")
       .update({ photo_path: path })
       .eq("id", created.id)
-      .eq("owner_key", OWNER_KEY)
+      .eq("owner_key", ownerKey)
       .select("*")
       .single();
 
@@ -198,6 +212,8 @@ async function apiCreateLog(payload, photoFile) {
 // UPDATE
 async function apiUpdateLog(id, payload, photoFile) {
   await sbEnsureSignedIn();
+  const ownerKey = getOwnerKeyForActiveEmp();
+  if (!ownerKey) throw new Error("Missing owner key");
 
   // Update fields first
   const { data: updated, error: e1 } = await sb
@@ -213,7 +229,7 @@ async function apiUpdateLog(id, payload, photoFile) {
       vin8: payload.vin8 || null,
     })
     .eq("id", id)
-    .eq("owner_key", OWNER_KEY)
+    .eq("owner_key", ownerKey)
     .select("*")
     .single();
 
@@ -226,7 +242,7 @@ async function apiUpdateLog(id, payload, photoFile) {
       .from("work_logs")
       .update({ photo_path: path })
       .eq("id", updated.id)
-      .eq("owner_key", OWNER_KEY)
+      .eq("owner_key", ownerKey)
       .select("*")
       .single();
 
@@ -239,6 +255,8 @@ async function apiUpdateLog(id, payload, photoFile) {
 
 async function uploadProofForLog(savedRow, file) {
   await sbEnsureSignedIn();
+  const ownerKey = getOwnerKeyForActiveEmp();
+  if (!ownerKey) throw new Error("Missing owner key");
 
   const withTimeout = (p, ms) =>
     Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("UPLOAD_TIMEOUT")), ms))]);
@@ -268,18 +286,20 @@ async function uploadProofForLog(savedRow, file) {
     .from("work_logs")
     .update({ photo_path: path })
     .eq("id", savedRow.id)
-    .eq("owner_key", OWNER_KEY);
+    .eq("owner_key", ownerKey);
   if (error) throw error;
 }
 
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
+  const ownerKey = getOwnerKeyForActiveEmp();
+  if (!ownerKey) throw new Error("Missing owner key");
   const { error } = await sb
     .from("work_logs")
     .update({ is_deleted: true })
     .eq("id", id)
-    .eq("owner_key", OWNER_KEY);
+    .eq("owner_key", ownerKey);
   if (error) throw error;
   return true;
 }
