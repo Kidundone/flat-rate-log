@@ -19,10 +19,9 @@ function getOwnerKeyForEmp(empIdRaw) {
 }
 
 function getOwnerKeyForActiveEmp() {
-  const empId = document.getElementById("empId").value;
-  const ownerKey = getOwnerKeyForEmp(empId);
-  if (!ownerKey) throw new Error("Employee # required");
-  return ownerKey;
+  const empId = getEmpId();
+  if (!empId) return null;
+  return getOwnerKeyForEmp(empId);
 }
 
 // --- Supabase ---
@@ -86,8 +85,7 @@ async function sbSignedUrl(path, seconds = 60 * 60) {
   return data?.signedUrl || null;
 }
 
-async function sbListRows() {
-  const ownerKey = getOwnerKeyForActiveEmp();
+async function sbListRows(ownerKey) {
   if (!ownerKey) return [];
   await sbEnsureSignedIn();
   const { data, error } = await sb
@@ -159,15 +157,23 @@ function mapEntryToRow(payload, userId) {
 }
 
 // LIST
-async function apiListLogs() {
-  return sbListRows();
+async function apiListLogs(ownerKey) {
+  if (!ownerKey) {
+    const empId = getEmpId();
+    if (!empId) return [];
+    ownerKey = getOwnerKeyForEmp(empId);
+    if (!ownerKey) return [];
+  }
+  return sbListRows(ownerKey);
 }
 
 // CREATE
 async function apiCreateLog(payload, photoFile) {
   await sbEnsureSignedIn();
-  const ownerKey = getOwnerKeyForActiveEmp();
-  if (!ownerKey) throw new Error("Missing owner key");
+  const empId = getEmpId();
+  if (!empId) return null;
+  const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) return null;
 
   // 1) Create row first (no photo_path yet)
   const { data: created, error: e1 } = await sb
@@ -212,8 +218,10 @@ async function apiCreateLog(payload, photoFile) {
 // UPDATE
 async function apiUpdateLog(id, payload, photoFile) {
   await sbEnsureSignedIn();
-  const ownerKey = getOwnerKeyForActiveEmp();
-  if (!ownerKey) throw new Error("Missing owner key");
+  const empId = getEmpId();
+  if (!empId) return null;
+  const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) return null;
 
   // Update fields first
   const { data: updated, error: e1 } = await sb
@@ -255,8 +263,10 @@ async function apiUpdateLog(id, payload, photoFile) {
 
 async function uploadProofForLog(savedRow, file) {
   await sbEnsureSignedIn();
-  const ownerKey = getOwnerKeyForActiveEmp();
-  if (!ownerKey) throw new Error("Missing owner key");
+  const empId = getEmpId();
+  if (!empId) return null;
+  const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) return null;
 
   const withTimeout = (p, ms) =>
     Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("UPLOAD_TIMEOUT")), ms))]);
@@ -293,8 +303,10 @@ async function uploadProofForLog(savedRow, file) {
 // DELETE (optional)
 async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
-  const ownerKey = getOwnerKeyForActiveEmp();
-  if (!ownerKey) throw new Error("Missing owner key");
+  const empId = getEmpId();
+  if (!empId) return false;
+  const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) return false;
   const { error } = await sb
     .from("work_logs")
     .update({ is_deleted: true })
@@ -367,7 +379,7 @@ const STORES = {
 };
 
 const $ = (id) => document.getElementById(id);
-const EMP_KEY = "frlog_emp";
+const EMP_KEY = "fr_emp_id";
 let ACTIVE_EMP = (typeof localStorage !== "undefined" ? localStorage.getItem(EMP_KEY) : "") || "";
 
 console.log("BUILD", "delta-fix-20251222b", new Date().toISOString());
@@ -544,14 +556,22 @@ function formatDayLabel(dayKey){
   const dt = new Date(y, m - 1, d);
   return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
-function getEmpId(){
-  const inp = $("empId");
-  const val = inp ? (inp.value || "").trim() : "";
-  return val || ACTIVE_EMP || "";
+function getEmpId() {
+  return String(document.getElementById("empId")?.value || "").trim();
+}
+function setEmpId(v) {
+  const s = String(v || "").trim();
+  const el = document.getElementById("empId");
+  if (el) el.value = s;
+  localStorage.setItem(EMP_KEY, s);
+  ACTIVE_EMP = s;
+}
+function restoreEmpId() {
+  const saved = (localStorage.getItem(EMP_KEY) || "").trim();
+  if (saved) setEmpId(saved);
 }
 function setActiveEmp(empId){
-  ACTIVE_EMP = (empId || "").trim();
-  try { localStorage.setItem(EMP_KEY, ACTIVE_EMP); } catch {}
+  setEmpId(empId);
 }
 function uuid(){
   return crypto.randomUUID ? crypto.randomUUID() : `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -1313,10 +1333,15 @@ async function renderLogs(logs) {
 }
 
 async function loadEntries() {
+  const empId = getEmpId();
+  if (!empId) return;
+  const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) return;
+
   if (USE_BACKEND) {
     try {
       // HARD STOP: never let backend calls block the whole app
-      const serverLogs = await withTimeout(apiListLogs(), 3500, "apiListLogs timeout");
+      const serverLogs = await withTimeout(apiListLogs(ownerKey), 3500, "apiListLogs timeout");
       const mapped = (serverLogs || []).map(mapServerLogToEntry);
       BACKEND_ENTRIES = mapped;
       return mapped;
@@ -1330,6 +1355,15 @@ async function loadEntries() {
   // local mode path
   const entries = await getAll(STORES.entries);
   return entries || [];
+}
+
+function tryLoadEntries() {
+  const empId = getEmpId();
+  if (!empId) {
+    console.warn("No empId yet; skipping loadEntries()");
+    return null;
+  }
+  return loadEntries();
 }
 
 async function saveEntry(entry) {
@@ -2663,6 +2697,8 @@ function initPhotosUI(){
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   (async () => {
+    restoreEmpId();
+
     // Service worker: SAFE on both pages
     try {
       await registerSW();
@@ -2674,7 +2710,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let initialEntries = null;
     await (async () => {
       try {
-        const entries = await loadEntries();
+        const entries = await tryLoadEntries();
         initialEntries = entries;
         await renderLogs(entries);
       } catch (e) {
@@ -2689,9 +2725,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Employee input exists on both pages
     const empInput = document.getElementById("empId");
     if (empInput) {
-      empInput.value = getEmpId();
-      empInput.addEventListener("input", () => {
-        setActiveEmp(empInput.value.trim());
+      empInput.addEventListener("input", (e) => {
+        setEmpId(e.target.value);
         if (PAGE === "main") refreshUI?.();
         if (PAGE === "more") {
           renderReview?.();
@@ -2699,6 +2734,8 @@ document.addEventListener("DOMContentLoaded", () => {
           else clearPhotoGallery();
         }
       });
+      empInput.addEventListener("change", tryLoadEntries);
+      empInput.addEventListener("blur", tryLoadEntries);
     }
 
     // ================= MAIN PAGE ONLY =================
