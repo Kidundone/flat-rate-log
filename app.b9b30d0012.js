@@ -3,6 +3,18 @@ console.log("BUILD", window.BUILD, new Date().toISOString());
 
 const USE_BACKEND = true;
 
+function getOwnerKey() {
+  const KEY = "fr_owner_key";
+  let v = localStorage.getItem(KEY);
+  if (!v) {
+    v = crypto?.randomUUID?.() || ("ok_" + Math.random().toString(16).slice(2) + Date.now().toString(16));
+    localStorage.setItem(KEY, v);
+  }
+  return v;
+}
+
+const OWNER_KEY = getOwnerKey();
+
 // --- Supabase ---
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_BURbEbtZF7z-apmQ1hPY6Q_4wLKZPdc";
@@ -69,6 +81,7 @@ async function sbListRows() {
   const { data, error } = await sb
     .from("work_logs")
     .select("*")
+    .eq("owner_key", OWNER_KEY)
     .eq("is_deleted", false)
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -146,6 +159,7 @@ async function apiCreateLog(payload, photoFile) {
   const { data: created, error: e1 } = await sb
     .from("work_logs")
     .insert([{
+      owner_key: OWNER_KEY,
       user_id: (await sbUid()),
       work_date: payload.work_date,
       category: payload.category || "work",
@@ -170,6 +184,7 @@ async function apiCreateLog(payload, photoFile) {
       .from("work_logs")
       .update({ photo_path: path })
       .eq("id", created.id)
+      .eq("owner_key", OWNER_KEY)
       .select("*")
       .single();
 
@@ -198,6 +213,7 @@ async function apiUpdateLog(id, payload, photoFile) {
       vin8: payload.vin8 || null,
     })
     .eq("id", id)
+    .eq("owner_key", OWNER_KEY)
     .select("*")
     .single();
 
@@ -210,6 +226,7 @@ async function apiUpdateLog(id, payload, photoFile) {
       .from("work_logs")
       .update({ photo_path: path })
       .eq("id", updated.id)
+      .eq("owner_key", OWNER_KEY)
       .select("*")
       .single();
 
@@ -247,7 +264,11 @@ async function uploadProofForLog(savedRow, file) {
     20000
   );
 
-  const { error } = await sb.from("work_logs").update({ photo_path: path }).eq("id", savedRow.id);
+  const { error } = await sb
+    .from("work_logs")
+    .update({ photo_path: path })
+    .eq("id", savedRow.id)
+    .eq("owner_key", OWNER_KEY);
   if (error) throw error;
 }
 
@@ -257,7 +278,8 @@ async function apiDeleteLog(id) {
   const { error } = await sb
     .from("work_logs")
     .update({ is_deleted: true })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("owner_key", OWNER_KEY);
   if (error) throw error;
   return true;
 }
@@ -375,6 +397,13 @@ function toast(msg){
   t.textContent = msg;
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 1400);
+}
+
+function withTimeout(promise, ms = 4000, label = "timeout") {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(label)), ms))
+  ]);
 }
 
 // --- Photo selection (camera / library / files) ---
@@ -1264,10 +1293,23 @@ async function renderLogs(logs) {
 }
 
 async function loadEntries() {
-  const rows = await apiListLogs();
-  const mapped = rows.map(mapServerLogToEntry);
-  BACKEND_ENTRIES = mapped;
-  return mapped;
+  if (USE_BACKEND) {
+    try {
+      // HARD STOP: never let backend calls block the whole app
+      const serverLogs = await withTimeout(apiListLogs(), 3500, "apiListLogs timeout");
+      const mapped = (serverLogs || []).map(mapServerLogToEntry);
+      BACKEND_ENTRIES = mapped;
+      return mapped;
+    } catch (e) {
+      console.warn("loadEntries failed; continuing UI", e);
+      BACKEND_ENTRIES = [];
+      return []; // return empty so UI still works
+    }
+  }
+
+  // local mode path
+  const entries = await getAll(STORES.entries);
+  return entries || [];
 }
 
 async function saveEntry(entry) {
@@ -2610,11 +2652,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     await ensureDefaultTypes();
     let initialEntries = null;
-    try {
-      initialEntries = await loadEntries();
-    } catch (e) {
-      console.warn("loadEntries failed:", e?.message || e);
-    }
+    await (async () => {
+      try {
+        const entries = await loadEntries();
+        initialEntries = entries;
+        await renderLogs(entries);
+      } catch (e) {
+        console.warn("startup render failed; continuing", e);
+      } finally {
+        // MUST bind UI no matter what
+        wirePhotoPickers?.();
+        setSelectedPhotoFile?.(null);
+      }
+    })();
 
     // Employee input exists on both pages
     const empInput = document.getElementById("empId");
@@ -2675,8 +2725,6 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
       document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
       setRefType(document.getElementById("refTypeSTK")?.classList.contains("active") ? "STOCK" : "RO");
-      wirePhotoPickers();
-      setSelectedPhotoFile(null);
 
       const hoursInput = $("hours");
       const rateInput  = document.querySelector('input[name="rate"]');
@@ -2765,6 +2813,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
+      document.getElementById("exportCsvMainBtn")?.addEventListener("click", exportCSV);
       document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
       document.getElementById("histRange")?.addEventListener("change", renderHistory);
       document.getElementById("histGroup")?.addEventListener("change", renderHistory);
