@@ -26,7 +26,7 @@ function getOwnerKeyForActiveEmp() {
 
 // --- Supabase ---
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_BURbEbtZF7z-apmQ1hPY6Q_4wLKZPdc";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
