@@ -85,13 +85,14 @@ async function sbSignedUrl(path, seconds = 60 * 60) {
   return data?.signedUrl || null;
 }
 
-async function sbListRows(ownerKey) {
-  if (!ownerKey) return [];
+async function sbListRows(ownerKey, empId) {
+  if (!ownerKey || !empId) return [];
   await sbEnsureSignedIn();
   const { data, error } = await sb
     .from("work_logs")
     .select("*")
     .eq("owner_key", ownerKey)
+    .eq("employee_number", empId)
     .eq("is_deleted", false)
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -157,29 +158,29 @@ function mapEntryToRow(payload, userId) {
 }
 
 // LIST
-async function apiListLogs(ownerKey) {
-  if (!ownerKey) {
-    const empId = getEmpId();
+async function apiListLogs(ownerKey, empId) {
+  if (!ownerKey || !empId) {
+    empId = getEmpId();
     if (!empId) return [];
     ownerKey = getOwnerKeyForEmp(empId);
     if (!ownerKey) return [];
   }
-  return sbListRows(ownerKey);
+  return sbListRows(ownerKey, empId);
 }
 
 // CREATE
 async function apiCreateLog(payload, photoFile) {
   await sbEnsureSignedIn();
-  const empId = getEmpId();
-  if (!empId) return null;
+  const empId = String(document.getElementById("empId").value || "").trim();
   const ownerKey = getOwnerKeyForEmp(empId);
-  if (!ownerKey) return null;
+  if (!empId) throw new Error("Employee # required");
 
   // 1) Create row first (no photo_path yet)
   const { data: created, error: e1 } = await sb
     .from("work_logs")
     .insert([{
       owner_key: ownerKey,
+      employee_number: empId,
       user_id: (await sbUid()),
       work_date: payload.work_date,
       category: payload.category || "work",
@@ -205,6 +206,7 @@ async function apiCreateLog(payload, photoFile) {
       .update({ photo_path: path })
       .eq("id", created.id)
       .eq("owner_key", ownerKey)
+      .eq("employee_number", empId)
       .select("*")
       .single();
 
@@ -238,6 +240,7 @@ async function apiUpdateLog(id, payload, photoFile) {
     })
     .eq("id", id)
     .eq("owner_key", ownerKey)
+    .eq("employee_number", empId)
     .select("*")
     .single();
 
@@ -251,6 +254,7 @@ async function apiUpdateLog(id, payload, photoFile) {
       .update({ photo_path: path })
       .eq("id", updated.id)
       .eq("owner_key", ownerKey)
+      .eq("employee_number", empId)
       .select("*")
       .single();
 
@@ -296,7 +300,8 @@ async function uploadProofForLog(savedRow, file) {
     .from("work_logs")
     .update({ photo_path: path })
     .eq("id", savedRow.id)
-    .eq("owner_key", ownerKey);
+    .eq("owner_key", ownerKey)
+    .eq("employee_number", empId);
   if (error) throw error;
 }
 
@@ -311,7 +316,8 @@ async function apiDeleteLog(id) {
     .from("work_logs")
     .update({ is_deleted: true })
     .eq("id", id)
-    .eq("owner_key", ownerKey);
+    .eq("owner_key", ownerKey)
+    .eq("employee_number", empId);
   if (error) throw error;
   return true;
 }
@@ -1341,7 +1347,7 @@ async function loadEntries() {
   if (USE_BACKEND) {
     try {
       // HARD STOP: never let backend calls block the whole app
-      const serverLogs = await withTimeout(apiListLogs(ownerKey), 3500, "apiListLogs timeout");
+      const serverLogs = await withTimeout(apiListLogs(ownerKey, empId), 3500, "apiListLogs timeout");
       const mapped = (serverLogs || []).map(mapServerLogToEntry);
       BACKEND_ENTRIES = mapped;
       return mapped;
