@@ -88,7 +88,7 @@ async function sbSignedUrl(path, seconds = 60 * 60) {
 async function sbListRows(ownerKey, empId) {
   if (!ownerKey || !empId) return [];
   await sbEnsureSignedIn();
-  const { data, error } = await sb
+  const q = sb
     .from("work_logs")
     .select("*")
     .eq("owner_key", ownerKey)
@@ -96,6 +96,7 @@ async function sbListRows(ownerKey, empId) {
     .or("is_deleted.is.null,is_deleted.eq.false")
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
+  const { data, error } = await q;
 
   if (error) throw error;
   return data || [];
