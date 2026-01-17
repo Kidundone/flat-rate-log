@@ -1,4 +1,4 @@
-const SW_VERSION = "2026-01-16-20-41-56";
+const SW_VERSION = "2026-01-17-18-36-14";
 const CACHE = "frlog-20260107a";
 
 self.addEventListener("install", (e) => {
@@ -23,5 +23,10 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+
+  // Only handle our own origin. Never touch Supabase/CDNs.
+  if (url.origin !== self.location.origin) return;
+
   e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
 });
