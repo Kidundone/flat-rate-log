@@ -127,7 +127,6 @@ function sbProofPhotoUrl(photoPath) {
   return data?.publicUrl || null;
 }
 
-const LS_KEYS_BY_EMP = "fr_owner_keys_by_emp";
 const LS_EMP = "fr_emp_id";
 
 function getEmpId() {
@@ -138,58 +137,13 @@ function setEmpId(emp) {
   localStorage.setItem(LS_EMP, emp);
 }
 
-function getKeysByEmp() {
-  try { return JSON.parse(localStorage.getItem(LS_KEYS_BY_EMP) || "{}"); }
-  catch { return {}; }
-}
-
-function setKeysByEmp(map) {
-  localStorage.setItem(LS_KEYS_BY_EMP, JSON.stringify(map));
-}
-
-function getOrCreateOwnerKey(empId) {
-  const map = getKeysByEmp();
-  if (map[empId]) return map[empId];
-  const k = (crypto?.randomUUID?.() || String(Math.random()).slice(2) + Date.now());
-  map[empId] = k;
-  setKeysByEmp(map);
-  return k;
-}
-
-async function adoptOwnerKeyFromDb(empId) {
-  // Fallback: if mapping is wrong but DB already has rows for this employee_number,
-  // grab the newest row's owner_key and adopt it.
-  const { data, error } = await sb
-    .from("work_logs")
-    .select("owner_key, created_at")
-    .eq("employee_number", empId)
-    .or("is_deleted.is.null,is_deleted.eq.false")
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) return null;
-  const k = data?.[0]?.owner_key?.trim();
-  if (!k) return null;
-
-  const map = getKeysByEmp();
-  map[empId] = k;
-  setKeysByEmp(map);
-  return k;
-}
-
-function getOwnerKeyForEmp(empIdRaw) {
-  const empId = String(empIdRaw || "").trim();
-  if (!empId) return null;
-  return getOrCreateOwnerKey(empId);
-}
-
-async function resolveOwnerKeyForEmp(empIdRaw) {
-  const empId = String(empIdRaw || "").trim();
-  if (!empId) return null;
-  let ownerKey = getOrCreateOwnerKey(empId);
-  const adopted = await adoptOwnerKeyFromDb(empId);
-  if (adopted) ownerKey = adopted;
-  return ownerKey;
+function getOwnerKeyForEmp(empId) {
+  const map = JSON.parse(localStorage.getItem("fr_owner_keys_by_emp") || "{}");
+  if (!map[empId]) {
+    map[empId] = crypto.randomUUID();
+    localStorage.setItem("fr_owner_keys_by_emp", JSON.stringify(map));
+  }
+  return map[empId];
 }
 
 function getOwnerKeyForActiveEmp() {
@@ -219,7 +173,7 @@ async function apiListLogs(ownerKey, empId) {
     empId = getEmpId();
     if (!empId) return [];
   }
-  ownerKey = await resolveOwnerKeyForEmp(empId);
+  ownerKey = getOwnerKeyForEmp(empId);
   if (!ownerKey) return [];
   return sbListRows(ownerKey, empId);
 }
@@ -228,7 +182,7 @@ async function apiListLogs(ownerKey, empId) {
 async function apiCreateLog(payload, photoFile) {
   await sbEnsureSignedIn();
   const empId = String(document.getElementById("empId").value || "").trim();
-  const ownerKey = await resolveOwnerKeyForEmp(empId);
+  const ownerKey = getOwnerKeyForEmp(empId);
   if (!empId) throw new Error("Employee # required");
 
   // 1) Create row first (no photo_path yet)
@@ -278,7 +232,7 @@ async function apiUpdateLog(id, payload, photoFile) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const ownerKey = await resolveOwnerKeyForEmp(empId);
+  const ownerKey = getOwnerKeyForEmp(empId);
   if (!ownerKey) return null;
 
   // Update fields first
@@ -325,7 +279,7 @@ async function uploadProofForLog(savedRow, file) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const ownerKey = await resolveOwnerKeyForEmp(empId);
+  const ownerKey = getOwnerKeyForEmp(empId);
   if (!ownerKey) return null;
 
   const withTimeout = (p, ms) =>
@@ -366,7 +320,7 @@ async function apiDeleteLog(id) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return false;
-  const ownerKey = await resolveOwnerKeyForEmp(empId);
+  const ownerKey = getOwnerKeyForEmp(empId);
   if (!ownerKey) return false;
   const { error } = await sb
     .from("work_logs")
@@ -1398,10 +1352,10 @@ async function loadEntries() {
     return entries || [];
   }
 
-  let ownerKey = getOrCreateOwnerKey(empId);
+  const ownerKey = getOwnerKeyForEmp(empId);
 
   // Primary query
-  let res = await sb
+  const res = await sb
     .from("work_logs")
     .select("*")
     .eq("employee_number", empId)
@@ -1409,22 +1363,6 @@ async function loadEntries() {
     .or("is_deleted.is.null,is_deleted.eq.false")
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
-
-  // If nothing found, adopt legacy key from DB and retry once
-  if (!res.error && Array.isArray(res.data) && res.data.length === 0) {
-    const adopted = await adoptOwnerKeyFromDb(empId);
-    if (adopted && adopted !== ownerKey) {
-      ownerKey = adopted;
-      res = await sb
-        .from("work_logs")
-        .select("*")
-        .eq("employee_number", empId)
-        .eq("owner_key", ownerKey)
-        .or("is_deleted.is.null,is_deleted.eq.false")
-        .order("work_date", { ascending: false })
-        .order("created_at", { ascending: false });
-    }
-  }
 
   if (res.error) throw res.error;
 
