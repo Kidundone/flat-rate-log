@@ -98,6 +98,7 @@ async function sbUploadProof(file, logId) {
   const empId = getEmpId();
   if (!empId) throw new Error("Employee # required");
   const ownerKey = getOwnerKeyForEmp(empId);
+  console.log("[loadEntries] empId", empId, "ownerKey", ownerKey);
   if (!ownerKey) throw new Error("Owner key required");
   return uploadProofPhoto(file, ownerKey, empId, logId);
 }
@@ -155,12 +156,25 @@ function setEmpId(emp) {
 }
 
 function getOwnerKeyForEmp(empId) {
-  const map = JSON.parse(localStorage.getItem("fr_owner_keys_by_emp") || "{}");
-  if (!map[empId]) {
-    map[empId] = crypto.randomUUID();
-    localStorage.setItem("fr_owner_keys_by_emp", JSON.stringify(map));
+  const k = "fr_owner_keys_by_emp";
+  let map = {};
+  try { map = JSON.parse(localStorage.getItem(k) || "{}"); } catch {}
+
+  let ownerKey = map[empId];
+
+  // NEVER rotate an existing key. Only create if missing.
+  if (!ownerKey) {
+    ownerKey = crypto.randomUUID();
+    map[empId] = ownerKey;
+    localStorage.setItem(k, JSON.stringify(map));
   }
-  return map[empId];
+
+  // expose for debugging
+  window.LAST_EMP_ID = empId;
+  window.LAST_OWNER_KEY = ownerKey;
+  window.LAST_OWNER_MAP = map;
+
+  return ownerKey;
 }
 
 function getOwnerKeyForActiveEmp() {
@@ -1412,6 +1426,10 @@ async function loadEntries() {
     .or("is_deleted.is.null,is_deleted.eq.false")
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
+
+  console.log("[loadEntries] res.error", res.error);
+  console.log("[loadEntries] res.count", res.data?.length);
+  if (res.data?.length) console.log("[loadEntries] firstRow", res.data[0]);
 
   if (res.error) throw res.error;
 
