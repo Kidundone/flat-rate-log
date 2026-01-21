@@ -148,7 +148,19 @@ async function getPhotoUrl(photoPath) {
 const LS_EMP = "fr_emp_id";
 
 function getEmpId() {
-  return (localStorage.getItem(LS_EMP) || "").trim();
+  const raw =
+    (document.getElementById("empId")?.value || localStorage.getItem("fr_emp_id") || "")
+      .trim();
+
+  // digits only
+  const digits = raw.replace(/\D/g, "");
+
+  // REQUIRE full employee # length (change 5 if yours differs)
+  if (digits.length < 5) return "";
+
+  // persist only when valid
+  localStorage.setItem("fr_emp_id", digits);
+  return digits;
 }
 
 function setEmpId(emp) {
@@ -156,23 +168,22 @@ function setEmpId(emp) {
 }
 
 function getOwnerKeyForEmp(empId) {
+  // refuse bad ids
+  if (!empId || String(empId).length < 5) return null;
+
   const k = "fr_owner_keys_by_emp";
   let map = {};
   try { map = JSON.parse(localStorage.getItem(k) || "{}"); } catch {}
 
+  // only use FULL empId key
   let ownerKey = map[empId];
 
-  // NEVER rotate an existing key. Only create if missing.
+  // create ONCE for a valid full empId
   if (!ownerKey) {
     ownerKey = crypto.randomUUID();
     map[empId] = ownerKey;
     localStorage.setItem(k, JSON.stringify(map));
   }
-
-  // expose for debugging
-  window.LAST_EMP_ID = empId;
-  window.LAST_OWNER_KEY = ownerKey;
-  window.LAST_OWNER_MAP = map;
 
   return ownerKey;
 }
@@ -1404,7 +1415,7 @@ async function renderEntries(rows) {
 
 async function loadEntries() {
   const empId = getEmpId();
-  if (!empId) throw new Error("Employee # required");
+  if (!empId) return []; // don't throw, just don't load yet
 
   window.STATE = window.STATE || {};
 
@@ -1416,6 +1427,7 @@ async function loadEntries() {
   }
 
   const ownerKey = getOwnerKeyForEmp(empId);
+  if (!ownerKey) return [];
 
   // Primary query
   const res = await sb
