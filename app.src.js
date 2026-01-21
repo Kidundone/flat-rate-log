@@ -1392,10 +1392,13 @@ async function loadEntries() {
   const empId = getEmpId();
   if (!empId) throw new Error("Employee # required");
 
+  window.STATE = window.STATE || {};
+
   if (!USE_BACKEND) {
-    const entries = await getAll(STORES.entries);
-    await renderLogs(entries || []);
-    return entries || [];
+    const entries = (await getAll(STORES.entries)) || [];
+    window.STATE.entries = entries;
+    await renderEntries(entries); // use ONE renderer consistently
+    return entries;
   }
 
   const ownerKey = getOwnerKeyForEmp(empId);
@@ -1413,9 +1416,9 @@ async function loadEntries() {
   if (res.error) throw res.error;
 
   const rows = (res.data || []).map(normalizeSupabaseLog);
-  window.STATE = window.STATE || {};
   window.STATE.entries = rows;
-  return await renderEntries(rows);
+  await renderEntries(rows);
+  return rows;
 }
 
 async function saveEntry(entry) {
@@ -2761,15 +2764,12 @@ document.addEventListener("DOMContentLoaded", () => {
   (async () => {
     bootEmp();
     let bootLoaded = false;
-    const bootEmpId = getEmpId();
-    if (bootEmpId) {
-      try {
-        await loadEntries();
-        bootLoaded = true;
-      } catch (e) {
-        console.warn("startup loadEntries failed; continuing", e);
+    (async () => {
+      const empId = getEmpId();
+      if (empId) {
+        try { await loadEntries(); bootLoaded = true; } catch (e) { console.warn("loadEntries failed", e); }
       }
-    }
+    })();
 
     // Service worker: SAFE on both pages
     try {
@@ -2811,8 +2811,8 @@ document.addEventListener("DOMContentLoaded", () => {
       empInput.addEventListener("change", async () => {
         try {
           await loadEntries();
-        } catch (err) {
-          console.warn("loadEntries failed:", err);
+        } catch (e) {
+          console.warn(e);
         }
       });
       empInput.addEventListener("blur", async () => {
