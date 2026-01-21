@@ -1372,6 +1372,23 @@ function startEditEntry(entry) {
   if (saveBtn) saveBtn.disabled = false;
 }
 
+document.addEventListener("click", async (e) => {
+  const btn = e.target?.closest?.("[data-action]");
+  if (!btn) return;
+
+  const action = btn.getAttribute("data-action");
+  const id = btn.getAttribute("data-id");
+
+  if (action === "view-photo") {
+    e.preventDefault();
+    e.stopPropagation();
+    await viewPhotoById(id);
+    return;
+  }
+
+  // ...existing actions (edit/delete/etc)
+}, true);
+
 document.addEventListener("click", (ev) => {
   const btn = ev.target?.closest?.("[data-edit-id]");
   if (!btn) return;
@@ -2287,12 +2304,65 @@ function renderList(entries, mode){
   }
 }
 
-async function openPhoto(row) {
-  const BUCKET = "proofs";
-  const path = row.photo_path; // already has a74c73ce.../filename.jpg
+const PHOTO_BUCKET = "proofs"; // <-- IMPORTANT: your real bucket name
+
+function publicPhotoUrl(path) {
+  if (!path) return null;
+  // keep slashes, encode special chars
+  const safe = encodeURIComponent(path).replace(/%2F/g, "/");
+  return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${safe}`;
+}
+
+async function viewPhotoById(id) {
+  const entries = (window.STATE && window.STATE.entries) || [];
+  const row = entries.find(e => String(e.id) === String(id));
+
+  if (!row) {
+    console.warn("viewPhoto: no entry for id", id);
+    alert("Photo entry not found.");
+    return;
+  }
+
+  const path = row.photo_path || row.photoPath;
+  if (!path) {
+    alert("No photo on this entry.");
+    return;
+  }
+
+  const url = publicPhotoUrl(path);
+  console.log("[viewPhoto]", { id, path, url });
+
+  // whatever modal you already use:
+  openPhotoModal(url, path);
+}
+
+function openPhotoModal(url, pathLabel) {
+  const modal = document.getElementById("photoModal");
   const img = document.getElementById("photoImg");
-  img.onerror = () => toast("Photo failed to load");
-  img.src = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+  const label = document.getElementById("photoPathLabel") || document.getElementById("photoMeta");
+
+  if (!modal || !img) {
+    // fallback: just open in new tab
+    window.open(url, "_blank");
+    return;
+  }
+
+  if (label) label.textContent = pathLabel || "";
+  img.onerror = () => {
+    console.error("Photo failed to load:", url);
+    img.alt = "Photo failed to load";
+  };
+  img.src = url;
+
+  modal.classList.add("open"); // use your existing show logic
+  document.body.classList.add("modal-open");
+}
+
+async function openPhoto(row) {
+  const path = row?.photo_path || row?.photoPath;
+  if (!path) return toast("No photo saved.");
+  const url = publicPhotoUrl(path);
+  openPhotoModal(url, path);
 }
 
 function closePhotoModal(){
