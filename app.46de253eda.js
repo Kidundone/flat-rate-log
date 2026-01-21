@@ -358,36 +358,37 @@ function normalizeEntryForApi(entry) {
   };
 }
 
-function normalizeRow(r) {
+function normalizeSupabaseLog(r) {
   return {
     id: r.id,
-    workDate: r.work_date,          // keep original too if needed
     work_date: r.work_date,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
 
-    ref: r.ro_number ?? "",         // app uses ref / RO
+    // UI expects these names (based on your form)
+    ref: r.ro_number ?? "",
     ro_number: r.ro_number ?? "",
 
-    typeText: r.category ?? "",      // app uses typeText / Job Type
+    typeText: r.category ?? "",
     category: r.category ?? "",
 
     notes: r.description ?? "",
     description: r.description ?? "",
 
-    hours: Number(r.flat_hours ?? 0),      // CRITICAL: map flat_hours -> hours
+    // CRITICAL: map flat_hours -> hours (so existing UI math works)
+    hours: Number(r.flat_hours ?? 0),
     flat_hours: Number(r.flat_hours ?? 0),
 
     cash: Number(r.cash_amount ?? 0),
     cash_amount: Number(r.cash_amount ?? 0),
 
+    location: r.location ?? "",
     vin8: r.vin8 ?? "",
     photo_path: r.photo_path ?? null,
 
     owner_key: r.owner_key ?? null,
     employee_number: r.employee_number ?? null,
-    is_deleted: r.is_deleted ?? null,
-
-    created_at: r.created_at,
-    updated_at: r.updated_at,
+    is_deleted: r.is_deleted ?? false,
   };
 }
 
@@ -1381,10 +1382,7 @@ async function renderLogs(logs) {
 }
 
 async function renderEntries(rows) {
-  const normalized = (rows || []).map(normalizeRow);
-  window.STATE = window.STATE || {};
-  window.STATE.entries = normalized;
-  const mapped = normalized.map(mapServerLogToEntry);
+  const mapped = (rows || []).map(mapServerLogToEntry);
   BACKEND_ENTRIES = mapped;
   await renderLogs(mapped);
   return mapped;
@@ -1414,8 +1412,10 @@ async function loadEntries() {
 
   if (res.error) throw res.error;
 
-  // render with res.data
-  return await renderEntries(res.data || []);
+  const rows = (res.data || []).map(normalizeSupabaseLog);
+  window.STATE = window.STATE || {};
+  window.STATE.entries = rows;
+  return await renderEntries(rows);
 }
 
 async function saveEntry(entry) {
