@@ -645,6 +645,49 @@ function bootEmp() {
   const input = document.getElementById("empId");
   if (input && empId) input.value = empId;
 }
+async function safeLoadEntries() {
+  try {
+    const rows = await loadEntries();
+    console.log("[safeLoadEntries] loaded", rows?.length);
+    return rows;
+  } catch (e) {
+    console.log("[safeLoadEntries] error", e?.message || e);
+    return [];
+  }
+}
+function initEmpIdBoot() {
+  const el = document.getElementById("empId");
+  if (!el) return;
+
+  const saved = (localStorage.getItem("fr_emp_id") || "").trim();
+  if (saved && !el.value) el.value = saved;
+
+  // If we already have a valid empId, load immediately
+  if ((el.value || "").trim().replace(/\D/g, "").length >= 5) {
+    safeLoadEntries();
+  }
+}
+function wireEmpIdReload() {
+  const el = document.getElementById("empId");
+  if (!el) return;
+
+  const maybeReload = () => {
+    const digits = (el.value || "").trim().replace(/\D/g, "");
+    if (digits.length >= 5) {
+      localStorage.setItem("fr_emp_id", digits);
+      safeLoadEntries();
+    }
+  };
+
+  el.addEventListener("blur", maybeReload);
+  el.addEventListener("change", maybeReload);
+
+  // Optional: if you want it to auto-load as they type (only once valid)
+  el.addEventListener("input", () => {
+    const digits = (el.value || "").trim().replace(/\D/g, "");
+    if (digits.length === 5) maybeReload();
+  });
+}
 function setActiveEmp(empId){
   setEmpId(empId);
 }
@@ -2792,14 +2835,9 @@ function initPhotosUI(){
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   (async () => {
-    bootEmp();
     let bootLoaded = false;
-    (async () => {
-      const empId = getEmpId();
-      if (empId) {
-        try { await loadEntries(); bootLoaded = true; } catch (e) { console.warn("loadEntries failed", e); }
-      }
-    })();
+    const bootEmpId = getEmpId();
+    if (bootEmpId) bootLoaded = true;
 
     // Service worker: SAFE on both pages
     try {
@@ -2820,39 +2858,6 @@ document.addEventListener("DOMContentLoaded", () => {
         setSelectedPhotoFile?.(null);
       }
     })();
-
-    // Employee input exists on both pages
-    const empInput = document.getElementById("empId");
-    if (empInput) {
-      empInput.addEventListener("input", async (e) => {
-        const empId = e.target.value;
-        setEmpId(empId);
-        try {
-          await loadEntries();
-        } catch (err) {
-          if (empId) console.warn("loadEntries failed:", err);
-        }
-        if (PAGE === "more") {
-          renderReview?.();
-          if (_photosRequested) renderPhotoGrid?.(true, { updateStatus: true });
-          else clearPhotoGallery();
-        }
-      });
-      empInput.addEventListener("change", async () => {
-        try {
-          await loadEntries();
-        } catch (e) {
-          console.warn(e);
-        }
-      });
-      empInput.addEventListener("blur", async () => {
-        try {
-          await loadEntries();
-        } catch (err) {
-          console.warn("loadEntries failed:", err);
-        }
-      });
-    }
 
     // ================= MAIN PAGE ONLY =================
     if (PAGE === "main") {
@@ -2993,6 +2998,8 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
       initPhotosUI();
+      initEmpIdBoot();
+      wireEmpIdReload();
       await refreshUI(initialEntries);
       return;
     }
@@ -3057,6 +3064,8 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       initPhotosUI();
+      initEmpIdBoot();
+      wireEmpIdReload();
       await renderReview();
       return;
     }
