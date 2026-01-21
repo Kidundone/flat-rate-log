@@ -662,6 +662,16 @@ function initEmpIdBoot() {
   const saved = (localStorage.getItem("fr_emp_id") || "").trim();
   if (saved && !el.value) el.value = saved;
 
+  setTimeout(() => {
+    const emp = (localStorage.getItem("fr_emp_id") || "").trim();
+    let ownerKey;
+    try {
+      ownerKey = JSON.parse(localStorage.getItem("fr_owner_keys_by_emp") || "{}")[emp];
+    } catch {}
+    console.log("[BOOT] emp", emp, "ownerKey", ownerKey);
+    if (emp) window.__FR?.safeLoadEntries?.();
+  }, 0);
+
   // If we already have a valid empId, load immediately
   if ((el.value || "").trim().replace(/\D/g, "").length >= 5) {
     safeLoadEntries();
@@ -1493,6 +1503,25 @@ async function loadEntries() {
   await renderEntries(rows);
   return rows;
 }
+
+// ===== DEBUG HANDLE (remove later if you want) =====
+window.__FR = window.__FR || {};
+window.__FR.sb = sb;
+window.__FR.getEmpId = getEmpId;
+window.__FR.getOwnerKeyForEmp = getOwnerKeyForEmp;
+
+// expose loaders
+window.__FR.loadEntries = loadEntries;
+window.__FR.safeLoadEntries = async () => {
+  try {
+    const rows = await loadEntries();
+    console.log("[__FR.safeLoadEntries] rows", rows?.length);
+    return rows;
+  } catch (e) {
+    console.log("[__FR.safeLoadEntries] ERROR", e?.message || e, e);
+    return [];
+  }
+};
 
 async function saveEntry(entry) {
   if (!USE_BACKEND) {
