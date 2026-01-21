@@ -1,4 +1,4 @@
-const SW_VERSION = "2026-01-17-18-43-09";
+const SW_VERSION = "2026-01-21-00-03-46";
 const CACHE = "frlog-20260107a";
 
 self.addEventListener("install", (e) => {
