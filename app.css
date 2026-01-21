@@ -330,6 +330,22 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   padding: 18px;
 }
 .modalShell.open{ display:flex; align-items:center; justify-content:center; }
+.photo-error{
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255,255,255,.35);
+  color: #ffd1d1;
+  background: rgba(255,77,77,.12);
+  text-align: center;
+}
+.warningBanner{
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,196,0,.35);
+  color: #ffe2a8;
+  background: rgba(255,196,0,.12);
+}
 
 /* ---------- Utilities ---------- */
 .u-row{
