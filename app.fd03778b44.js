@@ -6,15 +6,10 @@ const USE_BACKEND = true;
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"; // the long eyJ... token you pasted
 
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-  },
-});
+window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.sb;
 
-const PHOTO_BUCKET = "work_photos";
+const STORAGE_BUCKET = "proofs";
 
 function normalizePhotoPath(p) {
   if (!p) return "";
@@ -23,8 +18,8 @@ function normalizePhotoPath(p) {
     if (p.startsWith("http")) {
       const u = new URL(p);
       // /storage/v1/object/public/<bucket>/<path>
-      const idx = u.pathname.indexOf(`/object/public/${PHOTO_BUCKET}/`);
-      if (idx >= 0) return u.pathname.slice(idx + `/object/public/${PHOTO_BUCKET}/`.length);
+      const idx = u.pathname.indexOf(`/object/public/${STORAGE_BUCKET}/`);
+      if (idx >= 0) return u.pathname.slice(idx + `/object/public/${STORAGE_BUCKET}/`.length);
     }
   } catch {}
   return String(p).replace(/^\/+/, ""); // remove leading slashes
@@ -34,7 +29,7 @@ async function resolvePhotoUrl(photo_path) {
   const path = normalizePhotoPath(photo_path);
 
   // Try public URL first (works if bucket is public)
-  const pub = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+  const pub = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   const pubUrl = pub?.data?.publicUrl;
 
   // Quick probe: does it actually load?
@@ -47,7 +42,7 @@ async function resolvePhotoUrl(photo_path) {
 
   // Fallback: signed URL (works if bucket is private but your key/rls allows signed)
   const { data, error } = await sb.storage
-    .from(PHOTO_BUCKET)
+    .from(STORAGE_BUCKET)
     .createSignedUrl(path, 60);
 
   if (error || !data?.signedUrl) throw error || new Error("No signed URL");
@@ -87,7 +82,7 @@ async function uploadProofPhoto(file, ownerKey, empId, logId) {
   const path = `${ownerKey}/${empId}/${logId}.${ext}`;
 
   const { error } = await sb.storage
-    .from("work_photos")
+    .from(STORAGE_BUCKET)
     .upload(path, file, {
       upsert: true,
       cacheControl: "3600",
@@ -109,7 +104,7 @@ async function sbUploadProof(file, logId) {
 
 async function sbSignedUrl(path, seconds = 60 * 60) {
   if (!path) return null;
-  const { data, error } = await sb.storage.from("work_photos").createSignedUrl(path, seconds);
+  const { data, error } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(path, seconds);
   if (error) throw error;
   return data?.signedUrl || null;
 }
@@ -133,14 +128,14 @@ async function sbListRows(ownerKey, empId) {
 
 async function sbDeleteProofPhoto(photoPath) {
   if (!photoPath) return;
-  const { error } = await sb.storage.from("work_photos").remove([photoPath]);
+  const { error } = await sb.storage.from(STORAGE_BUCKET).remove([photoPath]);
   if (error) throw error;
 }
 
 function sbProofPhotoUrl(photoPath) {
   if (!photoPath) return null;
   if (/^data:/i.test(photoPath) || /^https?:\/\//i.test(photoPath)) return photoPath;
-  const { data } = sb.storage.from("work_photos").getPublicUrl(photoPath);
+  const { data } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(photoPath);
   return data?.publicUrl || null;
 }
 
@@ -2151,25 +2146,12 @@ function renderList(entries, mode){
   }
 }
 
-function openPhoto(entry) {
-  if (!entry?.photo_path) return toast("No photo attached");
-
+async function openPhoto(row) {
+  const BUCKET = "proofs";
+  const path = row.photo_path; // already has a74c73ce.../filename.jpg
   const img = document.getElementById("photoImg");
-  const meta = document.getElementById("photoMeta");
-
-  const path = String(entry.photo_path || "").replace(/^\/+/, "");
-
-  const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-  const url = data?.publicUrl;
-
-  meta.textContent = path;
-
-  img.onerror = () => console.error("IMG_LOAD_FAIL", img.src, path);
-
-  // cache bust to avoid iOS/service-worker weirdness
-  img.src = url + (url.includes("?") ? "&" : "?") + "cb=" + Date.now();
-
-  document.getElementById("photoModal").classList.add("open");
+  img.onerror = () => toast("Photo failed to load");
+  img.src = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
 }
 
 function closePhotoModal(){
@@ -2668,7 +2650,7 @@ async function openPhotoViewer(e){
     if (e.photoDataUrl && String(e.photoDataUrl).startsWith("data:")) {
       url = e.photoDataUrl;
     } else if (e.photo_path) {
-      const { data, error } = await sb.storage.from("work_photos").createSignedUrl(e.photo_path, 60 * 30);
+      const { data, error } = await sb.storage.from(STORAGE_BUCKET).createSignedUrl(e.photo_path, 60 * 30);
       if (error) throw error;
       url = data.signedUrl;
     }

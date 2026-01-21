@@ -2148,31 +2148,10 @@ function renderList(entries, mode){
 
 async function openPhoto(row) {
   const BUCKET = "proofs";
-  const path = (row.photo_path || "").trim();
-
-  console.log("OPEN_PHOTO path =", path);
-
-  if (!path || path.includes("<")) {
-    toast("Invalid photo path");
-    return;
-  }
-
-  console.log("PHOTO_PATH =", row.photo_path);
-
-  const { data, error } = await window.sb
-    .storage
-    .from(BUCKET)
-    .createSignedUrl(path, 600);
-
-  if (error || !data?.signedUrl) {
-    console.error("SIGNED_URL_ERROR", error);
-    toast("Photo failed to load");
-    return;
-  }
-
+  const path = row.photo_path; // already has a74c73ce.../filename.jpg
   const img = document.getElementById("photoImg");
   img.onerror = () => toast("Photo failed to load");
-  img.src = data.signedUrl + "&cb=" + Date.now();
+  img.src = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
 }
 
 function closePhotoModal(){
