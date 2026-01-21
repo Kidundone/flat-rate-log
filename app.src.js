@@ -358,6 +358,39 @@ function normalizeEntryForApi(entry) {
   };
 }
 
+function normalizeRow(r) {
+  return {
+    id: r.id,
+    workDate: r.work_date,          // keep original too if needed
+    work_date: r.work_date,
+
+    ref: r.ro_number ?? "",         // app uses ref / RO
+    ro_number: r.ro_number ?? "",
+
+    typeText: r.category ?? "",      // app uses typeText / Job Type
+    category: r.category ?? "",
+
+    notes: r.description ?? "",
+    description: r.description ?? "",
+
+    hours: Number(r.flat_hours ?? 0),      // CRITICAL: map flat_hours -> hours
+    flat_hours: Number(r.flat_hours ?? 0),
+
+    cash: Number(r.cash_amount ?? 0),
+    cash_amount: Number(r.cash_amount ?? 0),
+
+    vin8: r.vin8 ?? "",
+    photo_path: r.photo_path ?? null,
+
+    owner_key: r.owner_key ?? null,
+    employee_number: r.employee_number ?? null,
+    is_deleted: r.is_deleted ?? null,
+
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
 function mapServerLogToEntry(r) {
   const createdAt = r.created_at || new Date().toISOString();
   const dayKey = r.work_date; // already YYYY-MM-DD
@@ -1348,7 +1381,10 @@ async function renderLogs(logs) {
 }
 
 async function renderEntries(rows) {
-  const mapped = (rows || []).map(mapServerLogToEntry);
+  const normalized = (rows || []).map(normalizeRow);
+  window.STATE = window.STATE || {};
+  window.STATE.entries = normalized;
+  const mapped = normalized.map(mapServerLogToEntry);
   BACKEND_ENTRIES = mapped;
   await renderLogs(mapped);
   return mapped;
