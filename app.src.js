@@ -7,14 +7,32 @@ const SUPABASE_URL = SUPABASE_CONFIG.url;
 const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Missing Supabase config");
 
-window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+    storage: {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    },
+  },
+});
 const sb = window.sb;
 
-const PHOTO_BUCKET = "proofs";
+const PHOTO_BUCKET = "proofs"; // NOT proofs
 
 function resolvePhotoUrl(photo_path) {
   const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(photo_path);
   return data.publicUrl;
+}
+
+function setPhotoUploadTarget(path) {
+  const bucketEl = document.getElementById("photoBucketName");
+  if (bucketEl) bucketEl.textContent = PHOTO_BUCKET;
+  const pathEl = document.getElementById("photoPathPreview");
+  if (pathEl) pathEl.textContent = path || "—";
 }
 
 // Call once on load (or from your init)
@@ -43,22 +61,25 @@ function extFromFile(file) {
   return (ext && ext.length <= 5) ? ext : "jpg";
 }
 
-async function uploadProofPhoto(file, ownerKey, empId, logId) {
-  if (!file) return null;
-
+function buildPhotoPath(ownerKey, empId, logId, file) {
   const ext = extFromFile(file);
-  const path = `${ownerKey}/${empId}/${logId}.${ext}`;
+  return `${ownerKey}/${empId}/${logId}.${ext}`;
+}
 
-  const { error } = await sb.storage
-    .from(PHOTO_BUCKET)
-    .upload(path, file, {
-      upsert: true,
-      cacheControl: "3600",
-      contentType: file.type || "image/jpeg",
-    });
+async function uploadProofPhoto({ bucket, path, file }) {
+  console.log("[photo] uploading", { bucket, path, name: file?.name, type: file?.type, size: file?.size });
 
-  if (error) throw error;
-  return path;
+  const res = await sb.storage
+    .from(bucket)
+    .upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
+
+  console.log("[photo] upload res", res);
+
+  if (res.error) {
+    console.error("[photo] upload failed:", res.error);
+    throw res.error;
+  }
+  return res.data;
 }
 
 async function sbUploadProof(file, logId) {
@@ -67,7 +88,14 @@ async function sbUploadProof(file, logId) {
   if (!empId) throw new Error("Employee # required");
   const ownerKey = getOwnerKeyForEmp(empId);
   if (!ownerKey) throw new Error("Owner key required");
-  return uploadProofPhoto(file, ownerKey, empId, logId);
+  const photo_path = buildPhotoPath(ownerKey, empId, logId, file);
+  setPhotoUploadTarget(photo_path);
+  await uploadProofPhoto({
+    bucket: "proofs",
+    path: photo_path,
+    file,
+  });
+  return photo_path;
 }
 
 async function sbListRows(ownerKey, empId) {
@@ -302,7 +330,16 @@ async function uploadProofForLog(savedRow, file) {
   });
 
   return await withTimeout(
-    uploadProofPhoto(compressed, ownerKey, empId, savedRow.id),
+    (async () => {
+      const photo_path = buildPhotoPath(ownerKey, empId, savedRow.id, compressed);
+      setPhotoUploadTarget(photo_path);
+      await uploadProofPhoto({
+        bucket: "proofs",
+        path: photo_path,
+        file: compressed
+      });
+      return photo_path;
+    })(),
     20000
   );
 }
@@ -495,6 +532,7 @@ function setPhotoLabelFromEntry(entry) {
   if (!lbl) return;
   const hasPhoto = !!entry?.photo_path;
   lbl.textContent = hasPhoto ? "Photo attached" : "No photo";
+  setPhotoUploadTarget(entry?.photo_path || "");
 }
 
 function clearPickedPhoto() {
@@ -505,6 +543,7 @@ function clearPickedPhoto() {
   if (pick) pick.value = "";
   if (file) file.value = "";
   setSelectedPhotoFile(null);
+  setPhotoUploadTarget("");
 }
 
 function wirePhotoPickers() {
@@ -2891,6 +2930,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // MUST bind UI no matter what
         wirePhotoPickers?.();
         setSelectedPhotoFile?.(null);
+        setPhotoUploadTarget?.("");
       }
     })();
 
