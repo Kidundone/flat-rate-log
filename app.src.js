@@ -39,19 +39,13 @@ console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 const PHOTO_BUCKET = "proofs"; // NOT proofs
-const PHOTO_URL_TTL = 60 * 60; // 1 hour
 
-async function getPhotoSignedUrl(photo_path) {
-  if (!photo_path) return "";
-  const { data, error } = await sb.storage
-    .from(PHOTO_BUCKET)
-    .createSignedUrl(photo_path, PHOTO_URL_TTL);
-  if (error) throw error;
-  return data?.signedUrl || "";
+function photoPublicUrl(photoPath) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${photoPath}`;
 }
 
 async function resolvePhotoUrl(photo_path) {
-  return getPhotoSignedUrl(photo_path);
+  return photoPublicUrl(photo_path);
 }
 
 function setPhotoUploadTarget(path) {
@@ -92,42 +86,55 @@ function buildPhotoPath(ownerKey, empId, logId, file) {
   return `${ownerKey}/${empId}/${logId}.${ext}`;
 }
 
-async function uploadProofPhoto({ bucket, path, file }) {
-  console.log("[photo] uploading", { bucket, path, name: file?.name, type: file?.type, size: file?.size });
+async function uploadProofPhoto({ ownerKey, empId, logId, file }) {
+  if (!file) return null;
 
-  const { data, error } = await sb.storage
-    .from("proofs")
-    .upload(path, file, {
-      contentType: file.type,
-      upsert: true,
-    });
+  const bucket = PHOTO_BUCKET;
+  const path = buildPhotoPath(ownerKey, empId, logId, file);
+
+  console.log("[photo] uploading", {
+    bucket,
+    path,
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  });
+
+  // optional but fine
+  try { await sbEnsureSignedIn(); } catch {}
+
+  const { data, error } = await sb.storage.from(bucket).upload(path, file, {
+    upsert: true,
+    contentType: file.type || "image/jpeg",
+    cacheControl: "3600",
+  });
 
   if (error) {
-    console.error("[photo upload FAILED]", error);
-    throw error; // <-- REQUIRED
+    console.error("[photo] upload error", error);
+    throw new Error(`Photo upload failed: ${error.message || JSON.stringify(error)}`);
   }
 
-  if (!data?.path) {
-    throw new Error("Upload returned no path");
-  }
-
-  return data;
+  return data?.path || path;
 }
 
 async function sbUploadProof(file, logId) {
   if (!file) return null;
   const empId = getEmpId();
   if (!empId) throw new Error("Employee # required");
-  const ownerKey = getOwnerKeyForEmp(empId);
-  if (!ownerKey) throw new Error("Owner key required");
-  const photo_path = buildPhotoPath(ownerKey, empId, logId, file);
+
+  // must have a session so auth.uid() exists
+  await sbEnsureSignedIn();
+  const uid = await sbUid();
+  if (!uid) throw new Error("No auth uid");
+
+  const photo_path = buildPhotoPath(uid, empId, logId, file);
   setPhotoUploadTarget(photo_path);
-  const data = await uploadProofPhoto({
-    bucket: "proofs",
-    path: photo_path,
+  const photoPath = await uploadProofPhoto({
+    ownerKey: uid,
+    empId,
+    logId,
     file,
   });
-  const photoPath = data.path;
   return photoPath;
 }
 
@@ -167,7 +174,7 @@ async function sbDeleteProofPhoto(photoPath) {
 }
 
 async function sbProofPhotoUrl(photoPath) {
-  return getPhotoSignedUrl(photoPath);
+  return photoPublicUrl(photoPath);
 }
 
 async function getPhotoUrl(photoPath) {
@@ -354,8 +361,8 @@ async function uploadProofForLog(savedRow, file) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const ownerKey = getOwnerKeyForEmp(empId);
-  if (!ownerKey) return null;
+  const uid = await sbUid();
+  if (!uid) throw new Error("No auth uid");
   const logId = savedRow?.id;
   if (!logId) return null;
 
@@ -369,14 +376,14 @@ async function uploadProofForLog(savedRow, file) {
 
   return await withTimeout(
     (async () => {
-      const photo_path = buildPhotoPath(ownerKey, empId, logId, compressed);
+      const photo_path = buildPhotoPath(uid, empId, logId, compressed);
       setPhotoUploadTarget(photo_path);
-      const data = await uploadProofPhoto({
-        bucket: "proofs",
-        path: photo_path,
+      const photoPath = await uploadProofPhoto({
+        ownerKey: uid,
+        empId,
+        logId,
         file: compressed
       });
-      const photoPath = data.path;
 
       const { data: updated, error: e1 } = await sb
         .from("work_logs")
