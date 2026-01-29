@@ -1,4 +1,4 @@
-const SW_VERSION = "2026-01-29-15-07-10";
+const SW_VERSION = "2026-01-29-15-07-11";
 const CACHE_NAME = `fr-cache-${SW_VERSION}`;
 
 self.addEventListener("install", () => self.skipWaiting());
