@@ -256,10 +256,10 @@ async function apiCreateLog(payload, photoFile) {
       photo_path: null,
     }])
     .select("*")
-    .maybeSingle();
+    .limit(1);
 
   if (e1) throw e1;
-  const createdRow = created || null;
+  const createdRow = created?.[0] ?? null;
   if (!createdRow) throw new Error("Create failed: no row returned");
 
   // 2) Upload photo and write path back
@@ -272,10 +272,10 @@ async function apiCreateLog(payload, photoFile) {
       .eq("owner_key", ownerKey)
       .eq("employee_number", empId)
       .select("*")
-      .maybeSingle();
+      .limit(1);
 
     if (e2) throw e2;
-    const updatedRow = updated || null;
+    const updatedRow = updated?.[0] ?? null;
     return updatedRow || createdRow;
   }
 
@@ -307,10 +307,10 @@ async function apiUpdateLog(id, payload, photoFile) {
     .eq("owner_key", ownerKey)
     .eq("employee_number", empId)
     .select("*")
-    .maybeSingle();
+    .limit(1);
 
   if (e1) throw e1;
-  const updatedRow = updated || null;
+  const updatedRow = updated?.[0] ?? null;
   if (!updatedRow) throw new Error("Update failed: no row returned");
 
   // If new photo, upload + save path
@@ -323,10 +323,10 @@ async function apiUpdateLog(id, payload, photoFile) {
       .eq("owner_key", ownerKey)
       .eq("employee_number", empId)
       .select("*")
-      .maybeSingle();
+      .limit(1);
 
     if (e2) throw e2;
-    const updatedRow2 = updated2 || null;
+    const updatedRow2 = updated2?.[0] ?? null;
     return updatedRow2 || updatedRow;
   }
 
