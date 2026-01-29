@@ -95,17 +95,23 @@ function buildPhotoPath(ownerKey, empId, logId, file) {
 async function uploadProofPhoto({ bucket, path, file }) {
   console.log("[photo] uploading", { bucket, path, name: file?.name, type: file?.type, size: file?.size });
 
-  const res = await sb.storage
-    .from(bucket)
-    .upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
+  const { data, error } = await sb.storage
+    .from("proofs")
+    .upload(path, file, {
+      contentType: file.type,
+      upsert: true,
+    });
 
-  console.log("[photo] upload res", res);
-
-  if (res.error) {
-    console.error("[photo] upload failed:", res.error);
-    throw res.error;
+  if (error) {
+    console.error("[photo upload FAILED]", error);
+    throw error; // <-- REQUIRED
   }
-  return res.data;
+
+  if (!data?.path) {
+    throw new Error("Upload returned no path");
+  }
+
+  return data;
 }
 
 async function sbUploadProof(file, logId) {
@@ -116,12 +122,13 @@ async function sbUploadProof(file, logId) {
   if (!ownerKey) throw new Error("Owner key required");
   const photo_path = buildPhotoPath(ownerKey, empId, logId, file);
   setPhotoUploadTarget(photo_path);
-  await uploadProofPhoto({
+  const data = await uploadProofPhoto({
     bucket: "proofs",
     path: photo_path,
     file,
   });
-  return photo_path;
+  const photoPath = data.path;
+  return photoPath;
 }
 
 async function sbListRows(ownerKey, empId) {
@@ -132,7 +139,7 @@ async function sbListRows(ownerKey, empId) {
     .select("*")
     .eq("owner_key", ownerKey)
     .eq("employee_number", empId)
-    .or("is_deleted.is.null,is_deleted.eq.false")
+    .eq("is_deleted", false)
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
   const { data, error } = await q;
@@ -148,7 +155,7 @@ async function probeEmpHasRows(empId) {
     .from("work_logs")
     .select("id", { count: "exact", head: true })
     .eq("employee_number", empId)
-    .or("is_deleted.is.null,is_deleted.eq.false");
+    .eq("is_deleted", false);
   if (error) return false;
   return Number(count || 0) > 0;
 }
@@ -276,19 +283,18 @@ async function apiCreateLog(payload, photoFile) {
 
   // 2) Upload photo and write path back
   if (photoFile) {
-    const path = await sbUploadProof(photoFile, createdRow.id, createdRow.work_date, createdRow.ro_number);
+    const photoPath = await sbUploadProof(photoFile, createdRow.id, createdRow.work_date, createdRow.ro_number);
     const { data: updated, error: e2 } = await sb
       .from("work_logs")
-      .update({ photo_path: path })
+      .update({ photo_path: photoPath })
       .eq("id", createdRow.id)
-      .eq("owner_key", ownerKey)
-      .eq("employee_number", empId)
-      .select("*")
-      .limit(1);
+      .select();
 
     if (e2) throw e2;
-    const updatedRow = updated?.[0] ?? null;
-    return updatedRow || createdRow;
+    if (!updated || !updated.length) {
+      throw new Error("Photo saved but DB update failed");
+    }
+    return updated?.[0] ?? createdRow;
   }
 
   return createdRow;
@@ -327,19 +333,18 @@ async function apiUpdateLog(id, payload, photoFile) {
 
   // If new photo, upload + save path
   if (photoFile) {
-    const path = await sbUploadProof(photoFile, updatedRow.id, updatedRow.work_date, updatedRow.ro_number);
+    const photoPath = await sbUploadProof(photoFile, updatedRow.id, updatedRow.work_date, updatedRow.ro_number);
     const { data: updated2, error: e2 } = await sb
       .from("work_logs")
-      .update({ photo_path: path })
+      .update({ photo_path: photoPath })
       .eq("id", updatedRow.id)
-      .eq("owner_key", ownerKey)
-      .eq("employee_number", empId)
-      .select("*")
-      .limit(1);
+      .select();
 
     if (e2) throw e2;
-    const updatedRow2 = updated2?.[0] ?? null;
-    return updatedRow2 || updatedRow;
+    if (!updated2 || !updated2.length) {
+      throw new Error("Photo saved but DB update failed");
+    }
+    return updated2?.[0] ?? updatedRow;
   }
 
   return updatedRow;
@@ -351,6 +356,8 @@ async function uploadProofForLog(savedRow, file) {
   if (!empId) return null;
   const ownerKey = getOwnerKeyForEmp(empId);
   if (!ownerKey) return null;
+  const logId = savedRow?.id;
+  if (!logId) return null;
 
   const withTimeout = (p, ms) =>
     Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("UPLOAD_TIMEOUT")), ms))]);
@@ -362,34 +369,51 @@ async function uploadProofForLog(savedRow, file) {
 
   return await withTimeout(
     (async () => {
-      const photo_path = buildPhotoPath(ownerKey, empId, savedRow.id, compressed);
+      const photo_path = buildPhotoPath(ownerKey, empId, logId, compressed);
       setPhotoUploadTarget(photo_path);
-      await uploadProofPhoto({
+      const data = await uploadProofPhoto({
         bucket: "proofs",
         path: photo_path,
         file: compressed
       });
-      return photo_path;
+      const photoPath = data.path;
+
+      const { data: updated, error: e1 } = await sb
+        .from("work_logs")
+        .update({ photo_path: photoPath })
+        .eq("id", logId)
+        .select();
+
+      if (e1) throw e1;
+      if (!updated || !updated.length) {
+        throw new Error("Photo saved but DB update failed");
+      }
+
+      return photoPath;
     })(),
     20000
   );
 }
 
 // DELETE (optional)
-async function apiDeleteLog(id) {
-  await sbEnsureSignedIn();
-  const empId = getEmpId();
-  if (!empId) return false;
-  const ownerKey = getOwnerKeyForEmp(empId);
-  if (!ownerKey) return false;
-  const { error } = await sb
+async function deleteEntry(id) {
+  const { data, error } = await sb
     .from("work_logs")
     .update({ is_deleted: true })
     .eq("id", id)
-    .eq("owner_key", ownerKey)
-    .eq("employee_number", empId);
-  if (error) throw error;
-  return true;
+    .select();
+
+  if (error) {
+    console.error("DELETE FAILED", error);
+    throw error;
+  }
+
+  if (!data || !data.length) {
+    throw new Error("Delete returned 0 rows");
+  }
+
+  // HARD REFRESH STATE
+  await window.__FR.safeLoadEntries();
 }
 
 let BACKEND_ENTRIES = null;
@@ -678,6 +702,8 @@ async function safeLoadEntries() {
     return [];
   }
 }
+window.__FR = window.__FR || {};
+window.__FR.safeLoadEntries = safeLoadEntries;
 function initEmpIdBoot() {
   const el = document.getElementById("empId");
   if (!el) return;
@@ -1430,7 +1456,7 @@ document.addEventListener("click", async (ev) => {
   if (!confirm("Delete this entry? (You can’t undo yet)")) return;
 
   try {
-    await apiDeleteLog(id);
+    await deleteEntry(id);
     if (EDITING_ID && Number(EDITING_ID) === id) handleClear();
     await loadEntries();
     toast("Deleted");
@@ -1448,7 +1474,7 @@ async function handleDeleteEntry(entry, ev) {
   if (!confirm("Delete this entry?")) return;
 
   try {
-    await apiDeleteLog(entry.id);
+    await deleteEntry(entry.id);
 
     // ALWAYS reload from source of truth
     await loadEntries();
@@ -1522,7 +1548,7 @@ async function loadEntries() {
     .select("*")
     .eq("employee_number", empId)
     .eq("owner_key", ownerKey)
-    .or("is_deleted.is.null,is_deleted.eq.false")
+    .eq("is_deleted", false)
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -1570,7 +1596,7 @@ async function saveEntry(entry) {
     }
   }
 
-  const shouldUpdatePhotoPath = !!photoFile || !!photo_path;
+  const shouldUpdatePhotoPath = !photoFile && !!photo_path;
   if (shouldUpdatePhotoPath && empId && ownerKey) {
     const { error } = await sb
       .from("work_logs")
