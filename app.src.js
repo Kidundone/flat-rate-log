@@ -74,8 +74,8 @@ async function sbUid() {
   return data.session.user.id;
 }
 
-function buildPhotoPath(uid, empId, logId) {
-  return `${uid}/${empId}/${logId}.jpg`;
+function buildPhotoPath(uid, logId) {
+  return `proofs/${uid}/${logId}.jpg`;
 }
 
 async function getUidOrThrow(sbClient) {
@@ -90,9 +90,7 @@ async function uploadProofPhoto({ logId, file }) {
   if (!file) return null;
 
   const uid = await getUidOrThrow(sb);
-  const empId = getEmpId();
-  if (!empId) throw new Error("Employee # required");
-  const photoPath = buildPhotoPath(uid, empId, logId);
+  const photoPath = buildPhotoPath(uid, logId);
 
   console.log("[photo] uploading", {
     bucket: PHOTO_BUCKET,
