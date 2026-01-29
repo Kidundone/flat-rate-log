@@ -27,10 +27,19 @@ console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 const PHOTO_BUCKET = "proofs"; // NOT proofs
+const PHOTO_URL_TTL = 60 * 60; // 1 hour
 
-function resolvePhotoUrl(photo_path) {
-  const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(photo_path);
-  return data.publicUrl;
+async function getPhotoSignedUrl(photo_path) {
+  if (!photo_path) return "";
+  const { data, error } = await sb.storage
+    .from(PHOTO_BUCKET)
+    .createSignedUrl(photo_path, PHOTO_URL_TTL);
+  if (error) throw error;
+  return data?.signedUrl || "";
+}
+
+async function resolvePhotoUrl(photo_path) {
+  return getPhotoSignedUrl(photo_path);
 }
 
 function setPhotoUploadTarget(path) {
@@ -138,9 +147,8 @@ async function sbDeleteProofPhoto(photoPath) {
   if (error) throw error;
 }
 
-function sbProofPhotoUrl(photoPath) {
-  const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(photoPath);
-  return data.publicUrl;
+async function sbProofPhotoUrl(photoPath) {
+  return getPhotoSignedUrl(photoPath);
 }
 
 async function getPhotoUrl(photoPath) {
@@ -2276,11 +2284,6 @@ function renderList(entries, mode){
   }
 }
 
-function publicPhotoUrl(path) {
-  const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
-
 function applyPhotoLoadGuard(img, photo_path) {
   if (!img) return;
   img.onerror = () => {
@@ -2329,7 +2332,7 @@ async function viewPhotoById(id) {
     return;
   }
 
-  const url = publicPhotoUrl(path);
+  const url = await getPhotoUrl(path);
 
   // whatever modal you already use:
   openPhotoModal(url, path);
@@ -2362,7 +2365,7 @@ function openPhotoModal(url, pathLabel) {
 async function openPhoto(row) {
   const path = row?.photo_path || row?.photoPath;
   if (!path) return toast("No photo saved.");
-  const url = publicPhotoUrl(path);
+  const url = await getPhotoUrl(path);
   openPhotoModal(url, path);
 }
 
@@ -2851,8 +2854,7 @@ async function openPhotoViewer(e){
 
   if (!e?.photo_path) return toast("No photo saved.");
 
-  const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(e.photo_path);
-  const url = data.publicUrl;
+  const url = await getPhotoUrl(e.photo_path);
 
   applyPhotoLoadGuard(img, e.photo_path);
   img.src = url;
