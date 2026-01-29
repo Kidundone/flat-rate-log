@@ -1,6 +1,18 @@
 window.BUILD = "20260107a-hotfix1";
 console.log("__FR_MARKER_20260121");
 
+(async () => {
+  if ("serviceWorker" in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) await r.unregister();
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+  console.log("[SW] fully removed");
+})();
+
 const USE_BACKEND = true;
 // --- Supabase ---
 const SUPABASE_CONFIG = window.__SUPABASE_CONFIG__ || {};
@@ -2522,30 +2534,6 @@ async function refreshUI(entriesOverride){
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
 }
 
-async function registerSW() {
-  if (!("serviceWorker" in navigator)) return;
-
-  try {
-    const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
-
-    // Guard: iOS/Safari sometimes gives a reg that can't update yet
-    try {
-      if (reg?.active) await reg.update();
-    } catch (e) {
-      // Safari can throw even when registration is fine; ignore.
-    }
-
-    let reloaded = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (reloaded) return;
-      reloaded = true;
-      window.location.reload();
-    });
-
-  } catch (e) {
-  }
-}
-
 async function exportCSV(){
   const all = await getAll(STORES.entries);
   const entries = filterEntriesByEmp(all, getEmpId(), true);
@@ -2927,12 +2915,6 @@ document.addEventListener("DOMContentLoaded", () => {
     let bootLoaded = false;
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
-
-    // Service worker: SAFE on both pages
-    try {
-      await registerSW();
-    } catch (e) {
-    }
 
     await ensureDefaultTypes();
     await (async () => {
