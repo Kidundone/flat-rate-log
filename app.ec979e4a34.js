@@ -256,27 +256,30 @@ async function apiCreateLog(payload, photoFile) {
       photo_path: null,
     }])
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (e1) throw e1;
+  const createdRow = created || null;
+  if (!createdRow) throw new Error("Create failed: no row returned");
 
   // 2) Upload photo and write path back
   if (photoFile) {
-    const path = await sbUploadProof(photoFile, created.id, created.work_date, created.ro_number);
+    const path = await sbUploadProof(photoFile, createdRow.id, createdRow.work_date, createdRow.ro_number);
     const { data: updated, error: e2 } = await sb
       .from("work_logs")
       .update({ photo_path: path })
-      .eq("id", created.id)
+      .eq("id", createdRow.id)
       .eq("owner_key", ownerKey)
       .eq("employee_number", empId)
       .select("*")
-      .single();
+      .maybeSingle();
 
     if (e2) throw e2;
-    return updated;
+    const updatedRow = updated || null;
+    return updatedRow || createdRow;
   }
 
-  return created;
+  return createdRow;
 }
 
 // UPDATE
@@ -304,27 +307,30 @@ async function apiUpdateLog(id, payload, photoFile) {
     .eq("owner_key", ownerKey)
     .eq("employee_number", empId)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (e1) throw e1;
+  const updatedRow = updated || null;
+  if (!updatedRow) throw new Error("Update failed: no row returned");
 
   // If new photo, upload + save path
   if (photoFile) {
-    const path = await sbUploadProof(photoFile, updated.id, updated.work_date, updated.ro_number);
+    const path = await sbUploadProof(photoFile, updatedRow.id, updatedRow.work_date, updatedRow.ro_number);
     const { data: updated2, error: e2 } = await sb
       .from("work_logs")
       .update({ photo_path: path })
-      .eq("id", updated.id)
+      .eq("id", updatedRow.id)
       .eq("owner_key", ownerKey)
       .eq("employee_number", empId)
       .select("*")
-      .single();
+      .maybeSingle();
 
     if (e2) throw e2;
-    return updated2;
+    const updatedRow2 = updated2 || null;
+    return updatedRow2 || updatedRow;
   }
 
-  return updated;
+  return updatedRow;
 }
 
 async function uploadProofForLog(savedRow, file) {
