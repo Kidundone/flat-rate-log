@@ -74,27 +74,29 @@ async function sbUid() {
   return data.session.user.id;
 }
 
-function extFromFile(file) {
-  const n = String(file?.name || "");
-  const dot = n.lastIndexOf(".");
-  const ext = dot >= 0 ? n.slice(dot + 1).toLowerCase() : "";
-  return (ext && ext.length <= 5) ? ext : "jpg";
+function buildPhotoPath(uid, empId, logId) {
+  return `${uid}/${empId}/${logId}.jpg`;
 }
 
-function buildPhotoPath(ownerKey, empId, logId, file) {
-  const ext = extFromFile(file);
-  return `${ownerKey}/${empId}/${logId}.${ext}`;
+async function getUidOrThrow(sbClient) {
+  const { data, error } = await sbClient.auth.getUser();
+  if (error) throw error;
+  const uid = data?.user?.id;
+  if (!uid) throw new Error("No auth user (uid missing)");
+  return uid;
 }
 
-async function uploadProofPhoto({ ownerKey, empId, logId, file }) {
+async function uploadProofPhoto({ logId, file }) {
   if (!file) return null;
 
-  const bucket = PHOTO_BUCKET;
-  const path = buildPhotoPath(ownerKey, empId, logId, file);
+  const uid = await getUidOrThrow(sb);
+  const empId = getEmpId();
+  if (!empId) throw new Error("Employee # required");
+  const photoPath = buildPhotoPath(uid, empId, logId);
 
   console.log("[photo] uploading", {
-    bucket,
-    path,
+    bucket: PHOTO_BUCKET,
+    path: photoPath,
     name: file.name,
     type: file.type,
     size: file.size,
@@ -103,38 +105,26 @@ async function uploadProofPhoto({ ownerKey, empId, logId, file }) {
   // optional but fine
   try { await sbEnsureSignedIn(); } catch {}
 
-  const { data, error } = await sb.storage.from(bucket).upload(path, file, {
-    upsert: true,
-    contentType: file.type || "image/jpeg",
-    cacheControl: "3600",
-  });
+  const { data, error } = await sb
+    .storage
+    .from(PHOTO_BUCKET)
+    .upload(photoPath, file, {
+      contentType: file.type || "image/jpeg",
+      upsert: true,
+    });
 
   if (error) {
-    console.error("[photo] upload error", error);
-    throw new Error(`Photo upload failed: ${error.message || JSON.stringify(error)}`);
+    console.error("PHOTO UPLOAD FAILED", error);
+    throw error;
   }
 
-  return data?.path || path;
+  return data?.path || photoPath;
 }
 
 async function sbUploadProof(file, logId) {
   if (!file) return null;
-  const empId = getEmpId();
-  if (!empId) throw new Error("Employee # required");
-
-  // must have a session so auth.uid() exists
-  await sbEnsureSignedIn();
-  const uid = await sbUid();
-  if (!uid) throw new Error("No auth uid");
-
-  const photo_path = buildPhotoPath(uid, empId, logId, file);
-  setPhotoUploadTarget(photo_path);
-  const photoPath = await uploadProofPhoto({
-    ownerKey: uid,
-    empId,
-    logId,
-    file,
-  });
+  const photoPath = await uploadProofPhoto({ logId, file });
+  setPhotoUploadTarget(photoPath);
   return photoPath;
 }
 
@@ -291,17 +281,13 @@ async function apiCreateLog(payload, photoFile) {
   // 2) Upload photo and write path back
   if (photoFile) {
     const photoPath = await sbUploadProof(photoFile, createdRow.id, createdRow.work_date, createdRow.ro_number);
-    const { data: updated, error: e2 } = await sb
+    const { error: e2 } = await sb
       .from("work_logs")
       .update({ photo_path: photoPath })
-      .eq("id", createdRow.id)
-      .select();
+      .eq("id", createdRow.id);
 
     if (e2) throw e2;
-    if (!updated || !updated.length) {
-      throw new Error("Photo saved but DB update failed");
-    }
-    return updated?.[0] ?? createdRow;
+    return createdRow;
   }
 
   return createdRow;
@@ -341,17 +327,13 @@ async function apiUpdateLog(id, payload, photoFile) {
   // If new photo, upload + save path
   if (photoFile) {
     const photoPath = await sbUploadProof(photoFile, updatedRow.id, updatedRow.work_date, updatedRow.ro_number);
-    const { data: updated2, error: e2 } = await sb
+    const { error: e2 } = await sb
       .from("work_logs")
       .update({ photo_path: photoPath })
-      .eq("id", updatedRow.id)
-      .select();
+      .eq("id", updatedRow.id);
 
     if (e2) throw e2;
-    if (!updated2 || !updated2.length) {
-      throw new Error("Photo saved but DB update failed");
-    }
-    return updated2?.[0] ?? updatedRow;
+    return updatedRow;
   }
 
   return updatedRow;
@@ -359,10 +341,6 @@ async function apiUpdateLog(id, payload, photoFile) {
 
 async function uploadProofForLog(savedRow, file) {
   await sbEnsureSignedIn();
-  const empId = getEmpId();
-  if (!empId) return null;
-  const uid = await sbUid();
-  if (!uid) throw new Error("No auth uid");
   const logId = savedRow?.id;
   if (!logId) return null;
 
@@ -376,26 +354,15 @@ async function uploadProofForLog(savedRow, file) {
 
   return await withTimeout(
     (async () => {
-      const photo_path = buildPhotoPath(uid, empId, logId, compressed);
-      setPhotoUploadTarget(photo_path);
-      const photoPath = await uploadProofPhoto({
-        ownerKey: uid,
-        empId,
-        logId,
-        file: compressed
-      });
+      const photoPath = await uploadProofPhoto({ logId, file: compressed });
+      setPhotoUploadTarget(photoPath);
 
-      const { data: updated, error: e1 } = await sb
+      const { error: e1 } = await sb
         .from("work_logs")
         .update({ photo_path: photoPath })
-        .eq("id", logId)
-        .select();
+        .eq("id", logId);
 
       if (e1) throw e1;
-      if (!updated || !updated.length) {
-        throw new Error("Photo saved but DB update failed");
-      }
-
       return photoPath;
     })(),
     20000
@@ -2948,6 +2915,12 @@ document.addEventListener("DOMContentLoaded", () => {
     let bootLoaded = false;
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
+
+    const { data } = await sb.auth.getSession();
+    if (!data.session) {
+      const { error } = await sb.auth.signInAnonymously();
+      if (error) throw error;
+    }
 
     await ensureDefaultTypes();
     await (async () => {
