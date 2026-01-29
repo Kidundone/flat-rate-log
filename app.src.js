@@ -22,14 +22,9 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Missing Supabase confi
 
 window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: false,
-    storage: {
-      getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-    },
   },
 });
 const sb = window.sb;
@@ -74,27 +69,34 @@ async function sbUid() {
   return data.session.user.id;
 }
 
-function buildPhotoPath(uid, logId) {
-  return `proofs/${uid}/${logId}.jpg`;
+function extFromFile(file) {
+  const name = String(file?.name || "");
+  const nameMatch = name.match(/\.([a-z0-9]+)$/i);
+  if (nameMatch?.[1]) {
+    const ext = nameMatch[1].toLowerCase();
+    return ext === "jpeg" ? "jpg" : ext;
+  }
+  const type = String(file?.type || "");
+  const typeExt = type.split("/")[1] || "";
+  if (typeExt) {
+    const ext = typeExt.toLowerCase();
+    return ext === "jpeg" ? "jpg" : ext;
+  }
+  return "jpg";
 }
 
-async function getUidOrThrow(sbClient) {
-  const { data, error } = await sbClient.auth.getUser();
-  if (error) throw error;
-  const uid = data?.user?.id;
-  if (!uid) throw new Error("No auth user (uid missing)");
-  return uid;
+function buildPhotoPath(uid, empId, logId, file) {
+  const ext = extFromFile(file);
+  return `${uid}/${empId}/${logId}.${ext}`;
 }
 
-async function uploadProofPhoto({ logId, file }) {
+async function uploadProofPhoto({ bucket = PHOTO_BUCKET, path, file }) {
   if (!file) return null;
-
-  const uid = await getUidOrThrow(sb);
-  const photoPath = buildPhotoPath(uid, logId);
+  if (!path) throw new Error("Missing photo path");
 
   console.log("[photo] uploading", {
-    bucket: PHOTO_BUCKET,
-    path: photoPath,
+    bucket,
+    path,
     name: file.name,
     type: file.type,
     size: file.size,
@@ -105,8 +107,8 @@ async function uploadProofPhoto({ logId, file }) {
 
   const { data, error } = await sb
     .storage
-    .from(PHOTO_BUCKET)
-    .upload(photoPath, file, {
+    .from(bucket)
+    .upload(path, file, {
       contentType: file.type || "image/jpeg",
       upsert: true,
     });
@@ -116,14 +118,28 @@ async function uploadProofPhoto({ logId, file }) {
     throw error;
   }
 
-  return data?.path || photoPath;
+  return data?.path || path;
 }
 
 async function sbUploadProof(file, logId) {
   if (!file) return null;
-  const photoPath = await uploadProofPhoto({ logId, file });
-  setPhotoUploadTarget(photoPath);
-  return photoPath;
+  const empId = getEmpId();
+  if (!empId) throw new Error("Employee # required");
+
+  // MUST have a session so auth.uid() is real and stable
+  await sbEnsureSignedIn();
+  const uid = await sbUid();
+
+  const photo_path = buildPhotoPath(uid, empId, logId, file);
+  setPhotoUploadTarget(photo_path);
+
+  await uploadProofPhoto({
+    bucket: PHOTO_BUCKET,
+    path: photo_path,
+    file,
+  });
+
+  return photo_path;
 }
 
 async function sbListRows(ownerKey, empId) {
@@ -239,7 +255,8 @@ async function apiListLogs(ownerKey, empId) {
     empId = getEmpId();
     if (!empId) return [];
   }
-  ownerKey = getOwnerKeyForEmp(empId);
+  await sbEnsureSignedIn();
+  ownerKey = await sbUid();
   if (!ownerKey) return [];
   return sbListRows(ownerKey, empId);
 }
@@ -248,16 +265,16 @@ async function apiListLogs(ownerKey, empId) {
 async function apiCreateLog(payload, photoFile) {
   await sbEnsureSignedIn();
   const empId = String(document.getElementById("empId").value || "").trim();
-  const ownerKey = getOwnerKeyForEmp(empId);
+  const uid = await sbUid();
   if (!empId) throw new Error("Employee # required");
 
   // 1) Create row first (no photo_path yet)
   const { data: created, error: e1 } = await sb
     .from("work_logs")
     .insert([{
-      owner_key: ownerKey,
+      owner_key: uid,
       employee_number: empId,
-      user_id: (await sbUid()),
+      user_id: uid,
       work_date: payload.work_date,
       category: payload.category || "work",
       ro_number: payload.ro_number || null,
@@ -278,7 +295,7 @@ async function apiCreateLog(payload, photoFile) {
 
   // 2) Upload photo and write path back
   if (photoFile) {
-    const photoPath = await sbUploadProof(photoFile, createdRow.id, createdRow.work_date, createdRow.ro_number);
+    const photoPath = await sbUploadProof(photoFile, createdRow.id);
     const { error: e2 } = await sb
       .from("work_logs")
       .update({ photo_path: photoPath })
@@ -296,7 +313,7 @@ async function apiUpdateLog(id, payload, photoFile) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const ownerKey = getOwnerKeyForEmp(empId);
+  const ownerKey = await sbUid();
   if (!ownerKey) return null;
 
   // Update fields first
@@ -324,7 +341,7 @@ async function apiUpdateLog(id, payload, photoFile) {
 
   // If new photo, upload + save path
   if (photoFile) {
-    const photoPath = await sbUploadProof(photoFile, updatedRow.id, updatedRow.work_date, updatedRow.ro_number);
+    const photoPath = await sbUploadProof(photoFile, updatedRow.id);
     const { error: e2 } = await sb
       .from("work_logs")
       .update({ photo_path: photoPath })
@@ -352,8 +369,7 @@ async function uploadProofForLog(savedRow, file) {
 
   return await withTimeout(
     (async () => {
-      const photoPath = await uploadProofPhoto({ logId, file: compressed });
-      setPhotoUploadTarget(photoPath);
+      const photoPath = await sbUploadProof(compressed, logId);
 
       const { error: e1 } = await sb
         .from("work_logs")
@@ -1508,7 +1524,8 @@ async function loadEntries() {
     return entries;
   }
 
-  const ownerKey = getOwnerKeyForEmp(empId);
+  await sbEnsureSignedIn();
+  const ownerKey = await sbUid();
   if (!ownerKey) {
     setDataWarning("");
     return [];
@@ -1549,7 +1566,8 @@ async function saveEntry(entry) {
   const payload = normalizeEntryForApi(entry);
   const photoFile = SELECTED_PHOTO_FILE || null;
   const empId = getEmpId();
-  const ownerKey = empId ? getOwnerKeyForEmp(empId) : null;
+  await sbEnsureSignedIn();
+  const ownerKey = empId ? await sbUid() : null;
 
   // SAVE LOG FIRST
   let saved;
