@@ -33,15 +33,7 @@ window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
-const PHOTO_BUCKET = "proofs"; // NOT proofs
-
-function photoPublicUrl(photoPath) {
-  return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${photoPath}`;
-}
-
-async function resolvePhotoUrl(photo_path) {
-  return photoPublicUrl(photo_path);
-}
+const PHOTO_BUCKET = "proofs"; // private
 
 function setPhotoUploadTarget(path) {
   const bucketEl = document.getElementById("photoBucketName");
@@ -60,65 +52,38 @@ async function sbEnsureSignedIn() {
   return data.session;
 }
 
-async function sbUid() {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session?.user?.id) return session.user.id;
-
-  const { data, error } = await sb.auth.signInAnonymously();
+async function requireUserId(sb) {
+  const { data, error } = await sb.auth.getUser();
   if (error) throw error;
-  return data.session.user.id;
+  const uid = data?.user?.id;
+  if (!uid) throw new Error("Not signed in");
+  return uid;
 }
 
-function extFromFile(file) {
-  const name = String(file?.name || "");
-  const nameMatch = name.match(/\.([a-z0-9]+)$/i);
-  if (nameMatch?.[1]) {
-    const ext = nameMatch[1].toLowerCase();
-    return ext === "jpeg" ? "jpg" : ext;
-  }
-  const type = String(file?.type || "");
-  const typeExt = type.split("/")[1] || "";
-  if (typeExt) {
-    const ext = typeExt.toLowerCase();
-    return ext === "jpeg" ? "jpg" : ext;
-  }
-  return "jpg";
+async function getProofSignedUrl(sb, photoPath) {
+  const { data, error } = await sb.storage
+    .from("proofs")
+    .createSignedUrl(photoPath, 60);
+
+  if (error) throw error;
+  return data.signedUrl;
 }
 
-function buildPhotoPath(uid, empId, logId, file) {
-  const ext = extFromFile(file);
-  return `${uid}/${empId}/${logId}.${ext}`;
-}
+async function uploadProofPhoto({ sb, empId, logId, file }) {
+  const uid = await requireUserId(sb);
 
-async function uploadProofPhoto({ bucket = PHOTO_BUCKET, path, file }) {
-  if (!file) return null;
-  if (!path) throw new Error("Missing photo path");
+  const ext = (file.type === "image/png") ? "png" : "jpg";
+  const path = `${uid}/${empId}/${logId}.${ext}`;
 
-  console.log("[photo] uploading", {
-    bucket,
-    path,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-  });
-
-  // optional but fine
-  try { await sbEnsureSignedIn(); } catch {}
-
-  const { data, error } = await sb
-    .storage
-    .from(bucket)
+  const { error } = await sb.storage
+    .from("proofs")
     .upload(path, file, {
       contentType: file.type || "image/jpeg",
       upsert: true,
     });
 
-  if (error) {
-    console.error("PHOTO UPLOAD FAILED", error);
-    throw error;
-  }
-
-  return data?.path || path;
+  if (error) throw error;
+  return path;
 }
 
 async function sbUploadProof(file, logId) {
@@ -128,17 +93,8 @@ async function sbUploadProof(file, logId) {
 
   // MUST have a session so auth.uid() is real and stable
   await sbEnsureSignedIn();
-  const uid = await sbUid();
-
-  const photo_path = buildPhotoPath(uid, empId, logId, file);
+  const photo_path = await uploadProofPhoto({ sb, empId, logId, file });
   setPhotoUploadTarget(photo_path);
-
-  await uploadProofPhoto({
-    bucket: PHOTO_BUCKET,
-    path: photo_path,
-    file,
-  });
-
   return photo_path;
 }
 
@@ -177,12 +133,24 @@ async function sbDeleteProofPhoto(photoPath) {
   if (error) throw error;
 }
 
+async function attachPhotoToLog({ sb, logId, photoPath }) {
+  const { data, error } = await sb
+    .from("work_logs")
+    .update({ photo_path: photoPath, updated_at: new Date().toISOString() })
+    .eq("id", logId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 async function sbProofPhotoUrl(photoPath) {
-  return photoPublicUrl(photoPath);
+  return getProofSignedUrl(sb, photoPath);
 }
 
 async function getPhotoUrl(photoPath) {
-  return resolvePhotoUrl(photoPath);
+  return getProofSignedUrl(sb, photoPath);
 }
 
 const LS_EMP = "fr_emp_id";
@@ -256,7 +224,7 @@ async function apiListLogs(ownerKey, empId) {
     if (!empId) return [];
   }
   await sbEnsureSignedIn();
-  ownerKey = await sbUid();
+  ownerKey = await requireUserId(sb);
   if (!ownerKey) return [];
   return sbListRows(ownerKey, empId);
 }
@@ -265,16 +233,14 @@ async function apiListLogs(ownerKey, empId) {
 async function apiCreateLog(payload, photoFile) {
   await sbEnsureSignedIn();
   const empId = String(document.getElementById("empId").value || "").trim();
-  const uid = await sbUid();
+  const uid = await requireUserId(sb);
   if (!empId) throw new Error("Employee # required");
 
   // 1) Create row first (no photo_path yet)
   const { data: created, error: e1 } = await sb
     .from("work_logs")
     .insert([{
-      owner_key: uid,
       employee_number: empId,
-      user_id: uid,
       work_date: payload.work_date,
       category: payload.category || "work",
       ro_number: payload.ro_number || null,
@@ -296,12 +262,7 @@ async function apiCreateLog(payload, photoFile) {
   // 2) Upload photo and write path back
   if (photoFile) {
     const photoPath = await sbUploadProof(photoFile, createdRow.id);
-    const { error: e2 } = await sb
-      .from("work_logs")
-      .update({ photo_path: photoPath })
-      .eq("id", createdRow.id);
-
-    if (e2) throw e2;
+    await attachPhotoToLog({ sb, logId: createdRow.id, photoPath });
     return createdRow;
   }
 
@@ -313,7 +274,7 @@ async function apiUpdateLog(id, payload, photoFile) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const ownerKey = await sbUid();
+  const ownerKey = await requireUserId(sb);
   if (!ownerKey) return null;
 
   // Update fields first
@@ -342,12 +303,7 @@ async function apiUpdateLog(id, payload, photoFile) {
   // If new photo, upload + save path
   if (photoFile) {
     const photoPath = await sbUploadProof(photoFile, updatedRow.id);
-    const { error: e2 } = await sb
-      .from("work_logs")
-      .update({ photo_path: photoPath })
-      .eq("id", updatedRow.id);
-
-    if (e2) throw e2;
+    await attachPhotoToLog({ sb, logId: updatedRow.id, photoPath });
     return updatedRow;
   }
 
@@ -370,13 +326,7 @@ async function uploadProofForLog(savedRow, file) {
   return await withTimeout(
     (async () => {
       const photoPath = await sbUploadProof(compressed, logId);
-
-      const { error: e1 } = await sb
-        .from("work_logs")
-        .update({ photo_path: photoPath })
-        .eq("id", logId);
-
-      if (e1) throw e1;
+      await attachPhotoToLog({ sb, logId, photoPath });
       return photoPath;
     })(),
     20000
@@ -1509,51 +1459,25 @@ async function renderEntries(rows) {
 
 async function loadEntries() {
   const empId = getEmpId();
-  if (!empId) {
-    setDataWarning("");
-    return []; // don't throw, just don't load yet
-  }
+  if (!empId) throw new Error("Employee # required");
 
-  window.STATE = window.STATE || {};
+  const uid = await requireUserId(sb);
 
-  if (!USE_BACKEND) {
-    const entries = (await getAll(STORES.entries)) || [];
-    window.STATE.entries = entries;
-    await renderEntries(entries); // use ONE renderer consistently
-    setDataWarning("");
-    return entries;
-  }
-
-  await sbEnsureSignedIn();
-  const ownerKey = await sbUid();
-  if (!ownerKey) {
-    setDataWarning("");
-    return [];
-  }
-
-  // Primary query
   const res = await sb
     .from("work_logs")
     .select("*")
+    .eq("user_id", uid)
     .eq("employee_number", empId)
-    .eq("owner_key", ownerKey)
-    .eq("is_deleted", false)
+    .or("is_deleted.is.null,is_deleted.eq.false")
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
 
   if (res.error) throw res.error;
 
   const rows = (res.data || []).map(normalizeSupabaseLog);
+  window.STATE = window.STATE || {};
   window.STATE.entries = rows;
-  await renderEntries(rows);
-  if (rows.length === 0) {
-    const hasRows = await probeEmpHasRows(empId);
-    if (hasRows) setDataWarning("Data loaded but filtered out. Check employee number.");
-    else setDataWarning("");
-  } else {
-    setDataWarning("");
-  }
-  return rows;
+  return await renderEntries(rows);
 }
 
 async function saveEntry(entry) {
@@ -1567,7 +1491,7 @@ async function saveEntry(entry) {
   const photoFile = SELECTED_PHOTO_FILE || null;
   const empId = getEmpId();
   await sbEnsureSignedIn();
-  const ownerKey = empId ? await sbUid() : null;
+  const ownerKey = empId ? await requireUserId(sb) : null;
 
   // SAVE LOG FIRST
   let saved;
