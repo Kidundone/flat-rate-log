@@ -86,18 +86,6 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
   return path;
 }
 
-async function sbUploadProof(file, logId) {
-  if (!file) return null;
-  const empId = getEmpId();
-  if (!empId) throw new Error("Employee # required");
-
-  // MUST have a session so auth.uid() is real and stable
-  await sbEnsureSignedIn();
-  const photo_path = await uploadProofPhoto({ sb, empId, logId, file });
-  setPhotoUploadTarget(photo_path);
-  return photo_path;
-}
-
 async function sbListRows(ownerKey, empId) {
   if (!ownerKey || !empId) return [];
   await sbEnsureSignedIn();
@@ -145,35 +133,29 @@ async function attachPhotoToLog({ sb, logId, photoPath }) {
   return data;
 }
 
-async function updateLogWithOptionalPhoto({ sb, empId, logId, patch, file }) {
-  let photo_path;
-
+async function saveEditedLog(logId, patch) {
+  const empId = getEmpId();
+  const file = getSelectedPhotoFile();
   if (file) {
-    const compressed = await compressImageFile(file, {
-      maxWidth: 1280,
-      quality: 0.75
-    });
-    photo_path = await uploadProofPhoto({ sb, empId, logId, file: compressed });
+    const newPath = await uploadProofPhoto({ sb, empId, logId, file });
+    patch.photo_path = newPath;
   }
 
-  const payload = {
-    ...patch,
-    ...(photo_path ? { photo_path } : {}),
-    updated_at: new Date().toISOString(),
-  };
-
-  const res = await sb
+  const { data, error } = await sb
     .from("work_logs")
-    .update(payload)
+    .update(patch)
     .eq("id", logId)
-    .select("id, photo_path, updated_at");
+    .select("id, photo_path")
+    .maybeSingle();
 
-  if (res.error) throw res.error;
+  if (error) throw error;
 
-  const updated = res.data?.[0];
-  if (!updated) throw new Error("Update failed: no row returned");
+  window.SELECTED_PHOTO_FILE = null;
+  SELECTED_PHOTO_FILE = null;
+  const input = document.querySelector("#photoInput, input[type=file][data-photo]");
+  if (input) input.value = "";
 
-  return updated;
+  return data;
 }
 
 async function sbProofPhotoUrl(photoPath) {
@@ -261,10 +243,9 @@ async function apiListLogs(ownerKey, empId) {
 }
 
 // CREATE
-async function apiCreateLog(payload, photoFile) {
+async function apiCreateLog(payload) {
   await sbEnsureSignedIn();
   const empId = String(document.getElementById("empId").value || "").trim();
-  const uid = await requireUserId(sb);
   if (!empId) throw new Error("Employee # required");
 
   // 1) Create row first (no photo_path yet)
@@ -283,19 +264,12 @@ async function apiCreateLog(payload, photoFile) {
       is_deleted: false,
       photo_path: null,
     }])
-    .select("*")
-    .limit(1);
+    .select("id")
+    .maybeSingle();
 
   if (e1) throw e1;
-  const createdRow = created?.[0] ?? null;
+  const createdRow = created ?? null;
   if (!createdRow) throw new Error("Create failed: no row returned");
-
-  // 2) Upload photo and write path back
-  if (photoFile) {
-    const photoPath = await sbUploadProof(photoFile, createdRow.id);
-    await attachPhotoToLog({ sb, logId: createdRow.id, photoPath });
-    return createdRow;
-  }
 
   return createdRow;
 }
@@ -333,29 +307,6 @@ async function apiUpdateLog(id, payload) {
   if (!updatedRow) throw new Error("Update failed: no row returned");
 
   return updatedRow;
-}
-
-async function uploadProofForLog(savedRow, file) {
-  await sbEnsureSignedIn();
-  const logId = savedRow?.id;
-  if (!logId) return null;
-
-  const withTimeout = (p, ms) =>
-    Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("UPLOAD_TIMEOUT")), ms))]);
-
-  const compressed = await compressImageFile(file, {
-    maxWidth: 1280,
-    quality: 0.75
-  });
-
-  return await withTimeout(
-    (async () => {
-      const photoPath = await sbUploadProof(compressed, logId);
-      await attachPhotoToLog({ sb, logId, photoPath });
-      return photoPath;
-    })(),
-    20000
-  );
 }
 
 // DELETE (optional)
@@ -532,6 +483,7 @@ let SELECTED_PHOTO_FILE = null;
 
 function setSelectedPhotoFile(file, label = "") {
   SELECTED_PHOTO_FILE = file || null;
+  window.SELECTED_PHOTO_FILE = SELECTED_PHOTO_FILE;
 
   const lbl = document.getElementById("photoPickedLabel");
   if (lbl) {
@@ -543,6 +495,15 @@ function setSelectedPhotoFile(file, label = "") {
 
 function setSelectedPhoto(file, label = "") {
   setSelectedPhotoFile(file, label);
+}
+
+function getSelectedPhotoFile() {
+  if (window.SELECTED_PHOTO_FILE) return window.SELECTED_PHOTO_FILE;
+  if (SELECTED_PHOTO_FILE) return SELECTED_PHOTO_FILE;
+  const el = document.querySelector(
+    "#photoInput, #proofPhoto, #photoPicker, #photoCamera, #photoFile, input[type=file][data-photo]"
+  );
+  return el?.files?.[0] || null;
 }
 
 function setPhotoLabelFromEntry(entry) {
@@ -1513,7 +1474,7 @@ async function saveEntry(entry) {
   }
 
   const payload = normalizeEntryForApi(entry);
-  const photoFile = SELECTED_PHOTO_FILE || null;
+  const photoFile = getSelectedPhotoFile();
   const empId = getEmpId();
   await sbEnsureSignedIn();
   const uid = empId ? await requireUserId(sb) : null;
@@ -1526,26 +1487,20 @@ async function saveEntry(entry) {
   if (EDITING_ID) {
     const { photo_path: _ignored, ...patch } = payload;
     if (photoFile) toast("Uploading photo...");
-    try {
-      saved = await updateLogWithOptionalPhoto({ sb, empId, logId: EDITING_ID, patch, file: photoFile });
-      photo_path = saved?.photo_path || null;
-      if (photoFile) photoStatus = "ok";
-    } catch (err) {
-      if (photoFile) {
-        photoStatus = "fail";
-        saved = await apiUpdateLog(EDITING_ID, patch);
-        photo_path = saved?.photo_path || null;
-      } else {
-        throw err;
-      }
-    }
+    patch.updated_at = new Date().toISOString();
+    saved = await saveEditedLog(EDITING_ID, patch);
+    photo_path = saved?.photo_path || null;
+    if (photoFile) photoStatus = "ok";
   } else {
-    saved = await apiCreateLog(payload, null);
+    saved = await apiCreateLog(payload);
     photo_path = saved?.photo_path || payload.photo_path || null;
     if (photoFile) {
       toast("Uploading photo...");
       try {
-        photo_path = await uploadProofForLog(saved, photoFile);
+        const newPath = await uploadProofPhoto({ sb, empId, logId: saved.id, file: photoFile });
+        setPhotoUploadTarget(newPath);
+        await sb.from("work_logs").update({ photo_path: newPath }).eq("id", saved.id);
+        photo_path = newPath;
         photoStatus = "ok";
       } catch (err) {
         photoStatus = "fail";
@@ -1609,10 +1564,7 @@ async function handleSave(ev) {
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-    const photoFile =
-      SELECTED_PHOTO_FILE
-      || photoEl?.files?.[0]
-      || null;
+    const photoFile = getSelectedPhotoFile() || photoEl?.files?.[0] || null;
     const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
     const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
     const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
