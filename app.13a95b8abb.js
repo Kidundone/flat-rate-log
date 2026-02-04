@@ -145,6 +145,37 @@ async function attachPhotoToLog({ sb, logId, photoPath }) {
   return data;
 }
 
+async function updateLogWithOptionalPhoto({ sb, empId, logId, patch, file }) {
+  let photo_path;
+
+  if (file) {
+    const compressed = await compressImageFile(file, {
+      maxWidth: 1280,
+      quality: 0.75
+    });
+    photo_path = await uploadProofPhoto({ sb, empId, logId, file: compressed });
+  }
+
+  const payload = {
+    ...patch,
+    ...(photo_path ? { photo_path } : {}),
+    updated_at: new Date().toISOString(),
+  };
+
+  const res = await sb
+    .from("work_logs")
+    .update(payload)
+    .eq("id", logId)
+    .select("id, photo_path, updated_at");
+
+  if (res.error) throw res.error;
+
+  const updated = res.data?.[0];
+  if (!updated) throw new Error("Update failed: no row returned");
+
+  return updated;
+}
+
 async function sbProofPhotoUrl(photoPath) {
   return getProofSignedUrl(sb, photoPath);
 }
@@ -270,12 +301,12 @@ async function apiCreateLog(payload, photoFile) {
 }
 
 // UPDATE
-async function apiUpdateLog(id, payload, photoFile) {
+async function apiUpdateLog(id, payload) {
   await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const ownerKey = await requireUserId(sb);
-  if (!ownerKey) return null;
+  const uid = await requireUserId(sb);
+  if (!uid) return null;
 
   // Update fields first
   const { data: updated, error: e1 } = await sb
@@ -289,9 +320,10 @@ async function apiUpdateLog(id, payload, photoFile) {
       cash_amount: Number(payload.cash_amount || 0),
       location: payload.location || null,
       vin8: payload.vin8 || null,
+      updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .eq("owner_key", ownerKey)
+    .eq("user_id", uid)
     .eq("employee_number", empId)
     .select("*")
     .limit(1);
@@ -299,13 +331,6 @@ async function apiUpdateLog(id, payload, photoFile) {
   if (e1) throw e1;
   const updatedRow = updated?.[0] ?? null;
   if (!updatedRow) throw new Error("Update failed: no row returned");
-
-  // If new photo, upload + save path
-  if (photoFile) {
-    const photoPath = await sbUploadProof(photoFile, updatedRow.id);
-    await attachPhotoToLog({ sb, logId: updatedRow.id, photoPath });
-    return updatedRow;
-  }
 
   return updatedRow;
 }
@@ -1491,32 +1516,50 @@ async function saveEntry(entry) {
   const photoFile = SELECTED_PHOTO_FILE || null;
   const empId = getEmpId();
   await sbEnsureSignedIn();
-  const ownerKey = empId ? await requireUserId(sb) : null;
+  const uid = empId ? await requireUserId(sb) : null;
 
   // SAVE LOG FIRST
   let saved;
-  if (EDITING_ID) saved = await apiUpdateLog(EDITING_ID, payload, null);
-  else saved = await apiCreateLog(payload, null);
-
   let photoStatus = "none";
-  let photo_path = saved?.photo_path || payload.photo_path || null;
-  if (photoFile) {
-    toast("Uploading photo...");
+  let photo_path = null;
+
+  if (EDITING_ID) {
+    const { photo_path: _ignored, ...patch } = payload;
+    if (photoFile) toast("Uploading photo...");
     try {
-      photo_path = await uploadProofForLog(saved, photoFile);
-      photoStatus = "ok";
+      saved = await updateLogWithOptionalPhoto({ sb, empId, logId: EDITING_ID, patch, file: photoFile });
+      photo_path = saved?.photo_path || null;
+      if (photoFile) photoStatus = "ok";
     } catch (err) {
-      photoStatus = "fail";
+      if (photoFile) {
+        photoStatus = "fail";
+        saved = await apiUpdateLog(EDITING_ID, patch);
+        photo_path = saved?.photo_path || null;
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    saved = await apiCreateLog(payload, null);
+    photo_path = saved?.photo_path || payload.photo_path || null;
+    if (photoFile) {
+      toast("Uploading photo...");
+      try {
+        photo_path = await uploadProofForLog(saved, photoFile);
+        photoStatus = "ok";
+      } catch (err) {
+        photoStatus = "fail";
+      }
     }
   }
 
   const shouldUpdatePhotoPath = !photoFile && !!photo_path;
-  if (shouldUpdatePhotoPath && empId && ownerKey) {
+  if (shouldUpdatePhotoPath && empId && uid) {
     const { error } = await sb
       .from("work_logs")
       .update({ photo_path })
       .eq("id", saved.id)
-      .eq("owner_key", ownerKey)
+      .eq("user_id", uid)
       .eq("employee_number", empId);
     if (error) {
       if (photoFile) photoStatus = "fail";
