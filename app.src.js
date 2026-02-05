@@ -24,7 +24,7 @@ window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: true,
   },
 });
 const sb = window.sb;
@@ -32,6 +32,38 @@ window.__FR = window.__FR || {};
 window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
+
+// --- AUTH UI WIRING ---
+const authSendBtn = document.getElementById("authSendLink");
+const authOutBtn = document.getElementById("authSignOut");
+
+if (authSendBtn) {
+  authSendBtn.addEventListener("click", async () => {
+    const email = prompt("Enter your email to sign in:");
+    if (!email) return;
+
+    const { error } = await sb.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.origin + "/more.html",
+      },
+    });
+
+    if (error) {
+      alert("Sign-in failed: " + error.message);
+    } else {
+      alert("Check your email for the sign-in link.");
+    }
+  });
+}
+
+if (authOutBtn) {
+  authOutBtn.addEventListener("click", async () => {
+    await sb.auth.signOut();
+    alert("Signed out");
+    location.reload();
+  });
+}
 
 const PHOTO_BUCKET = "proofs"; // private
 
@@ -42,21 +74,11 @@ function setPhotoUploadTarget(path) {
   if (pathEl) pathEl.textContent = path || "—";
 }
 
-// Call once on load (or from your init)
-async function sbEnsureSignedIn() {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) return session;
-
-  const { data, error } = await sb.auth.signInAnonymously();
-  if (error) throw error;
-  return data.session;
-}
-
-async function requireUserId(sb) {
+async function requireUserId() {
   const { data, error } = await sb.auth.getUser();
   if (error) throw error;
   const uid = data?.user?.id;
-  if (!uid) throw new Error("Not signed in");
+  if (!uid) throw new Error("Sign in required");
   return uid;
 }
 
@@ -70,7 +92,7 @@ async function getProofSignedUrl(sb, photoPath) {
 }
 
 async function uploadProofPhoto({ sb, empId, logId, file }) {
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId();
 
   const ext = (file.type === "image/png") ? "png" : "jpg";
   const path = `${uid}/${empId}/${logId}.${ext}`;
@@ -88,7 +110,7 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
 
 async function sbListRows(ownerKey, empId) {
   if (!ownerKey || !empId) return [];
-  await sbEnsureSignedIn();
+  await requireUserId();
   const q = sb
     .from("work_logs")
     .select("*")
@@ -105,7 +127,7 @@ async function sbListRows(ownerKey, empId) {
 
 async function probeEmpHasRows(empId) {
   if (!empId) return false;
-  await sbEnsureSignedIn();
+  await requireUserId();
   const { count, error } = await sb
     .from("work_logs")
     .select("id", { count: "exact", head: true })
@@ -236,15 +258,14 @@ async function apiListLogs(ownerKey, empId) {
     empId = getEmpId();
     if (!empId) return [];
   }
-  await sbEnsureSignedIn();
-  ownerKey = await requireUserId(sb);
+  ownerKey = await requireUserId();
   if (!ownerKey) return [];
   return sbListRows(ownerKey, empId);
 }
 
 // CREATE
 async function apiCreateLog(payload) {
-  await sbEnsureSignedIn();
+  await requireUserId();
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
@@ -276,10 +297,9 @@ async function apiCreateLog(payload) {
 
 // UPDATE
 async function apiUpdateLog(id, payload) {
-  await sbEnsureSignedIn();
   const empId = getEmpId();
   if (!empId) return null;
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId();
   if (!uid) return null;
 
   // Update fields first
@@ -1447,7 +1467,7 @@ async function loadEntries() {
   const empId = getEmpId();
   if (!empId) throw new Error("Employee # required");
 
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId();
 
   const res = await sb
     .from("work_logs")
@@ -1476,8 +1496,7 @@ async function saveEntry(entry) {
   const payload = normalizeEntryForApi(entry);
   const photoFile = getSelectedPhotoFile();
   const empId = getEmpId();
-  await sbEnsureSignedIn();
-  const uid = empId ? await requireUserId(sb) : null;
+  const uid = empId ? await requireUserId() : null;
 
   // SAVE LOG FIRST
   let saved;
@@ -2850,12 +2869,6 @@ document.addEventListener("DOMContentLoaded", () => {
     let bootLoaded = false;
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
-
-    const { data } = await sb.auth.getSession();
-    if (!data.session) {
-      const { error } = await sb.auth.signInAnonymously();
-      if (error) throw error;
-    }
 
     await ensureDefaultTypes();
     await (async () => {
