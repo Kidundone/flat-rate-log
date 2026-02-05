@@ -56,7 +56,7 @@ async function initAuthUI() {
     if (!email) return setStatus("Enter your email first.");
     setStatus("Sending link…");
 
-    const redirectTo = location.origin + location.pathname; // lands back on /more.html
+    const redirectTo = "https://kidundone.github.io/flat-rate-log/more.html";
     const { error } = await sb.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo },
