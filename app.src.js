@@ -15,60 +15,65 @@ console.log("__FR_MARKER_20260121");
 
 const USE_BACKEND = true;
 // --- Supabase ---
-const SUPABASE_CONFIG = window.__SUPABASE_CONFIG__ || {};
-const SUPABASE_URL = SUPABASE_CONFIG.url;
-const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Missing Supabase config");
+function getSupabase() {
+  const cfg = window.__SUPABASE_CONFIG__;
+  if (!cfg?.url || !cfg?.anonKey) throw new Error("Missing __SUPABASE_CONFIG__");
 
-window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: "pkce",
-  },
-});
-const sb = window.sb;
+  if (!window.sb) {
+    window.sb = supabase.createClient(cfg.url, cfg.anonKey, {
+      auth: {
+        storageKey: "fr-auth",
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+      },
+    });
+  }
+  return window.sb;
+}
+
+const sb = getSupabase();
 window.__FR = window.__FR || {};
 window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 async function initAuthUI() {
+  const sb = getSupabase();
+
   const elStatus = document.getElementById("authStatus");
   const elEmail  = document.getElementById("authEmail");
   const btnSend  = document.getElementById("authSendLink");
   const btnOut   = document.getElementById("authSignOut");
 
-  if (!elStatus || !btnSend || !btnOut) return;
-
-  const setStatus = (msg) => elStatus.textContent = msg;
-
   async function refresh() {
-    const { data } = await sb.auth.getUser();
-    const u = data?.user;
-    if (u) setStatus(`Signed in ✅ ${u.email || "(email hidden)"}`);
-    else setStatus("Not signed in");
+    const { data, error } = await sb.auth.getSession();
+    if (error) elStatus.textContent = `Auth error: ${error.message}`;
+    else if (data?.session?.user) elStatus.textContent = `Signed in: ${data.session.user.id.slice(0,8)}…`;
+    else elStatus.textContent = "Not signed in";
   }
 
-  btnSend.onclick = async () => {
-    const email = (elEmail.value || "").trim();
-    if (!email) return setStatus("Enter your email first.");
-    setStatus("Sending link…");
+  btnSend?.addEventListener("click", async () => {
+    const email = (elEmail?.value || "").trim();
+    if (!email) return alert("Enter email");
+    elStatus.textContent = "Sending link…";
 
-    const redirectTo = "https://kidundone.github.io/flat-rate-log/more.html";
     const { error } = await sb.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo },
+      options: {
+        emailRedirectTo: `${location.origin}/flat-rate-log/more.html`,
+      },
     });
 
-    setStatus(error ? `Error: ${error.message}` : "Check your email for the link.");
-  };
+    if (error) elStatus.textContent = `Send failed: ${error.message}`;
+    else elStatus.textContent = "Link sent. Open it on THIS device.";
+  });
 
-  btnOut.onclick = async () => {
+  btnOut?.addEventListener("click", async () => {
     await sb.auth.signOut();
     await refresh();
-  };
+  });
 
   sb.auth.onAuthStateChange(() => refresh());
   await refresh();
