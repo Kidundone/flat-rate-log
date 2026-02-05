@@ -25,6 +25,7 @@ window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    flowType: "pkce",
   },
 });
 const sb = window.sb;
@@ -33,36 +34,44 @@ window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
-// --- AUTH UI WIRING ---
-const authSendBtn = document.getElementById("authSendLink");
-const authOutBtn = document.getElementById("authSignOut");
+async function initAuthUI() {
+  const elStatus = document.getElementById("authStatus");
+  const elEmail  = document.getElementById("authEmail");
+  const btnSend  = document.getElementById("authSendLink");
+  const btnOut   = document.getElementById("authSignOut");
 
-if (authSendBtn) {
-  authSendBtn.addEventListener("click", async () => {
-    const email = prompt("Enter your email to sign in:");
-    if (!email) return;
+  if (!elStatus || !btnSend || !btnOut) return;
 
+  const setStatus = (msg) => elStatus.textContent = msg;
+
+  async function refresh() {
+    const { data } = await sb.auth.getUser();
+    const u = data?.user;
+    if (u) setStatus(`Signed in ✅ ${u.email || "(email hidden)"}`);
+    else setStatus("Not signed in");
+  }
+
+  btnSend.onclick = async () => {
+    const email = (elEmail.value || "").trim();
+    if (!email) return setStatus("Enter your email first.");
+    setStatus("Sending link…");
+
+    const redirectTo = location.origin + location.pathname; // lands back on /more.html
     const { error } = await sb.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: window.location.origin + "/more.html",
-      },
+      options: { emailRedirectTo: redirectTo },
     });
 
-    if (error) {
-      alert("Sign-in failed: " + error.message);
-    } else {
-      alert("Check your email for the sign-in link.");
-    }
-  });
-}
+    setStatus(error ? `Error: ${error.message}` : "Check your email for the link.");
+  };
 
-if (authOutBtn) {
-  authOutBtn.addEventListener("click", async () => {
+  btnOut.onclick = async () => {
     await sb.auth.signOut();
-    alert("Signed out");
-    location.reload();
-  });
+    await refresh();
+  };
+
+  sb.auth.onAuthStateChange(() => refresh());
+  await refresh();
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -74,9 +83,8 @@ function setPhotoUploadTarget(path) {
   if (pathEl) pathEl.textContent = path || "—";
 }
 
-async function requireUserId() {
-  const { data, error } = await sb.auth.getUser();
-  if (error) throw error;
+async function requireUserId(sb) {
+  const { data } = await sb.auth.getUser();
   const uid = data?.user?.id;
   if (!uid) throw new Error("Sign in required");
   return uid;
@@ -92,7 +100,7 @@ async function getProofSignedUrl(sb, photoPath) {
 }
 
 async function uploadProofPhoto({ sb, empId, logId, file }) {
-  const uid = await requireUserId();
+  const uid = await requireUserId(sb);
 
   const ext = (file.type === "image/png") ? "png" : "jpg";
   const path = `${uid}/${empId}/${logId}.${ext}`;
@@ -105,18 +113,19 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
     });
 
   if (error) throw error;
+  await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
   return path;
 }
 
-async function sbListRows(ownerKey, empId) {
-  if (!ownerKey || !empId) return [];
-  await requireUserId();
+async function sbListRows(empId) {
+  if (!empId) return [];
+  const uid = await requireUserId(sb);
   const q = sb
     .from("work_logs")
     .select("*")
-    .eq("owner_key", ownerKey)
+    .eq("user_id", uid)
     .eq("employee_number", empId)
-    .eq("is_deleted", false)
+    .or("is_deleted.is.null,is_deleted.eq.false")
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
   const { data, error } = await q;
@@ -127,12 +136,13 @@ async function sbListRows(ownerKey, empId) {
 
 async function probeEmpHasRows(empId) {
   if (!empId) return false;
-  await requireUserId();
+  const uid = await requireUserId(sb);
   const { count, error } = await sb
     .from("work_logs")
     .select("id", { count: "exact", head: true })
+    .eq("user_id", uid)
     .eq("employee_number", empId)
-    .eq("is_deleted", false);
+    .or("is_deleted.is.null,is_deleted.eq.false");
   if (error) return false;
   return Number(count || 0) > 0;
 }
@@ -210,33 +220,6 @@ function setEmpId(emp) {
   localStorage.setItem(LS_EMP, emp);
 }
 
-function getOwnerKeyForEmp(empId) {
-  // refuse bad ids
-  if (!empId || String(empId).length < 5) return null;
-
-  const k = "fr_owner_keys_by_emp";
-  let map = {};
-  try { map = JSON.parse(localStorage.getItem(k) || "{}"); } catch {}
-
-  // only use FULL empId key
-  let ownerKey = map[empId];
-
-  // create ONCE for a valid full empId
-  if (!ownerKey) {
-    ownerKey = crypto.randomUUID();
-    map[empId] = ownerKey;
-    localStorage.setItem(k, JSON.stringify(map));
-  }
-
-  return ownerKey;
-}
-
-function getOwnerKeyForActiveEmp() {
-  const empId = getEmpId();
-  if (!empId) return null;
-  return getOwnerKeyForEmp(empId);
-}
-
 function mapEntryToRow(payload, userId) {
   return {
     user_id: userId,
@@ -253,19 +236,19 @@ function mapEntryToRow(payload, userId) {
 }
 
 // LIST
-async function apiListLogs(ownerKey, empId) {
+async function apiListLogs(empId) {
   if (!empId) {
     empId = getEmpId();
     if (!empId) return [];
   }
-  ownerKey = await requireUserId();
-  if (!ownerKey) return [];
-  return sbListRows(ownerKey, empId);
+  const uid = await requireUserId(sb);
+  if (!uid) return [];
+  return sbListRows(empId);
 }
 
 // CREATE
 async function apiCreateLog(payload) {
-  await requireUserId();
+  await requireUserId(sb);
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
@@ -299,7 +282,7 @@ async function apiCreateLog(payload) {
 async function apiUpdateLog(id, payload) {
   const empId = getEmpId();
   if (!empId) return null;
-  const uid = await requireUserId();
+  const uid = await requireUserId(sb);
   if (!uid) return null;
 
   // Update fields first
@@ -1467,7 +1450,7 @@ async function loadEntries() {
   const empId = getEmpId();
   if (!empId) throw new Error("Employee # required");
 
-  const uid = await requireUserId();
+  const uid = await requireUserId(sb);
 
   const res = await sb
     .from("work_logs")
@@ -1496,7 +1479,7 @@ async function saveEntry(entry) {
   const payload = normalizeEntryForApi(entry);
   const photoFile = getSelectedPhotoFile();
   const empId = getEmpId();
-  const uid = empId ? await requireUserId() : null;
+  const uid = empId ? await requireUserId(sb) : null;
 
   // SAVE LOG FIRST
   let saved;
@@ -1518,7 +1501,6 @@ async function saveEntry(entry) {
       try {
         const newPath = await uploadProofPhoto({ sb, empId, logId: saved.id, file: photoFile });
         setPhotoUploadTarget(newPath);
-        await sb.from("work_logs").update({ photo_path: newPath }).eq("id", saved.id);
         photo_path = newPath;
         photoStatus = "ok";
       } catch (err) {
@@ -2869,6 +2851,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let bootLoaded = false;
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
+
+    if (document.body.dataset.page === "more") initAuthUI();
 
     await ensureDefaultTypes();
     await (async () => {
