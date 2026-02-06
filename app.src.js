@@ -317,31 +317,103 @@ async function apiUpdateLog(id, payload) {
   return updatedRow;
 }
 
-// DELETE (optional)
-async function deleteEntry(id) {
+// --- Soft delete helpers ---
+async function softDeleteLog(sb, id) {
   const { data, error } = await sb
     .from("work_logs")
-    .update({ is_deleted: true })
+    .update({ is_deleted: true, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .select();
+    .select("id,is_deleted")
+    .maybeSingle(); // IMPORTANT: not .single()
 
-  if (error) {
-    console.error("DELETE FAILED", error);
-    throw error;
+  if (error) throw error;
+  if (!data) throw new Error("Soft delete failed: row not found");
+  return data;
+}
+
+async function undoSoftDeleteLog(sb, id) {
+  const { data, error } = await sb
+    .from("work_logs")
+    .update({ is_deleted: false, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id,is_deleted")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Undo failed: row not found");
+  return data;
+}
+
+let LAST_DELETED = null;
+
+async function onDeleteClicked(btn, idOverride = null) {
+  const id =
+    idOverride
+    || btn?.dataset?.id
+    || btn?.dataset?.del
+    || btn?.getAttribute?.("data-del")
+    || btn?.getAttribute?.("data-del-id");
+  if (!id) return;
+
+  if (!confirm("Soft delete this entry?")) return;
+
+  if (btn) {
+    if (btn.dataset.busy === "1") return;
+    btn.disabled = true;
+    btn.dataset.busy = "1";
   }
 
-  if (!data || !data.length) {
-    throw new Error("Delete returned 0 rows");
-  }
+  try {
+    await softDeleteLog(sb, id);
+    LAST_DELETED = { id, at: Date.now() };
 
-  // HARD REFRESH STATE
-  await window.__FR.safeLoadEntries();
+    if (window.STATE?.entries) {
+      window.STATE.entries = window.STATE.entries.filter(x => String(x.id) !== String(id));
+      await renderEntries(window.STATE.entries);
+    } else {
+      await loadEntries();
+    }
+
+    showUndoBar({
+      text: "Entry deleted.",
+      onUndo: async () => {
+        await undoSoftDeleteLog(sb, id);
+        await safeLoadEntries();
+      },
+      ttlMs: 8000
+    });
+  } catch (e) {
+    console.error("DELETE FAILED", e);
+    alert("Delete failed: " + (e?.message || e));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.dataset.busy = "0";
+    }
+  }
+}
+
+async function onUndoDelete() {
+  if (!LAST_DELETED) return;
+
+  try {
+    await undoSoftDeleteLog(sb, LAST_DELETED.id);
+    LAST_DELETED = null;
+
+    if (window.__FR?.safeLoadEntries) await window.__FR.safeLoadEntries();
+    else await loadEntries();
+    const bar = document.getElementById("undoBar");
+    if (bar) bar.style.display = "none";
+  } catch (e) {
+    console.error("UNDO FAILED", e);
+    alert("Undo failed: " + (e?.message || e));
+  }
 }
 
 let BACKEND_ENTRIES = null;
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
-let SAVING = false;
+let isSaving = false;
 
 
 function normalizeEntryForApi(entry) {
@@ -477,6 +549,45 @@ function toast(msg){
   t.textContent = msg;
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 1400);
+}
+
+let UNDO_STATE = null; // { onUndo, timer }
+
+function showUndoBar({ text, onUndo, ttlMs = 8000 }) {
+  const bar = document.getElementById("undoBar");
+  const txt = document.getElementById("undoText");
+  const btn = document.getElementById("undoBtn");
+  const dismiss = document.getElementById("undoDismissBtn");
+  if (!bar || !txt || !btn || !dismiss) return;
+
+  if (UNDO_STATE?.timer) clearTimeout(UNDO_STATE.timer);
+  UNDO_STATE = { onUndo, timer: null };
+
+  txt.textContent = text || "Deleted.";
+  bar.style.display = "block";
+
+  const hide = () => {
+    bar.style.display = "none";
+    if (UNDO_STATE?.timer) clearTimeout(UNDO_STATE.timer);
+    UNDO_STATE = null;
+  };
+
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      await onUndo?.();
+      hide();
+    } catch (e) {
+      console.error("UNDO FAILED", e);
+      alert("Undo failed: " + (e?.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  dismiss.onclick = hide;
+
+  UNDO_STATE.timer = setTimeout(hide, ttlMs);
 }
 
 function withTimeout(promise, ms = 4000, label = "timeout") {
@@ -1385,16 +1496,7 @@ document.addEventListener("click", async (ev) => {
   const id = Number(idStr);
   if (!id || Number.isNaN(id)) return;
 
-  if (!confirm("Delete this entry? (You can’t undo yet)")) return;
-
-  try {
-    await deleteEntry(id);
-    if (EDITING_ID && Number(EDITING_ID) === id) handleClear();
-    await loadEntries();
-    toast("Deleted");
-  } catch (e) {
-    toast("Delete failed");
-  }
+  await onDeleteClicked(delBtn, id);
 });
 
 async function handleDeleteEntry(entry, ev) {
@@ -1403,18 +1505,7 @@ async function handleDeleteEntry(entry, ev) {
 
   if (!entry || entry.id == null) return toast("Missing id.");
 
-  if (!confirm("Delete this entry?")) return;
-
-  try {
-    await deleteEntry(entry.id);
-
-    // ALWAYS reload from source of truth
-    await loadEntries();
-
-    toast("Deleted");
-  } catch (e) {
-    toast("Delete failed");
-  }
+  await onDeleteClicked(ev?.currentTarget, entry.id);
 }
 
 function handleClear(ev) {
@@ -1539,8 +1630,10 @@ async function saveEntry(entry) {
 
 async function handleSave(ev) {
   ev?.preventDefault();
-  if (SAVING) return;
-  SAVING = true;
+  const saveBtn = document.getElementById("saveBtn");
+  if (isSaving) return;
+  isSaving = true;
+  if (saveBtn) saveBtn.disabled = true;
   try {
     const empId = getEmpId();
     if (!empId) { toast("Employee # required"); return; }
@@ -1614,7 +1707,8 @@ async function handleSave(ev) {
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
     document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
   } finally {
-    SAVING = false;
+    isSaving = false;
+    if (saveBtn) saveBtn.disabled = false;
   }
 }
 
@@ -2858,7 +2952,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (bootEmpId) bootLoaded = true;
 
     if (document.body.dataset.page === "more") initAuthUI();
-
     await ensureDefaultTypes();
     await (async () => {
       try {

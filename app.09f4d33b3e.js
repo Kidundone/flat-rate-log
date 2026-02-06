@@ -15,60 +15,65 @@ console.log("__FR_MARKER_20260121");
 
 const USE_BACKEND = true;
 // --- Supabase ---
-const SUPABASE_CONFIG = window.__SUPABASE_CONFIG__ || {};
-const SUPABASE_URL = SUPABASE_CONFIG.url;
-const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Missing Supabase config");
+function getSupabase() {
+  const cfg = window.__SUPABASE_CONFIG__;
+  if (!cfg?.url || !cfg?.anonKey) throw new Error("Missing __SUPABASE_CONFIG__");
 
-window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: "pkce",
-  },
-});
-const sb = window.sb;
+  if (!window.sb) {
+    window.sb = supabase.createClient(cfg.url, cfg.anonKey, {
+      auth: {
+        storageKey: "fr-auth",
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+      },
+    });
+  }
+  return window.sb;
+}
+
+const sb = getSupabase();
 window.__FR = window.__FR || {};
 window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 async function initAuthUI() {
+  const sb = getSupabase();
+
   const elStatus = document.getElementById("authStatus");
   const elEmail  = document.getElementById("authEmail");
   const btnSend  = document.getElementById("authSendLink");
   const btnOut   = document.getElementById("authSignOut");
 
-  if (!elStatus || !btnSend || !btnOut) return;
-
-  const setStatus = (msg) => elStatus.textContent = msg;
-
   async function refresh() {
-    const { data } = await sb.auth.getUser();
-    const u = data?.user;
-    if (u) setStatus(`Signed in ✅ ${u.email || "(email hidden)"}`);
-    else setStatus("Not signed in");
+    const { data, error } = await sb.auth.getSession();
+    if (error) elStatus.textContent = `Auth error: ${error.message}`;
+    else if (data?.session?.user) elStatus.textContent = `Signed in: ${data.session.user.id.slice(0,8)}…`;
+    else elStatus.textContent = "Not signed in";
   }
 
-  btnSend.onclick = async () => {
-    const email = (elEmail.value || "").trim();
-    if (!email) return setStatus("Enter your email first.");
-    setStatus("Sending link…");
+  btnSend?.addEventListener("click", async () => {
+    const email = (elEmail?.value || "").trim();
+    if (!email) return alert("Enter email");
+    elStatus.textContent = "Sending link…";
 
-    const redirectTo = "https://kidundone.github.io/flat-rate-log/more.html";
     const { error } = await sb.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo },
+      options: {
+        emailRedirectTo: `${location.origin}/flat-rate-log/more.html`,
+      },
     });
 
-    setStatus(error ? `Error: ${error.message}` : "Check your email for the link.");
-  };
+    if (error) elStatus.textContent = `Send failed: ${error.message}`;
+    else elStatus.textContent = "Link sent. Open it on THIS device.";
+  });
 
-  btnOut.onclick = async () => {
+  btnOut?.addEventListener("click", async () => {
     await sb.auth.signOut();
     await refresh();
-  };
+  });
 
   sb.auth.onAuthStateChange(() => refresh());
   await refresh();
@@ -312,31 +317,103 @@ async function apiUpdateLog(id, payload) {
   return updatedRow;
 }
 
-// DELETE (optional)
-async function deleteEntry(id) {
+// --- Soft delete helpers ---
+async function softDeleteLog(sb, id) {
   const { data, error } = await sb
     .from("work_logs")
-    .update({ is_deleted: true })
+    .update({ is_deleted: true, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .select();
+    .select("id,is_deleted")
+    .maybeSingle(); // IMPORTANT: not .single()
 
-  if (error) {
-    console.error("DELETE FAILED", error);
-    throw error;
+  if (error) throw error;
+  if (!data) throw new Error("Soft delete failed: row not found");
+  return data;
+}
+
+async function undoSoftDeleteLog(sb, id) {
+  const { data, error } = await sb
+    .from("work_logs")
+    .update({ is_deleted: false, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id,is_deleted")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Undo failed: row not found");
+  return data;
+}
+
+let LAST_DELETED = null;
+
+async function onDeleteClicked(btn, idOverride = null) {
+  const id =
+    idOverride
+    || btn?.dataset?.id
+    || btn?.dataset?.del
+    || btn?.getAttribute?.("data-del")
+    || btn?.getAttribute?.("data-del-id");
+  if (!id) return;
+
+  if (!confirm("Soft delete this entry?")) return;
+
+  if (btn) {
+    if (btn.dataset.busy === "1") return;
+    btn.disabled = true;
+    btn.dataset.busy = "1";
   }
 
-  if (!data || !data.length) {
-    throw new Error("Delete returned 0 rows");
-  }
+  try {
+    await softDeleteLog(sb, id);
+    LAST_DELETED = { id, at: Date.now() };
 
-  // HARD REFRESH STATE
-  await window.__FR.safeLoadEntries();
+    if (window.STATE?.entries) {
+      window.STATE.entries = window.STATE.entries.filter(x => String(x.id) !== String(id));
+      await renderEntries(window.STATE.entries);
+    } else {
+      await loadEntries();
+    }
+
+    showUndoBar({
+      text: "Entry deleted.",
+      onUndo: async () => {
+        await undoSoftDeleteLog(sb, id);
+        await safeLoadEntries();
+      },
+      ttlMs: 8000
+    });
+  } catch (e) {
+    console.error("DELETE FAILED", e);
+    alert("Delete failed: " + (e?.message || e));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.dataset.busy = "0";
+    }
+  }
+}
+
+async function onUndoDelete() {
+  if (!LAST_DELETED) return;
+
+  try {
+    await undoSoftDeleteLog(sb, LAST_DELETED.id);
+    LAST_DELETED = null;
+
+    if (window.__FR?.safeLoadEntries) await window.__FR.safeLoadEntries();
+    else await loadEntries();
+    const bar = document.getElementById("undoBar");
+    if (bar) bar.style.display = "none";
+  } catch (e) {
+    console.error("UNDO FAILED", e);
+    alert("Undo failed: " + (e?.message || e));
+  }
 }
 
 let BACKEND_ENTRIES = null;
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
-let SAVING = false;
+let isSaving = false;
 
 
 function normalizeEntryForApi(entry) {
@@ -472,6 +549,45 @@ function toast(msg){
   t.textContent = msg;
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 1400);
+}
+
+let UNDO_STATE = null; // { onUndo, timer }
+
+function showUndoBar({ text, onUndo, ttlMs = 8000 }) {
+  const bar = document.getElementById("undoBar");
+  const txt = document.getElementById("undoText");
+  const btn = document.getElementById("undoBtn");
+  const dismiss = document.getElementById("undoDismissBtn");
+  if (!bar || !txt || !btn || !dismiss) return;
+
+  if (UNDO_STATE?.timer) clearTimeout(UNDO_STATE.timer);
+  UNDO_STATE = { onUndo, timer: null };
+
+  txt.textContent = text || "Deleted.";
+  bar.style.display = "block";
+
+  const hide = () => {
+    bar.style.display = "none";
+    if (UNDO_STATE?.timer) clearTimeout(UNDO_STATE.timer);
+    UNDO_STATE = null;
+  };
+
+  btn.onclick = async () => {
+    btn.disabled = true;
+    try {
+      await onUndo?.();
+      hide();
+    } catch (e) {
+      console.error("UNDO FAILED", e);
+      alert("Undo failed: " + (e?.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  dismiss.onclick = hide;
+
+  UNDO_STATE.timer = setTimeout(hide, ttlMs);
 }
 
 function withTimeout(promise, ms = 4000, label = "timeout") {
@@ -1380,16 +1496,7 @@ document.addEventListener("click", async (ev) => {
   const id = Number(idStr);
   if (!id || Number.isNaN(id)) return;
 
-  if (!confirm("Delete this entry? (You can’t undo yet)")) return;
-
-  try {
-    await deleteEntry(id);
-    if (EDITING_ID && Number(EDITING_ID) === id) handleClear();
-    await loadEntries();
-    toast("Deleted");
-  } catch (e) {
-    toast("Delete failed");
-  }
+  await onDeleteClicked(delBtn, id);
 });
 
 async function handleDeleteEntry(entry, ev) {
@@ -1398,18 +1505,7 @@ async function handleDeleteEntry(entry, ev) {
 
   if (!entry || entry.id == null) return toast("Missing id.");
 
-  if (!confirm("Delete this entry?")) return;
-
-  try {
-    await deleteEntry(entry.id);
-
-    // ALWAYS reload from source of truth
-    await loadEntries();
-
-    toast("Deleted");
-  } catch (e) {
-    toast("Delete failed");
-  }
+  await onDeleteClicked(ev?.currentTarget, entry.id);
 }
 
 function handleClear(ev) {
@@ -1534,8 +1630,10 @@ async function saveEntry(entry) {
 
 async function handleSave(ev) {
   ev?.preventDefault();
-  if (SAVING) return;
-  SAVING = true;
+  const saveBtn = document.getElementById("saveBtn");
+  if (isSaving) return;
+  isSaving = true;
+  if (saveBtn) saveBtn.disabled = true;
   try {
     const empId = getEmpId();
     if (!empId) { toast("Employee # required"); return; }
@@ -1609,7 +1707,8 @@ async function handleSave(ev) {
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
     document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
   } finally {
-    SAVING = false;
+    isSaving = false;
+    if (saveBtn) saveBtn.disabled = false;
   }
 }
 
@@ -2853,7 +2952,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (bootEmpId) bootLoaded = true;
 
     if (document.body.dataset.page === "more") initAuthUI();
-
     await ensureDefaultTypes();
     await (async () => {
       try {
