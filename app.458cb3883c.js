@@ -15,68 +15,106 @@ console.log("__FR_MARKER_20260121");
 
 const USE_BACKEND = true;
 // --- Supabase ---
-function getSupabase() {
-  const cfg = window.__SUPABASE_CONFIG__;
-  if (!cfg?.url || !cfg?.anonKey) throw new Error("Missing __SUPABASE_CONFIG__");
+const SUPABASE_URL = window.__SUPABASE_CONFIG__?.url;
+const SUPABASE_ANON_KEY = window.__SUPABASE_CONFIG__?.anonKey;
 
-  if (!window.sb) {
-    window.sb = supabase.createClient(cfg.url, cfg.anonKey, {
-      auth: {
-        storageKey: "fr-auth",
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        flowType: "pkce",
-      },
-    });
-  }
-  return window.sb;
+const createClient = (globalThis.supabase && globalThis.supabase.createClient)
+  ? globalThis.supabase.createClient
+  : (globalThis.createClient || null);
+
+if (!createClient) {
+  console.error("Supabase createClient not found. Check the supabase-js script tag.");
 }
 
-const sb = getSupabase();
+window.sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    flowType: "pkce",
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
+
+const sb = window.sb;
 window.__FR = window.__FR || {};
 window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 async function initAuthUI() {
-  const sb = getSupabase();
+  const emailEl = document.getElementById("authEmail");
+  const sendBtn = document.getElementById("authSendLink");
+  const outBtn  = document.getElementById("authSignOut");
+  const status  = document.getElementById("authStatus");
 
-  const elStatus = document.getElementById("authStatus");
-  const elEmail  = document.getElementById("authEmail");
-  const btnSend  = document.getElementById("authSendLink");
-  const btnOut   = document.getElementById("authSignOut");
+  if (!emailEl || !sendBtn || !outBtn || !status) return;
 
-  async function refresh() {
-    const { data, error } = await sb.auth.getSession();
-    if (error) elStatus.textContent = `Auth error: ${error.message}`;
-    else if (data?.session?.user) elStatus.textContent = `Signed in: ${data.session.user.id.slice(0,8)}…`;
-    else elStatus.textContent = "Not signed in";
+  const setStatus = (s) => (status.textContent = s);
+
+  // Exchange magic-link code for a session (THIS is the missing piece)
+  try {
+    const url = new URL(location.href);
+    const code = url.searchParams.get("code");
+    if (code) {
+      setStatus("Finishing sign-in…");
+      const { error } = await sb.auth.exchangeCodeForSession(code);
+      if (error) console.error("exchangeCodeForSession", error);
+      url.searchParams.delete("code");
+      history.replaceState({}, "", url.toString());
+    }
+  } catch (e) {
+    console.error("auth callback finalize failed", e);
   }
 
-  btnSend?.addEventListener("click", async () => {
-    const email = (elEmail?.value || "").trim();
-    if (!email) return alert("Enter email");
-    elStatus.textContent = "Sending link…";
+  async function render() {
+    setStatus("Checking sign-in…");
+    const { data, error } = await sb.auth.getUser();
+    if (error) {
+      console.error("getUser error", error);
+      setStatus("Not signed in.");
+      return;
+    }
+    const u = data?.user;
+    setStatus(u ? `Signed in ✅ (${u.email || u.id.slice(0, 8)})` : "Not signed in.");
+  }
 
+  await render();
+
+  sb.auth.onAuthStateChange(async () => {
+    await render();
+  });
+
+  sendBtn.onclick = async () => {
+    const email = (emailEl.value || "").trim();
+    if (!email) return setStatus("Enter an email.");
+
+    setStatus("Sending link…");
     const { error } = await sb.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${location.origin}/flat-rate-log/more.html`,
+        emailRedirectTo: "https://kidundone.github.io/flat-rate-log/more.html",
       },
     });
 
-    if (error) elStatus.textContent = `Send failed: ${error.message}`;
-    else elStatus.textContent = "Link sent. Open it on THIS device.";
-  });
+    if (error) {
+      console.error("signInWithOtp error", error);
+      setStatus("Send failed. Check console.");
+      return;
+    }
+    setStatus("Link sent. Open it on this device.");
+  };
 
-  btnOut?.addEventListener("click", async () => {
-    await sb.auth.signOut();
-    await refresh();
-  });
+  outBtn.onclick = async () => {
+    setStatus("Signing out…");
+    const { error } = await sb.auth.signOut();
+    if (error) console.error("signOut error", error);
+    await render();
+  };
+}
 
-  sb.auth.onAuthStateChange(() => refresh());
-  await refresh();
+// call only on more page
+if (document.body?.dataset?.page === "more") {
+  initAuthUI();
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -2951,7 +2989,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
 
-    if (document.body.dataset.page === "more") initAuthUI();
     await ensureDefaultTypes();
     await (async () => {
       try {
