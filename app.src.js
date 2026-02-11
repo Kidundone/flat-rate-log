@@ -41,80 +41,67 @@ window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
-async function initAuthUI() {
-  const emailEl = document.getElementById("authEmail");
-  const sendBtn = document.getElementById("authSendLink");
-  const outBtn  = document.getElementById("authSignOut");
-  const status  = document.getElementById("authStatus");
-
-  if (!emailEl || !sendBtn || !outBtn || !status) return;
-
-  const setStatus = (s) => (status.textContent = s);
-
-  // Exchange magic-link code for a session (THIS is the missing piece)
+async function finalizeAuthFromUrl(sb) {
   try {
     const url = new URL(location.href);
     const code = url.searchParams.get("code");
-    if (code) {
-      setStatus("Finishing sign-in…");
-      const { error } = await sb.auth.exchangeCodeForSession(code);
-      if (error) console.error("exchangeCodeForSession", error);
-      url.searchParams.delete("code");
-      history.replaceState({}, "", url.toString());
-    }
+    if (!code) return;
+    const { error } = await sb.auth.exchangeCodeForSession(code);
+    if (error) console.error("exchangeCodeForSession", error);
+    url.searchParams.delete("code");
+    history.replaceState({}, "", url.toString());
   } catch (e) {
     console.error("auth callback finalize failed", e);
   }
-
-  async function render() {
-    setStatus("Checking sign-in…");
-    const { data, error } = await sb.auth.getUser();
-    if (error) {
-      console.error("getUser error", error);
-      setStatus("Not signed in.");
-      return;
-    }
-    const u = data?.user;
-    setStatus(u ? `Signed in ✅ (${u.email || u.id.slice(0, 8)})` : "Not signed in.");
-  }
-
-  await render();
-
-  sb.auth.onAuthStateChange(async () => {
-    await render();
-  });
-
-  sendBtn.onclick = async () => {
-    const email = (emailEl.value || "").trim();
-    if (!email) return setStatus("Enter an email.");
-
-    setStatus("Sending link…");
-    const { error } = await sb.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: "https://kidundone.github.io/flat-rate-log/more.html",
-      },
-    });
-
-    if (error) {
-      console.error("signInWithOtp error", error);
-      setStatus("Send failed. Check console.");
-      return;
-    }
-    setStatus("Link sent. Open it on this device.");
-  };
-
-  outBtn.onclick = async () => {
-    setStatus("Signing out…");
-    const { error } = await sb.auth.signOut();
-    if (error) console.error("signOut error", error);
-    await render();
-  };
 }
 
-// call only on more page
-if (document.body?.dataset?.page === "more") {
-  initAuthUI();
+async function refreshAuthUI() {
+  const el = document.getElementById("authStatus");
+  const { data, error } = await sb.auth.getUser();
+  if (error) { el.textContent = `Auth error: ${error.message}`; return; }
+  el.textContent = data?.user?.email
+    ? `Signed in as ${data.user.email}`
+    : `Not signed in`;
+}
+
+const AUTH_REDIRECT_TO = "https://kidundone.github.io/flat-rate-log/more.html";
+
+async function sendMagicLink(email) {
+  const { data, error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: AUTH_REDIRECT_TO }
+  });
+  if (error) throw error;
+  return data;
+}
+
+function wireAuthUI(sb) {
+  const emailEl = document.getElementById("authEmail");
+  const sendBtn = document.getElementById("authSendLink");
+  const outBtn  = document.getElementById("authSignOut");
+
+  if (!sendBtn || !outBtn) return;
+
+  sendBtn.addEventListener("click", async () => {
+    const email = (emailEl?.value || "").trim();
+    if (!email) return alert("Enter email");
+
+    try {
+      await sendMagicLink(email);
+      alert("Magic link sent. Open it on THIS device.");
+    } catch (e) {
+      alert("Sign-in failed: " + (e?.message || e));
+    }
+  });
+
+  outBtn.addEventListener("click", async () => {
+    await sb.auth.signOut();
+    await refreshAuthUI();
+  });
+
+  sb.auth.onAuthStateChange(async () => {
+    await refreshAuthUI();
+  });
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -357,16 +344,16 @@ async function apiUpdateLog(id, payload) {
 
 // --- Soft delete helpers ---
 async function softDeleteLog(sb, id) {
-  const { data, error } = await sb
+  const uid = (await sb.auth.getUser()).data.user?.id;
+  if (!uid) throw new Error("Not signed in");
+
+  const { error } = await sb
     .from("work_logs")
     .update({ is_deleted: true, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .select("id,is_deleted")
-    .maybeSingle(); // IMPORTANT: not .single()
+    .eq("user_id", uid); // makes RLS happy
 
   if (error) throw error;
-  if (!data) throw new Error("Soft delete failed: row not found");
-  return data;
 }
 
 async function undoSoftDeleteLog(sb, id) {
@@ -2988,6 +2975,12 @@ document.addEventListener("DOMContentLoaded", () => {
     let bootLoaded = false;
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
+
+    if (window.sb) {
+      await finalizeAuthFromUrl(window.sb);
+      wireAuthUI(window.sb);
+      await refreshAuthUI();
+    }
 
     await ensureDefaultTypes();
     await (async () => {
