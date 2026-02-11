@@ -55,24 +55,45 @@ async function finalizeAuthFromUrl(sb) {
   }
 }
 
-async function refreshAuthUI() {
-  const el = document.getElementById("authStatus");
-  const { data, error } = await sb.auth.getUser();
-  if (error) { el.textContent = `Auth error: ${error.message}`; return; }
-  el.textContent = data?.user?.email
-    ? `Signed in as ${data.user.email}`
-    : `Not signed in`;
+async function initAuth() {
+  const statusEl = document.getElementById("authStatus");
+
+  // hard timeout so UI never freezes
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("auth timeout")), 4000)
+  );
+
+  try {
+    const { data } = await Promise.race([
+      sb.auth.getSession(),
+      timeout
+    ]);
+
+    const user = data?.session?.user;
+
+    if (user) {
+      statusEl.textContent = `Signed in`;
+      window.CURRENT_UID = user.id;
+    } else {
+      statusEl.textContent = "Not signed in";
+      window.CURRENT_UID = null;
+    }
+  } catch (e) {
+    console.warn("auth init failed", e);
+    statusEl.textContent = "Not signed in";
+    window.CURRENT_UID = null;
+  }
 }
 
-const AUTH_REDIRECT_TO = "https://kidundone.github.io/flat-rate-log/more.html";
-
 async function sendMagicLink(email) {
-  const { data, error } = await sb.auth.signInWithOtp({
+  const { error } = await sb.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: AUTH_REDIRECT_TO }
+    options: {
+      emailRedirectTo: "https://kidundone.github.io/flat-rate-log/more.html"
+    }
   });
+
   if (error) throw error;
-  return data;
 }
 
 function wireAuthUI(sb) {
@@ -96,11 +117,11 @@ function wireAuthUI(sb) {
 
   outBtn.addEventListener("click", async () => {
     await sb.auth.signOut();
-    await refreshAuthUI();
+    await initAuth();
   });
 
   sb.auth.onAuthStateChange(async () => {
-    await refreshAuthUI();
+    await initAuth();
   });
 }
 
@@ -2979,7 +3000,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.sb) {
       await finalizeAuthFromUrl(window.sb);
       wireAuthUI(window.sb);
-      await refreshAuthUI();
+      await initAuth();
     }
 
     await ensureDefaultTypes();
