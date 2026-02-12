@@ -57,33 +57,14 @@ async function finalizeAuthFromUrl(sb) {
 
 async function initAuth() {
   const statusEl = document.getElementById("authStatus");
-
-  // ✅ If we're not on more.html (or block missing), don't crash the whole app.
-  if (!statusEl) {
-    try {
-      const { data } = await sb.auth.getSession();
-      window.CURRENT_UID = data?.session?.user?.id || null;
-    } catch {
-      window.CURRENT_UID = null;
-    }
-    return;
-  }
-
-  // hard timeout so UI never freezes
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("auth timeout")), 4000)
-  );
+  if (!statusEl) return; // <-- CRITICAL: main page has no authStatus
 
   try {
-    const { data } = await Promise.race([
-      sb.auth.getSession(),
-      timeout
-    ]);
-
+    const { data } = await withTimeout(sb.auth.getSession(), 4000, "auth timeout");
     const user = data?.session?.user;
 
     if (user) {
-      statusEl.textContent = `Signed in`;
+      statusEl.textContent = "Signed in";
       window.CURRENT_UID = user.id;
     } else {
       statusEl.textContent = "Not signed in";
@@ -107,11 +88,22 @@ async function sendMagicLink(email) {
   if (error) throw error;
 }
 
-function wireAuthUI(sb) {
-  if (PAGE !== "more") return; // ✅ do nothing on main page
+async function verifyEmailCode(email, code) {
+  const token = String(code || "").trim();
+  const { data, error } = await sb.auth.verifyOtp({
+    email,
+    token,
+    type: "email",
+  });
+  if (error) throw error;
+  return data;
+}
 
+function wireAuthUI(sb) {
   const emailEl = document.getElementById("authEmail");
+  const codeEl  = document.getElementById("authCode");
   const sendBtn = document.getElementById("authSendLink");
+  const verBtn  = document.getElementById("authVerifyCode");
   const outBtn  = document.getElementById("authSignOut");
 
   if (!sendBtn || !outBtn) return;
@@ -120,12 +112,27 @@ function wireAuthUI(sb) {
     const email = (emailEl?.value || "").trim();
     if (!email) return alert("Enter email");
 
+    const { error } = await sb.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: location.origin + "/flat-rate-log/more.html" }
+    });
+    if (error) return alert("Send failed: " + error.message);
+
+    alert("Email sent. If the link doesn't sign you in, use the 6-digit code here.");
+  });
+
+  verBtn?.addEventListener("click", async () => {
+    const email = (emailEl?.value || "").trim();
+    const code  = (codeEl?.value || "").trim();
+    if (!email) return alert("Enter email");
+    if (!code) return alert("Enter the 6-digit code");
+
     try {
-      await sendMagicLink(email);
-      alert("Magic link sent. Open it on THIS device.");
+      await verifyEmailCode(email, code);
+      await initAuth();
+      alert("Signed in.");
     } catch (e) {
-      console.error("magic link error", e);
-      alert("Sign-in failed: " + (e?.message || e));
+      alert("Verify failed: " + (e?.message || e));
     }
   });
 
@@ -408,10 +415,12 @@ async function undoSoftDeleteLog(sb, id) {
 let LAST_DELETED = null;
 
 async function onDeleteClicked(btn, idOverride = null) {
-  const id =
+  const id = String(
     idOverride
-    || btn?.dataset?.delId
-    || btn?.getAttribute?.("data-del-id");
+    || btn?.dataset?.del
+    || btn?.getAttribute?.("data-del")
+    || ""
+  ).trim();
   if (!id) return;
 
   if (!confirm("Soft delete this entry?")) return;
@@ -1533,27 +1542,22 @@ document.addEventListener("click", (ev) => {
   const btn = ev.target?.closest?.("[data-edit-id]");
   if (!btn) return;
 
-  const idStr = btn.getAttribute("data-edit-id");
-  const id = Number(idStr);
-  if (!id || Number.isNaN(id)) return;
+  const id = (btn.getAttribute("data-edit-id") || "").trim();
+  if (!id) return;
 
-  // Prefer backend entries if you maintain them
-  const pool = Array.isArray(BACKEND_ENTRIES) ? BACKEND_ENTRIES : (Array.isArray(window.ENTRIES) ? window.ENTRIES : null);
-
-  // If you don't have a global entries list, fall back to BACKEND_ENTRIES only
-  const entry = (pool || BACKEND_ENTRIES || []).find(e => Number(e.id) === id);
+  const pool = (window.STATE?.entries) || [];
+  const entry = pool.find(e => String(e.id) === id);
   if (!entry) return;
 
   startEditEntry(entry);
 });
 
 document.addEventListener("click", async (ev) => {
-  const delBtn = ev.target?.closest?.("[data-del-id]");
+  const delBtn = ev.target?.closest?.("[data-del]");
   if (!delBtn) return;
 
-  const idStr = delBtn.getAttribute("data-del-id");
-  const id = Number(idStr);
-  if (!id || Number.isNaN(id)) return;
+  const id = (delBtn.getAttribute("data-del") || "").trim();
+  if (!id) return;
 
   await onDeleteClicked(delBtn, id);
 });
@@ -1845,7 +1849,7 @@ async function renderHistory(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del-id="${e.id}">Delete</button>
+                <button class="btn danger" data-del="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
@@ -1870,7 +1874,7 @@ async function renderHistory(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del-id="${e.id}">Delete</button>
+            <button class="btn danger" data-del="${e.id}">Delete</button>
           </div>
         </div>
       </div>
@@ -2332,7 +2336,7 @@ function renderList(entries, mode){
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
-    const deleteBtn = `<button class="btn danger" data-del-id="${e.id}">Delete</button>`;
+    const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
@@ -2879,7 +2883,7 @@ async function renderReview(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del-id="${e.id}">Delete</button>
+                <button class="btn danger" data-del="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
@@ -2904,7 +2908,7 @@ async function renderReview(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del-id="${e.id}">Delete</button>
+            <button class="btn danger" data-del="${e.id}">Delete</button>
           </div>
         </div>
       </div>`;
@@ -3007,7 +3011,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (window.sb) {
       await finalizeAuthFromUrl(window.sb);
-      if (PAGE === "more") wireAuthUI(window.sb);
+
+      // only wire auth UI if the elements exist
+      if (document.getElementById("authSendLink")) {
+        wireAuthUI(window.sb);
+      }
+
       await initAuth();
     }
 
