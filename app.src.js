@@ -45,20 +45,14 @@ async function initAuth() {
   const statusEl = document.getElementById("authStatus");
   if (!statusEl) return;
 
-  try {
-    const { data } = await sb.auth.getSession();
-    const user = data?.session?.user;
+  const { data: { session } } = await sb.auth.getSession();
 
-    if (user) {
-      statusEl.textContent = `Signed in as ${user.email}`;
-      window.CURRENT_UID = user.id;
-    } else {
-      statusEl.textContent = "Not signed in";
-      window.CURRENT_UID = null;
-    }
-  } catch (e) {
-    statusEl.textContent = "Not signed in";
+  if (session?.user) {
+    window.CURRENT_UID = session.user.id;
+    statusEl.textContent = "Signed in as " + (session.user.email || "User");
+  } else {
     window.CURRENT_UID = null;
+    statusEl.textContent = "Not signed in";
   }
 }
 
@@ -112,8 +106,16 @@ function wireAuthUI(sb) {
     await initAuth();
   });
 
-  sb.auth.onAuthStateChange(async () => {
-    await initAuth();
+  sb.auth.onAuthStateChange((event, session) => {
+    console.log("AUTH EVENT:", event);
+
+    if (session?.user) {
+      window.CURRENT_UID = session.user.id;
+    } else {
+      window.CURRENT_UID = null;
+    }
+
+    initAuth();
   });
 }
 
