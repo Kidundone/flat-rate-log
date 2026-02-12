@@ -32,6 +32,8 @@ window.sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    storage: window.localStorage,
+    lock: false,
   },
 });
 
