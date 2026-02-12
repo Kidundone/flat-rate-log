@@ -395,9 +395,7 @@ let LAST_DELETED = null;
 async function onDeleteClicked(btn, idOverride = null) {
   const id =
     idOverride
-    || btn?.dataset?.id
-    || btn?.dataset?.del
-    || btn?.getAttribute?.("data-del")
+    || btn?.dataset?.delId
     || btn?.getAttribute?.("data-del-id");
   if (!id) return;
 
@@ -1832,11 +1830,10 @@ async function renderHistory(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${e.id}">Delete</button>
+                <button class="btn danger" data-del-id="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
-        row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
         box.appendChild(row);
       }
     }
@@ -1858,12 +1855,11 @@ async function renderHistory(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${e.id}">Delete</button>
+            <button class="btn danger" data-del-id="${e.id}">Delete</button>
           </div>
         </div>
       </div>
     `;
-    row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
     box.appendChild(row);
   }
 }
@@ -2321,7 +2317,7 @@ function renderList(entries, mode){
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
-    const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
+    const deleteBtn = `<button class="btn danger" data-del-id="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
@@ -2342,7 +2338,6 @@ function renderList(entries, mode){
     `;
     const editBtnEl = row.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
-    row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
     if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhoto(e));
@@ -2869,11 +2864,10 @@ async function renderReview(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${e.id}">Delete</button>
+                <button class="btn danger" data-del-id="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
-        row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
         list.appendChild(row);
       }
     }
@@ -2895,11 +2889,10 @@ async function renderReview(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${e.id}">Delete</button>
+            <button class="btn danger" data-del-id="${e.id}">Delete</button>
           </div>
         </div>
       </div>`;
-    row.querySelector(`[data-del="${e.id}"]`)?.addEventListener("click", (ev) => handleDeleteEntry(e, ev));
     list.appendChild(row);
   }
 }
