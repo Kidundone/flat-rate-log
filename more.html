@@ -36,25 +36,24 @@
       </div>
     </section>
 
-    <section class="card" id="authCard">
+    <div class="card">
       <h3>Account</h3>
-      <div class="muted" id="authStatus">Checking sign-in…</div>
 
-      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-        <input id="authEmail" type="email" placeholder="you@email.com" style="flex:1; min-width:220px;" />
-        <button class="btn" id="authSendLink">Send Sign-in Link</button>
-        <button class="btn" id="authSignOut">Sign Out</button>
+      <input id="authEmail" type="email" placeholder="Email" class="input" />
+      <input id="authPassword" type="password" placeholder="Password" class="input" />
+
+      <div class="row" style="gap:10px; margin-top:10px;">
+        <button id="authSignUp" class="btn">Sign Up</button>
+        <button id="authSignIn" class="btn primary">Sign In</button>
       </div>
 
-      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-        <input id="authCode" type="text" inputmode="numeric" placeholder="6-digit code" style="flex:1; min-width:160px;" />
-        <button class="btn" id="authVerifyCode">Verify Code</button>
+      <div class="row" style="gap:10px; margin-top:10px;">
+        <button id="authReset" class="btn">Forgot Password</button>
+        <button id="authSignOut" class="btn danger">Sign Out</button>
       </div>
 
-      <div class="muted" style="margin-top:8px;">
-        Sign in on both phone + Mac to sync.
-      </div>
-    </section>
+      <div id="authStatus" class="muted" style="margin-top:10px;"></div>
+    </div>
 
     <section class="card">
       <div class="h">Payroll Compare (This Week)</div>

@@ -41,119 +41,80 @@ window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
-async function finalizeAuthFromUrl(sb) {
-  try {
-    const url = new URL(location.href);
-    const code = url.searchParams.get("code");
-    if (!code) return;
-    const { error } = await sb.auth.exchangeCodeForSession(code);
-    if (error) console.error("exchangeCodeForSession", error);
-    url.searchParams.delete("code");
-    history.replaceState({}, "", url.toString());
-  } catch (e) {
-    console.error("auth callback finalize failed", e);
-  }
-}
-
 async function initAuth() {
   const statusEl = document.getElementById("authStatus");
-
-  const setStatus = (txt) => {
-    if (statusEl) statusEl.textContent = txt;
-  };
-
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("auth timeout")), 4000)
-  );
+  if (!statusEl) return;
 
   try {
-    const { data } = await Promise.race([sb.auth.getSession(), timeout]);
+    const { data } = await sb.auth.getSession();
     const user = data?.session?.user;
 
     if (user) {
-      setStatus("Signed in");
+      statusEl.textContent = `Signed in as ${user.email}`;
       window.CURRENT_UID = user.id;
     } else {
-      setStatus("Not signed in");
+      statusEl.textContent = "Not signed in";
       window.CURRENT_UID = null;
     }
   } catch (e) {
-    console.warn("auth init failed", e);
-    setStatus("Not signed in");
+    statusEl.textContent = "Not signed in";
     window.CURRENT_UID = null;
   }
 }
 
-async function sendMagicLink(email) {
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: "https://kidundone.github.io/flat-rate-log/more.html"
-    }
-  });
-
-  if (error) throw error;
-}
-
-async function verifyEmailCode(email, code) {
-  const token = String(code || "").trim();
-  const { data, error } = await sb.auth.verifyOtp({
-    email,
-    token,
-    type: "email",
-  });
-  if (error) throw error;
-  return data;
-}
-
 function wireAuthUI(sb) {
   const emailEl = document.getElementById("authEmail");
-  const codeEl  = document.getElementById("authCode");
-  const sendBtn = document.getElementById("authSendLink");
-  const verBtn  = document.getElementById("authVerifyCode");
-  const outBtn  = document.getElementById("authSignOut");
+  const passEl  = document.getElementById("authPassword");
 
-  if (!sendBtn || !outBtn) return;
+  const signUpBtn = document.getElementById("authSignUp");
+  const signInBtn = document.getElementById("authSignIn");
+  const resetBtn  = document.getElementById("authReset");
+  const outBtn    = document.getElementById("authSignOut");
+  const statusEl  = document.getElementById("authStatus");
 
-  sendBtn.addEventListener("click", async () => {
-    if (sendBtn.dataset.busy === "1") return;
-    sendBtn.dataset.busy = "1";
-    sendBtn.disabled = true;
+  if (!statusEl) return;
 
-    const email = (emailEl?.value || "").trim();
-    try {
-      if (!email) return alert("Enter email");
-      await sendMagicLink(email);
-      alert("Magic link sent. Open it on THIS device.");
-    } catch (e) {
-      alert("Sign-in failed: " + (e?.message || e));
-    } finally {
-      sendBtn.disabled = false;
-      sendBtn.dataset.busy = "0";
-    }
+  signUpBtn?.addEventListener("click", async () => {
+    const email = emailEl.value.trim();
+    const password = passEl.value.trim();
+    if (!email || !password) return alert("Email and password required");
+
+    const { error } = await sb.auth.signUp({ email, password });
+    if (error) return alert(error.message);
+
+    alert("Account created. You can now sign in.");
   });
 
-  verBtn?.addEventListener("click", async () => {
-    const email = (emailEl?.value || "").trim();
-    const code  = (codeEl?.value || "").trim();
-    if (!email) return alert("Enter email");
-    if (!code) return alert("Enter the 6-digit code");
+  signInBtn?.addEventListener("click", async () => {
+    const email = emailEl.value.trim();
+    const password = passEl.value.trim();
+    if (!email || !password) return alert("Email and password required");
 
-    try {
-      await verifyEmailCode(email, code);
-      await initAuth();
-      alert("Signed in.");
-    } catch (e) {
-      alert("Verify failed: " + (e?.message || e));
-    }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return alert(error.message);
+
+    await initAuth();
+    await safeLoadEntries();
   });
 
-  outBtn.addEventListener("click", async () => {
+  resetBtn?.addEventListener("click", async () => {
+    const email = emailEl.value.trim();
+    if (!email) return alert("Enter your email");
+
+    const { error } = await sb.auth.resetPasswordForEmail(email);
+    if (error) return alert(error.message);
+
+    alert("Password reset email sent.");
+  });
+
+  outBtn?.addEventListener("click", async () => {
     await sb.auth.signOut();
     await initAuth();
   });
 
-  sb.auth.onAuthStateChange(() => initAuth());
+  sb.auth.onAuthStateChange(async () => {
+    await initAuth();
+  });
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -3022,13 +2983,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (bootEmpId) bootLoaded = true;
 
     if (window.sb) {
-      await finalizeAuthFromUrl(window.sb);
-
-      // only wire auth UI if the elements exist
-      if (document.getElementById("authSendLink")) {
-        wireAuthUI(window.sb);
-      }
-
+      wireAuthUI(window.sb);
       await initAuth();
     }
 
