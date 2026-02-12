@@ -58,6 +58,17 @@ async function finalizeAuthFromUrl(sb) {
 async function initAuth() {
   const statusEl = document.getElementById("authStatus");
 
+  // ✅ If we're not on more.html (or block missing), don't crash the whole app.
+  if (!statusEl) {
+    try {
+      const { data } = await sb.auth.getSession();
+      window.CURRENT_UID = data?.session?.user?.id || null;
+    } catch {
+      window.CURRENT_UID = null;
+    }
+    return;
+  }
+
   // hard timeout so UI never freezes
   const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error("auth timeout")), 4000)
@@ -97,6 +108,8 @@ async function sendMagicLink(email) {
 }
 
 function wireAuthUI(sb) {
+  if (PAGE !== "more") return; // ✅ do nothing on main page
+
   const emailEl = document.getElementById("authEmail");
   const sendBtn = document.getElementById("authSendLink");
   const outBtn  = document.getElementById("authSignOut");
@@ -111,6 +124,7 @@ function wireAuthUI(sb) {
       await sendMagicLink(email);
       alert("Magic link sent. Open it on THIS device.");
     } catch (e) {
+      console.error("magic link error", e);
       alert("Sign-in failed: " + (e?.message || e));
     }
   });
@@ -120,9 +134,7 @@ function wireAuthUI(sb) {
     await initAuth();
   });
 
-  sb.auth.onAuthStateChange(async () => {
-    await initAuth();
-  });
+  sb.auth.onAuthStateChange(() => initAuth());
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -303,10 +315,13 @@ async function apiCreateLog(payload) {
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
+  const uid = await requireUserId(sb);
+
   // 1) Create row first (no photo_path yet)
   const { data: created, error: e1 } = await sb
     .from("work_logs")
     .insert([{
+      user_id: uid,
       employee_number: empId,
       work_date: payload.work_date,
       category: payload.category || "work",
@@ -2992,7 +3007,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (window.sb) {
       await finalizeAuthFromUrl(window.sb);
-      wireAuthUI(window.sb);
+      if (PAGE === "more") wireAuthUI(window.sb);
       await initAuth();
     }
 
