@@ -57,22 +57,29 @@ async function finalizeAuthFromUrl(sb) {
 
 async function initAuth() {
   const statusEl = document.getElementById("authStatus");
-  if (!statusEl) return; // <-- CRITICAL: main page has no authStatus
+
+  const setStatus = (txt) => {
+    if (statusEl) statusEl.textContent = txt;
+  };
+
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("auth timeout")), 4000)
+  );
 
   try {
-    const { data } = await withTimeout(sb.auth.getSession(), 4000, "auth timeout");
+    const { data } = await Promise.race([sb.auth.getSession(), timeout]);
     const user = data?.session?.user;
 
     if (user) {
-      statusEl.textContent = "Signed in";
+      setStatus("Signed in");
       window.CURRENT_UID = user.id;
     } else {
-      statusEl.textContent = "Not signed in";
+      setStatus("Not signed in");
       window.CURRENT_UID = null;
     }
   } catch (e) {
     console.warn("auth init failed", e);
-    statusEl.textContent = "Not signed in";
+    setStatus("Not signed in");
     window.CURRENT_UID = null;
   }
 }
@@ -109,16 +116,21 @@ function wireAuthUI(sb) {
   if (!sendBtn || !outBtn) return;
 
   sendBtn.addEventListener("click", async () => {
+    if (sendBtn.dataset.busy === "1") return;
+    sendBtn.dataset.busy = "1";
+    sendBtn.disabled = true;
+
     const email = (emailEl?.value || "").trim();
-    if (!email) return alert("Enter email");
-
-    const { error } = await sb.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: location.origin + "/flat-rate-log/more.html" }
-    });
-    if (error) return alert("Send failed: " + error.message);
-
-    alert("Email sent. If the link doesn't sign you in, use the 6-digit code here.");
+    try {
+      if (!email) return alert("Enter email");
+      await sendMagicLink(email);
+      alert("Magic link sent. Open it on THIS device.");
+    } catch (e) {
+      alert("Sign-in failed: " + (e?.message || e));
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.dataset.busy = "0";
+    }
   });
 
   verBtn?.addEventListener("click", async () => {
