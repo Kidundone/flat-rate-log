@@ -161,7 +161,13 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
-  runOCRAndClassify({ sb, logId, file }).catch(() => {});
+  try {
+    const publicUrl = await getProofSignedUrl(sb, path);
+    const dealer = await detectDealerFromPhoto(publicUrl);
+    await sb.from("work_logs").update({ dealer }).eq("id", logId);
+  } catch (ocrErr) {
+    console.error("Dealer OCR failed", ocrErr);
+  }
   return path;
 }
 
@@ -610,6 +616,30 @@ function detectDealerFromText(text) {
   if (t.includes("AUDI")) return "Audi";
   if (t.includes("HONDA")) return "Honda";
   if (t.includes("TOYOTA")) return "Toyota";
+
+  return "Unknown";
+}
+
+async function detectDealerFromPhoto(publicUrl) {
+  if (!publicUrl) return "Unknown";
+
+  const tesseract = globalThis.Tesseract || window.Tesseract;
+  if (!tesseract?.createWorker) return "Unknown";
+
+  const created = await tesseract.createWorker("eng");
+  const worker = created?.data || created;
+  const { data = {} } = await worker.recognize(publicUrl);
+  await worker.terminate();
+
+  const text = String(data.text || "").toUpperCase();
+
+  // Fast brand detection
+  if (text.includes("FLOW MOTORS WINSTON")) return "Flow Winston";
+  if (text.includes("FLOW MOTORS GREENSBORO")) return "Flow Greensboro";
+  if (text.includes("ACURA")) return "Acura";
+  if (text.includes("VOLKSWAGEN") || text.includes("VW")) return "Volkswagen";
+  if (text.includes("AUDI")) return "Audi";
+  if (text.includes("SUBARU")) return "Subaru";
 
   return "Unknown";
 }
