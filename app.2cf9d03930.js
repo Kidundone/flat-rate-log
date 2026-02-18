@@ -162,8 +162,8 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
   try {
-    const publicUrl = await getProofSignedUrl(sb, path);
-    const dealer = await detectDealerFromPhoto(publicUrl);
+    const signedUrl = await getProofSignedUrl(sb, path);
+    const dealer = await detectDealerFromPhoto(signedUrl);
     await sb.from("work_logs").update({ dealer }).eq("id", logId);
   } catch (ocrErr) {
     console.error("Dealer OCR failed", ocrErr);
@@ -620,15 +620,15 @@ function detectDealerFromText(text) {
   return "Unknown";
 }
 
-async function detectDealerFromPhoto(publicUrl) {
-  if (!publicUrl) return "Unknown";
+async function detectDealerFromPhoto(signedUrl) {
+  if (!signedUrl) return "Unknown";
 
   const tesseract = globalThis.Tesseract || window.Tesseract;
   if (!tesseract?.createWorker) return "Unknown";
 
   const created = await tesseract.createWorker("eng");
   const worker = created?.data || created;
-  const { data = {} } = await worker.recognize(publicUrl);
+  const { data = {} } = await worker.recognize(signedUrl);
   await worker.terminate();
 
   const text = String(data.text || "").toUpperCase();
@@ -643,6 +643,48 @@ async function detectDealerFromPhoto(publicUrl) {
 
   return "Unknown";
 }
+
+async function backfillDealersFromPhotos(logs) {
+  let sourceLogs = Array.isArray(logs) ? logs : null;
+  if (!sourceLogs) {
+    const empId = getEmpId();
+    if (!empId) throw new Error("Employee # required");
+    sourceLogs = await apiListLogs(empId);
+  }
+
+  const targetLogs = sourceLogs.filter((log) => log?.id != null && !!log?.photo_path);
+  let updated = 0;
+
+  for (const log of targetLogs) {
+    try {
+      const { data } = await sb.storage
+        .from("proofs")
+        .createSignedUrl(log.photo_path, 60);
+
+      if (!data?.signedUrl) continue;
+
+      const dealer = await detectDealerFromPhoto(data.signedUrl);
+
+      await sb
+        .from("work_logs")
+        .update({ dealer })
+        .eq("id", log.id);
+
+      updated += 1;
+      console.log("Updated:", log.id, dealer);
+    } catch (e) {
+      console.error("Failed:", log.id, e);
+    }
+
+    await new Promise(r => setTimeout(r, 300)); // small throttle
+  }
+
+  await safeLoadEntries();
+  return { total: targetLogs.length, updated };
+}
+
+window.__FR = window.__FR || {};
+window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
 
 
 function normalizeEntryForApi(entry) {
