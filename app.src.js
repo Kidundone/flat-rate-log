@@ -575,6 +575,9 @@ const STOCK_PREFIX_RULES = [
   { prefix: "VXS", brand: "Volkswagen", type: "Dealer Trade - New" },
   { prefix: "DT", brand: "Unknown", type: "Dealer Trade" },
   { prefix: "P", brand: "Unknown", type: "Curb Purchase" },
+  { prefix: "AXS", brand: "Acura", type: "Dealer Trade - New" },
+  { prefix: "BXS", brand: "Audi", type: "Dealer Trade - New" },
+  { prefix: "SXS", brand: "Subaru", type: "Dealer Trade - New" },
 
   { prefix: "V", brand: "Volkswagen", type: "New Car" },
   { prefix: "A", brand: "Acura", type: "New Car" },
