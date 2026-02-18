@@ -15,29 +15,20 @@ console.log("__FR_MARKER_20260121");
 
 const USE_BACKEND = true;
 // --- Supabase ---
-const SUPABASE_URL = window.__SUPABASE_CONFIG__?.url;
-const SUPABASE_ANON_KEY = window.__SUPABASE_CONFIG__?.anonKey;
-
-const createClient = (globalThis.supabase && globalThis.supabase.createClient)
-  ? globalThis.supabase.createClient
-  : (globalThis.createClient || null);
-
-if (!createClient) {
-  console.error("Supabase createClient not found. Check the supabase-js script tag.");
-}
-
-window.sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const sb = supabase.createClient(
+  window.__SUPABASE_CONFIG__.url,
+  window.__SUPABASE_CONFIG__.anonKey,
+  {
   auth: {
-    flowType: "pkce",
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: window.localStorage,
-    lock: false,
+    storage: window.localStorage,   // forces simple storage
+    lock: false                     // disables navigator lock
   },
 });
 
-const sb = window.sb;
+window.sb = sb;
 window.__FR = window.__FR || {};
 window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
