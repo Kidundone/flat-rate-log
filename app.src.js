@@ -99,7 +99,7 @@ function wireAuthUI(sb) {
     await initAuth();
   });
 
-  sb.auth.onAuthStateChange((event, session) => {
+  sb.auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
 
     if (session?.user) {
@@ -108,7 +108,16 @@ function wireAuthUI(sb) {
       window.CURRENT_UID = null;
     }
 
-    initAuth();
+    await initAuth();
+
+    if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+      try {
+        await safeLoadEntries();
+        console.log("Entries reloaded after auth.");
+      } catch (e) {
+        console.error("Reload failed:", e);
+      }
+    }
   });
 }
 
