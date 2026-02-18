@@ -161,7 +161,7 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
-  let resolvedDealer = "Unknown";
+  let resolvedDealer = "UNKNOWN";
   try {
     resolvedDealer = await resolveDealerForLog({
       ro_number: roNumber || null,
@@ -272,7 +272,7 @@ async function saveEditedLog(logId, patch) {
     });
     const newPath = uploaded?.path || null;
     patch.photo_path = newPath;
-    patch.dealer = uploaded?.dealer || patch.dealer || "Unknown";
+    patch.dealer = uploaded?.dealer || patch.dealer || "UNKNOWN";
   }
 
   const runUpdate = (body) => sb
@@ -566,103 +566,118 @@ let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
 
-const DEALER_PREFIX_MAP = Object.freeze({
-  // Common RO prefix normalizations. Add/override with your dealership-specific codes.
-  ACU: "Acura",
-  AUD: "Audi",
-  BMW: "BMW",
-  BUK: "Buick",
-  CAD: "Cadillac",
-  CHEV: "Chevrolet",
-  CHR: "Chrysler",
-  CHRY: "Chrysler",
-  DOD: "Dodge",
-  FOR: "Ford",
-  FRD: "Ford",
-  GMC: "GMC",
-  HND: "Honda",
-  HON: "Honda",
-  HYU: "Hyundai",
-  INF: "Infiniti",
-  JEEP: "Jeep",
-  JEP: "Jeep",
-  KIA: "Kia",
-  LAND: "Land Rover",
-  LEX: "Lexus",
-  LRO: "Land Rover",
-  MAZ: "Mazda",
-  MB: "Mercedes-Benz",
-  MER: "Mercedes-Benz",
-  MINI: "MINI",
-  NIS: "Nissan",
-  POR: "Porsche",
-  RAM: "Ram",
-  SUB: "Subaru",
-  TES: "Tesla",
-  TOY: "Toyota",
-  VLV: "Volvo",
-  VW: "Volkswagen",
-});
+const STOCK_PREFIX_RULES = [
+  { prefix: "SLV", brand: "Volkswagen", type: "Service Loaner" },
+  { prefix: "SLA", brand: "Acura", type: "Service Loaner" },
+  { prefix: "SLS", brand: "Subaru", type: "Service Loaner" },
+  { prefix: "SLB", brand: "Audi", type: "Service Loaner" },
 
-function detectDealer(roNumber) {
-  if (!roNumber) return "Unknown";
+  { prefix: "VXS", brand: "Volkswagen", type: "Dealer Trade - New" },
+  { prefix: "DT", brand: "Unknown", type: "Dealer Trade" },
+  { prefix: "P", brand: "Unknown", type: "Curb Purchase" },
 
-  const clean = String(roNumber).trim().toUpperCase();
-  if (/^\d{5,}$/.test(clean)) return "Numeric-Stock";
+  { prefix: "V", brand: "Volkswagen", type: "New Car" },
+  { prefix: "A", brand: "Acura", type: "New Car" },
+  { prefix: "B", brand: "Audi", type: "New Car" },
+  { prefix: "S", brand: "Subaru", type: "New Car" },
+];
 
-  for (const prefix of Object.keys(DEALER_PREFIX_MAP).sort((a, b) => b.length - a.length)) {
-    if (clean.startsWith(prefix)) {
-      return DEALER_PREFIX_MAP[prefix];
+function classifyStock(stockNumber) {
+  if (!stockNumber) return { brand: "Unknown", type: "Unknown" };
+
+  const clean = stockNumber.toUpperCase().trim();
+
+  const isReused = clean.endsWith("A");
+  const baseStock = isReused ? clean.slice(0, -1) : clean;
+
+  for (const rule of STOCK_PREFIX_RULES.sort((a, b) => b.prefix.length - a.prefix.length)) {
+    if (baseStock.startsWith(rule.prefix)) {
+      return {
+        brand: rule.brand,
+        type: isReused
+          ? rule.type + " (Trade-In)"
+          : rule.type,
+        reused: isReused,
+        prefix: rule.prefix
+      };
     }
   }
 
-  const rawPrefix = clean.match(/^[A-Z]+/)?.[0];
-  return rawPrefix || "Other";
+  return {
+    brand: "Unknown",
+    type: isReused ? "Trade-In" : "Unknown",
+    reused: isReused
+  };
 }
 
-function detectDealerFromText(text) {
-  if (!text) return "Unknown";
+const BRAND_KEYWORDS = [
+  "ACURA",
+  "AUDI",
+  "BMW",
+  "BUICK",
+  "CADILLAC",
+  "CHEVROLET",
+  "CHRYSLER",
+  "DODGE",
+  "FORD",
+  "GMC",
+  "HONDA",
+  "HYUNDAI",
+  "INFINITI",
+  "JEEP",
+  "KIA",
+  "LAND ROVER",
+  "LEXUS",
+  "MAZDA",
+  "MERCEDES",
+  "MINI",
+  "NISSAN",
+  "PORSCHE",
+  "RAM",
+  "SUBARU",
+  "TESLA",
+  "TOYOTA",
+  "VOLKSWAGEN",
+  "VOLVO",
+];
 
-  const t = text.toUpperCase();
+function detectBrand({ ro = "", stock = "", ocrText = "" }) {
+  const classified = classifyStock(stock || ro);
+  if (classified.brand && String(classified.brand).toUpperCase() !== "UNKNOWN") {
+    return classified.brand;
+  }
 
-  if (t.includes("FLOW MOTORS WINSTON SALEM")) return "Flow Winston";
-  if (t.includes("FLOW MOTORS OF WINSTON-SALEM")) return "Flow Winston Service";
-
-  if (t.includes("ACURA")) return "Acura";
-  if (t.includes("JEEP")) return "Jeep";
-  if (t.includes("SUBARU")) return "Subaru";
-  if (t.includes("VOLKSWAGEN") || t.includes("VW")) return "Volkswagen";
-  if (t.includes("AUDI")) return "Audi";
-  if (t.includes("HONDA")) return "Honda";
-  if (t.includes("TOYOTA")) return "Toyota";
+  const text = String(ocrText || "").toUpperCase();
+  for (const brand of BRAND_KEYWORDS) {
+    if (text.includes(brand)) return brand;
+  }
 
   return "Unknown";
 }
 
-async function detectDealerFromPhoto(signedUrl) {
-  if (!signedUrl) return "Unknown";
+function detectDealer(roNumber) {
+  return detectBrand({ ro: String(roNumber || "").trim().toUpperCase() });
+}
 
-  const tesseract = globalThis.Tesseract || window.Tesseract;
-  if (!tesseract?.createWorker) return "Unknown";
+function detectDealerFromText(text) {
+  return detectBrand({ ocrText: text });
+}
+
+async function detectBrandFromPhoto(signedUrl, log) {
+  const tesseract = window.Tesseract;
+  if (!tesseract?.createWorker) return "UNKNOWN";
 
   const created = await tesseract.createWorker("eng");
   const worker = created?.data || created;
-  try {
-    const { data = {} } = await worker.recognize(signedUrl);
-    const text = String(data.text || "").toUpperCase();
 
-    // Fast brand detection
-    if (text.includes("FLOW MOTORS WINSTON")) return "Flow Winston";
-    if (text.includes("FLOW MOTORS GREENSBORO")) return "Flow Greensboro";
-    if (text.includes("ACURA")) return "Acura";
-    if (text.includes("VOLKSWAGEN") || text.includes("VW")) return "Volkswagen";
-    if (text.includes("AUDI")) return "Audi";
-    if (text.includes("SUBARU")) return "Subaru";
+  const { data } = await worker.recognize(signedUrl);
+  await worker.terminate();
 
-    return "Unknown";
-  } finally {
-    await worker.terminate().catch(() => {});
-  }
+  return detectBrand({
+    ro: log.ro_number,
+    stock: log.stock_number,
+    ocrText: data.text
+  });
 }
 
 async function resolveDealerForLog(log) {
@@ -671,7 +686,7 @@ async function resolveDealerForLog(log) {
   // 1. Try RO prefix first (fast)
   let dealer = detectDealer(roNumber);
 
-  if (dealer && dealer !== "Unknown" && dealer !== "Other") {
+  if (dealer && String(dealer).toUpperCase() !== "UNKNOWN") {
     return dealer;
   }
 
@@ -682,17 +697,17 @@ async function resolveDealerForLog(log) {
         .from("proofs")
         .createSignedUrl(log.photo_path, 60);
 
-      if (!data?.signedUrl) return "Unknown";
+      if (!data?.signedUrl) return "UNKNOWN";
 
-      dealer = await detectDealerFromPhoto(data.signedUrl);
-      return dealer || "Unknown";
+      dealer = await detectBrandFromPhoto(data.signedUrl, log);
+      return dealer || "UNKNOWN";
     } catch (e) {
       console.error("OCR failed:", e);
-      return "Unknown";
+      return "UNKNOWN";
     }
   }
 
-  return "Unknown";
+  return "UNKNOWN";
 }
 
 async function backfillDealersFromPhotos(logs) {
@@ -704,7 +719,7 @@ async function backfillDealersFromPhotos(logs) {
   }
 
   const targetLogs = sourceLogs.filter(
-    (log) => log?.id && (!log.dealer || log.dealer === "Unknown")
+    (log) => log?.id && (!log.dealer || String(log.dealer).toUpperCase() === "UNKNOWN")
   );
   let updated = 0;
 
@@ -737,7 +752,7 @@ window.__FR.resolveDealerForLog = resolveDealerForLog;
 
 function normalizeEntryForApi(entry) {
   const roNumber = entry.ref || entry.ro || entry.ro_number || null;
-  const dealer = entry.dealer || "Unknown";
+  const dealer = entry.dealer || "UNKNOWN";
   // Map your existing entry object into the backend schema.
   // Edit these mappings to match your real fields.
   return {
@@ -1471,7 +1486,7 @@ function applyDealerFilter(entries) {
   const select = document.getElementById("dealerFilter");
   const selected = select?.value || "all";
   if (selected === "all") return entries;
-  return (entries || []).filter((e) => (e?.dealer || "Unknown") === selected);
+  return (entries || []).filter((e) => (e?.dealer || "UNKNOWN") === selected);
 }
 
 function weekdayLabel(i){
@@ -1785,15 +1800,35 @@ function groupByDay(entries){
   return keys.map(k => ({ dayKey: k, entries: map.get(k) }));
 }
 
-function groupByDealer(entries){
-  const map = new Map();
-  for (const e of entries) {
-    const k = e.dealer || "Unknown";
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(e);
+function groupAndSortByBrand(logs) {
+  const grouped = {};
+
+  for (const log of logs) {
+    const brand = log.brand || "UNKNOWN";
+
+    if (!grouped[brand]) grouped[brand] = [];
+    grouped[brand].push(log);
   }
-  const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
-  return keys.map(k => ({ dealer: k, entries: map.get(k) }));
+
+  for (const brand in grouped) {
+    grouped[brand].sort((a, b) => {
+      const aNum = parseInt(a.ro_number?.replace(/\D/g, "")) || 0;
+      const bNum = parseInt(b.ro_number?.replace(/\D/g, "")) || 0;
+      return aNum - bNum;
+    });
+  }
+
+  return grouped;
+}
+
+function groupByDealer(entries){
+  const grouped = groupAndSortByBrand((entries || []).map((e) => ({
+    ...e,
+    brand: e.brand || e.dealer || "UNKNOWN",
+    ro_number: e.ro_number || e.ro || e.ref || "",
+  })));
+  const keys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+  return keys.map((k) => ({ dealer: k, entries: grouped[k] || [] }));
 }
 
 function setEditingEntry(entry) {
@@ -2094,7 +2129,7 @@ async function handleSave(ev) {
       refType: currentRefType,
       ref,
       ro: ref,
-      dealer: baseEntry.dealer || "Unknown",
+      dealer: baseEntry.dealer || "UNKNOWN",
       vin8,
       type: typeName,
       typeText: typeName,
