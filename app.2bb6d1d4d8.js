@@ -161,6 +161,7 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
+  runOCRAndClassify({ sb, logId, file }).catch(() => {});
   return path;
 }
 
@@ -212,6 +213,53 @@ async function attachPhotoToLog({ sb, logId, photoPath }) {
   return data;
 }
 
+function isMissingColumnError(err, columnName) {
+  const msg = `${err?.message || ""} ${err?.details || ""} ${err?.hint || ""}`.toLowerCase();
+  return msg.includes(String(columnName || "").toLowerCase())
+    && (msg.includes("column") || msg.includes("does not exist") || msg.includes("schema cache"));
+}
+
+function isDealerColumnMissingError(err) {
+  return isMissingColumnError(err, "dealer");
+}
+
+async function updateWorkLogWithFallback(sbClient, logId, patch) {
+  const body = { ...(patch || {}) };
+  while (Object.keys(body).length > 0) {
+    const { error } = await sbClient
+      .from("work_logs")
+      .update(body)
+      .eq("id", logId);
+
+    if (!error) return true;
+    const missingField = Object.keys(body).find((k) => isMissingColumnError(error, k));
+    if (!missingField) throw error;
+    delete body[missingField];
+  }
+  return false;
+}
+
+async function runOCRAndClassify({ sb, logId, file }) {
+  if (!file || logId == null) return null;
+
+  const tesseract = globalThis.Tesseract || window.Tesseract;
+  if (!tesseract?.recognize) return null;
+
+  try {
+    const { data: { text = "" } = {} } = await tesseract.recognize(file, "eng");
+    const dealer = detectDealerFromText(text);
+    await updateWorkLogWithFallback(sb, logId, {
+      extracted_text: text || null,
+      dealer,
+      updated_at: new Date().toISOString(),
+    });
+    return { text, dealer };
+  } catch (err) {
+    console.error("OCR failed", err);
+    return null;
+  }
+}
+
 async function saveEditedLog(logId, patch) {
   const empId = getEmpId();
   const file = getSelectedPhotoFile();
@@ -220,12 +268,18 @@ async function saveEditedLog(logId, patch) {
     patch.photo_path = newPath;
   }
 
-  const { data, error } = await sb
+  const runUpdate = (body) => sb
     .from("work_logs")
-    .update(patch)
+    .update(body)
     .eq("id", logId)
     .select("id, photo_path")
     .maybeSingle();
+
+  let { data, error } = await runUpdate(patch);
+  if (error && Object.prototype.hasOwnProperty.call(patch, "dealer") && isDealerColumnMissingError(error)) {
+    const { dealer: _dealer, ...patchWithoutDealer } = patch;
+    ({ data, error } = await runUpdate(patchWithoutDealer));
+  }
 
   if (error) throw error;
 
@@ -273,6 +327,7 @@ function mapEntryToRow(payload, userId) {
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
+    dealer: payload.dealer || null,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -301,25 +356,37 @@ async function apiCreateLog(payload) {
 
   const uid = await requireUserId(sb);
 
+  const insertRow = {
+    user_id: uid,
+    employee_number: empId,
+    work_date: payload.work_date,
+    category: payload.category || "work",
+    ro_number: payload.ro_number || null,
+    dealer: payload.dealer || null,
+    description: payload.description || null,
+    flat_hours: Number(payload.flat_hours || 0),
+    cash_amount: Number(payload.cash_amount || 0),
+    location: payload.location || null,
+    vin8: payload.vin8 || null,
+    is_deleted: false,
+    photo_path: null,
+  };
+
   // 1) Create row first (no photo_path yet)
-  const { data: created, error: e1 } = await sb
+  let { data: created, error: e1 } = await sb
     .from("work_logs")
-    .insert([{
-      user_id: uid,
-      employee_number: empId,
-      work_date: payload.work_date,
-      category: payload.category || "work",
-      ro_number: payload.ro_number || null,
-      description: payload.description || null,
-      flat_hours: Number(payload.flat_hours || 0),
-      cash_amount: Number(payload.cash_amount || 0),
-      location: payload.location || null,
-      vin8: payload.vin8 || null,
-      is_deleted: false,
-      photo_path: null,
-    }])
+    .insert([insertRow])
     .select("id")
     .maybeSingle();
+
+  if (e1 && isDealerColumnMissingError(e1)) {
+    const { dealer: _dealer, ...insertWithoutDealer } = insertRow;
+    ({ data: created, error: e1 } = await sb
+      .from("work_logs")
+      .insert([insertWithoutDealer])
+      .select("id")
+      .maybeSingle());
+  }
 
   if (e1) throw e1;
   const createdRow = created ?? null;
@@ -335,25 +402,40 @@ async function apiUpdateLog(id, payload) {
   const uid = await requireUserId(sb);
   if (!uid) return null;
 
+  const updateFields = {
+    work_date: payload.work_date,
+    category: payload.category || "work",
+    ro_number: payload.ro_number || null,
+    dealer: payload.dealer || null,
+    description: payload.description || null,
+    flat_hours: Number(payload.flat_hours || 0),
+    cash_amount: Number(payload.cash_amount || 0),
+    location: payload.location || null,
+    vin8: payload.vin8 || null,
+    updated_at: new Date().toISOString(),
+  };
+
   // Update fields first
-  const { data: updated, error: e1 } = await sb
+  let { data: updated, error: e1 } = await sb
     .from("work_logs")
-    .update({
-      work_date: payload.work_date,
-      category: payload.category || "work",
-      ro_number: payload.ro_number || null,
-      description: payload.description || null,
-      flat_hours: Number(payload.flat_hours || 0),
-      cash_amount: Number(payload.cash_amount || 0),
-      location: payload.location || null,
-      vin8: payload.vin8 || null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateFields)
     .eq("id", id)
     .eq("user_id", uid)
     .eq("employee_number", empId)
     .select("*")
     .limit(1);
+
+  if (e1 && isDealerColumnMissingError(e1)) {
+    const { dealer: _dealer, ...updateWithoutDealer } = updateFields;
+    ({ data: updated, error: e1 } = await sb
+      .from("work_logs")
+      .update(updateWithoutDealer)
+      .eq("id", id)
+      .eq("user_id", uid)
+      .eq("employee_number", empId)
+      .select("*")
+      .limit(1));
+  }
 
   if (e1) throw e1;
   const updatedRow = updated?.[0] ?? null;
@@ -460,14 +542,88 @@ let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
 
+const DEALER_PREFIX_MAP = Object.freeze({
+  // Common RO prefix normalizations. Add/override with your dealership-specific codes.
+  ACU: "Acura",
+  AUD: "Audi",
+  BMW: "BMW",
+  BUK: "Buick",
+  CAD: "Cadillac",
+  CHEV: "Chevrolet",
+  CHR: "Chrysler",
+  CHRY: "Chrysler",
+  DOD: "Dodge",
+  FOR: "Ford",
+  FRD: "Ford",
+  GMC: "GMC",
+  HND: "Honda",
+  HON: "Honda",
+  HYU: "Hyundai",
+  INF: "Infiniti",
+  JEEP: "Jeep",
+  JEP: "Jeep",
+  KIA: "Kia",
+  LAND: "Land Rover",
+  LEX: "Lexus",
+  LRO: "Land Rover",
+  MAZ: "Mazda",
+  MB: "Mercedes-Benz",
+  MER: "Mercedes-Benz",
+  MINI: "MINI",
+  NIS: "Nissan",
+  POR: "Porsche",
+  RAM: "Ram",
+  SUB: "Subaru",
+  TES: "Tesla",
+  TOY: "Toyota",
+  VLV: "Volvo",
+  VW: "Volkswagen",
+});
+
+function detectDealer(roNumber) {
+  if (!roNumber) return "Unknown";
+
+  const clean = String(roNumber).trim().toUpperCase();
+
+  for (const prefix of Object.keys(DEALER_PREFIX_MAP).sort((a, b) => b.length - a.length)) {
+    if (clean.startsWith(prefix)) {
+      return DEALER_PREFIX_MAP[prefix];
+    }
+  }
+
+  const rawPrefix = clean.match(/^[A-Z]+/)?.[0];
+  return rawPrefix || "Other";
+}
+
+function detectDealerFromText(text) {
+  if (!text) return "Unknown";
+
+  const t = text.toUpperCase();
+
+  if (t.includes("FLOW MOTORS WINSTON SALEM")) return "Flow Winston";
+  if (t.includes("FLOW MOTORS OF WINSTON-SALEM")) return "Flow Winston Service";
+
+  if (t.includes("ACURA")) return "Acura";
+  if (t.includes("JEEP")) return "Jeep";
+  if (t.includes("SUBARU")) return "Subaru";
+  if (t.includes("VOLKSWAGEN") || t.includes("VW")) return "Volkswagen";
+  if (t.includes("AUDI")) return "Audi";
+  if (t.includes("HONDA")) return "Honda";
+  if (t.includes("TOYOTA")) return "Toyota";
+
+  return "Unknown";
+}
+
 
 function normalizeEntryForApi(entry) {
+  const roNumber = entry.ref || entry.ro || entry.ro_number || null;
   // Map your existing entry object into the backend schema.
   // Edit these mappings to match your real fields.
   return {
     work_date: entry.dayKey || entry.date || entry.work_date || (entry.createdAt ? dayKeyFromISO(entry.createdAt) : null), // MUST be "YYYY-MM-DD"
     category: entry.typeText || entry.type || entry.category || "work",
-    ro_number: entry.ref || entry.ro || entry.ro_number || null,
+    ro_number: roNumber,
+    dealer: entry.dealer || detectDealer(roNumber),
     description: entry.notes || entry.desc || entry.description || null,
     flat_hours: Number(entry.hours || entry.flat || entry.flat_hours || 0),
     cash_amount: Number(entry.earnings || entry.cash || entry.cash_amount || 0),
@@ -487,6 +643,7 @@ function normalizeSupabaseLog(r) {
     // UI expects these names (based on your form)
     ref: r.ro_number ?? "",
     ro_number: r.ro_number ?? "",
+    dealer: r.dealer ?? null,
 
     typeText: r.category ?? "",
     category: r.category ?? "",
@@ -527,6 +684,7 @@ function mapServerLogToEntry(r) {
     refType: "RO",
     ref: r.ro_number || "",
     ro: r.ro_number || "",
+    dealer: r.dealer || detectDealer(r.ro_number || ""),
     vin8: r.vin8 || "",
     type: r.category || "work",
     typeText: r.category || "work",
@@ -1435,6 +1593,35 @@ function matchSearch(e, q){
   ].some(v => String(v||"").toLowerCase().includes(s));
 }
 
+function entryRoValue(e) {
+  return String(e?.ro || e?.ref || e?.ro_number || "").trim();
+}
+
+function parseRoNumericSuffix(roValue) {
+  const numericPart = String(roValue || "").replace(/^\D+/, "");
+  if (!numericPart) return null;
+  const n = Number.parseInt(numericPart, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function compareEntriesByRo(a, b) {
+  const aRo = entryRoValue(a);
+  const bRo = entryRoValue(b);
+  const aNum = parseRoNumericSuffix(aRo);
+  const bNum = parseRoNumericSuffix(bRo);
+
+  if (aNum != null && bNum != null && aNum !== bNum) return aNum - bNum;
+
+  const lex = aRo.localeCompare(bRo, undefined, { numeric: true, sensitivity: "base" });
+  if (lex !== 0) return lex;
+
+  return (a.createdAt || "").localeCompare(b.createdAt || "");
+}
+
+function sortEntriesByRo(entries) {
+  return (entries || []).sort(compareEntriesByRo);
+}
+
 function groupByDay(entries){
   const map = new Map();
   for (const e of entries) {
@@ -1444,6 +1631,17 @@ function groupByDay(entries){
   }
   const keys = Array.from(map.keys()).sort((a,b)=>b.localeCompare(a));
   return keys.map(k => ({ dayKey: k, entries: map.get(k) }));
+}
+
+function groupByDealer(entries){
+  const map = new Map();
+  for (const e of entries) {
+    const k = e.dealer || "Unknown";
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(e);
+  }
+  const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+  return keys.map(k => ({ dealer: k, entries: map.get(k) }));
 }
 
 function setEditingEntry(entry) {
@@ -1730,6 +1928,7 @@ async function handleSave(ev) {
       refType: currentRefType,
       ref,
       ro: ref,
+      dealer: detectDealer(ref),
       vin8,
       type: typeName,
       typeText: typeName,
@@ -1766,8 +1965,7 @@ async function renderHistory(){
   const range = $("histRange")?.value || "week";
   const group = $("histGroup")?.value || "none";
 
-  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
-    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  const all = sortEntriesByRo(filterEntriesByEmp(await getAll(STORES.entries), empId));
 
   let slice = all;
 
@@ -1797,15 +1995,15 @@ async function renderHistory(){
     return;
   }
 
-  if (group === "day") {
-    const groups = groupByDay(slice);
+  if (group === "day" || group === "dealer") {
+    const groups = group === "dealer" ? groupByDealer(slice) : groupByDay(slice);
     for (const g of groups) {
       const t = computeTotals(g.entries);
       const header = document.createElement("div");
       header.className = "item";
       header.innerHTML = `
         <div class="itemTop">
-          <div class="mono">${g.dayKey}</div>
+          <div class="mono">${group === "dealer" ? escapeHtml(g.dealer) : g.dayKey}</div>
           <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
         </div>
       `;
@@ -2296,7 +2494,7 @@ function renderList(entries, mode){
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = (searchInput?.value || "").trim().toLowerCase();
 
-  const visible = applySearch(ranged, q);
+  const visible = sortEntriesByRo(applySearch(ranged, q).slice());
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
@@ -2805,8 +3003,7 @@ async function renderReview(){
   const group = document.getElementById("reviewGroup")?.value || "day";
   const q = (document.getElementById("reviewSearch")?.value || "").trim().toLowerCase();
 
-  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
-    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  const all = sortEntriesByRo(filterEntriesByEmp(await getAll(STORES.entries), empId));
 
   let slice = all;
   if (range === "week") {
@@ -2832,15 +3029,15 @@ async function renderReview(){
   list.innerHTML = "";
   if (!slice.length) { list.innerHTML = `<div class="muted">No entries match.</div>`; return; }
 
-  if (group === "day") {
-    const groups = groupByDay(slice);
+  if (group === "day" || group === "dealer") {
+    const groups = group === "dealer" ? groupByDealer(slice) : groupByDay(slice);
     for (const g of groups) {
       const t = computeTotals(g.entries);
       const head = document.createElement("div");
       head.className = "item";
       head.innerHTML = `
         <div class="itemTop">
-          <div class="mono">${g.dayKey}</div>
+          <div class="mono">${group === "dealer" ? escapeHtml(g.dealer) : g.dayKey}</div>
           <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
         </div>`;
       list.appendChild(head);
