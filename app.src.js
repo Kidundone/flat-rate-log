@@ -585,75 +585,201 @@ const STOCK_PREFIX_RULES = [
   { prefix: "S", brand: "Subaru", type: "New Car" },
 ];
 
-function classifyStock(stockNumber) {
-  if (!stockNumber) return { brand: "Unknown", type: "Unknown" };
+const GENERIC_PREFIX_BRAND = Object.freeze({
+  A: "Acura",
+  B: "Audi",
+  C: "Chevrolet",
+  F: "Ford",
+  H: "Honda",
+  K: "Kia",
+  L: "Lexus",
+  M: "Mazda",
+  N: "Nissan",
+  S: "Subaru",
+  T: "Toyota",
+  V: "Volkswagen",
+});
 
-  const clean = stockNumber.toUpperCase().trim();
+const SPECIAL_PREFIX_RULES = Object.freeze([
+  { prefix: "SL", type: "Service Loaner" },
+  { prefix: "XS", type: "Dealer Trade - New" },
+  { prefix: "DT", type: "Dealer Trade" },
+  { prefix: "P", type: "Curb Purchase" },
+]);
 
-  const isReused = clean.endsWith("A");
-  const baseStock = isReused ? clean.slice(0, -1) : clean;
+let USER_PREFIX_RULES = [];
 
-  for (const rule of STOCK_PREFIX_RULES.sort((a, b) => b.prefix.length - a.prefix.length)) {
-    if (baseStock.startsWith(rule.prefix)) {
+async function loadUserPrefixRules() {
+  const { data, error } = await sb
+    .from("dealer_prefix_rules")
+    .select("*");
+
+  if (error) {
+    console.error("Failed loading rules", error);
+    return [];
+  }
+
+  return (data || []).sort((a,b)=>b.prefix.length - a.prefix.length);
+}
+
+function normalizeStock(stock) {
+  if (!stock) return null;
+
+  const clean = stock.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  // Handle reused stock ending in A
+  if (clean.length > 2 && clean.endsWith("A")) {
+    return clean.slice(0, -1);
+  }
+
+  return clean;
+}
+
+function classifyStock(stock, rules) {
+  if (!stock) return null;
+
+  const normalized = normalizeStock(stock);
+  if (!normalized) return null;
+
+  for (const rule of (rules || [])) {
+    if (normalized.startsWith(rule.prefix.toUpperCase())) {
       return {
-        brand: rule.brand,
-        type: isReused
-          ? rule.type + " (Trade-In)"
-          : rule.type,
-        reused: isReused,
+        brand: rule.brand || "Unknown",
+        vehicle_type: rule.vehicle_type || "Unknown",
         prefix: rule.prefix
       };
     }
   }
 
+  return null;
+}
+
+const BRAND_KEYWORDS = Object.freeze([
+  { match: ["VOLKSWAGEN", "VW"], brand: "Volkswagen" },
+  { match: ["AUDI"], brand: "Audi" },
+  { match: ["SUBARU"], brand: "Subaru" },
+  { match: ["ACURA"], brand: "Acura" },
+  { match: ["HONDA"], brand: "Honda" },
+  { match: ["TOYOTA"], brand: "Toyota" },
+  { match: ["FORD"], brand: "Ford" },
+  { match: ["CHEVROLET", "CHEVY"], brand: "Chevrolet" },
+  { match: ["NISSAN"], brand: "Nissan" },
+  { match: ["BMW"], brand: "BMW" },
+  { match: ["JEEP"], brand: "Jeep" },
+  { match: ["RAM"], brand: "Ram" },
+  { match: ["KIA"], brand: "Kia" },
+  { match: ["HYUNDAI"], brand: "Hyundai" },
+  { match: ["LEXUS"], brand: "Lexus" },
+  { match: ["MAZDA"], brand: "Mazda" },
+  { match: ["GMC"], brand: "GMC" },
+]);
+
+function detectBrandFromText(text) {
+  if (!text) return null;
+
+  const upper = String(text).toUpperCase();
+
+  for (const rule of BRAND_KEYWORDS) {
+    for (const keyword of rule.match) {
+      if (upper.includes(keyword)) {
+        return rule.brand;
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseStockNumber(stockNumber) {
+  if (!stockNumber) return null;
+
+  const clean = String(stockNumber).trim().toUpperCase();
+  if (!clean) return null;
+
+  // Handle trade reuse (like A at end)
+  const base = clean.replace(/A$/, "");
+
+  // 1. Check special rules first
+  for (const rule of SPECIAL_PREFIX_RULES) {
+    const prefix = String(rule.prefix || "").toUpperCase();
+    if (!prefix) continue;
+
+    if (base.startsWith(prefix)) {
+      const firstLetter = base.charAt(prefix.length);
+      const brand = GENERIC_PREFIX_BRAND[firstLetter] || "Unknown";
+
+      return {
+        brand,
+        type: rule.type
+      };
+    }
+  }
+
+  // 2. Fallback to first letter brand logic
+  const firstLetter = base.charAt(0);
+  const brand = GENERIC_PREFIX_BRAND[firstLetter] || "Unknown";
+
   return {
-    brand: "Unknown",
-    type: isReused ? "Trade-In" : "Unknown",
-    reused: isReused
+    brand,
+    type: "New / Inventory"
   };
 }
 
-const BRAND_KEYWORDS = [
-  "ACURA",
-  "AUDI",
-  "BMW",
-  "BUICK",
-  "CADILLAC",
-  "CHEVROLET",
-  "CHRYSLER",
-  "DODGE",
-  "FORD",
-  "GMC",
-  "HONDA",
-  "HYUNDAI",
-  "INFINITI",
-  "JEEP",
-  "KIA",
-  "LAND ROVER",
-  "LEXUS",
-  "MAZDA",
-  "MERCEDES",
-  "MINI",
-  "NISSAN",
-  "PORSCHE",
-  "RAM",
-  "SUBARU",
-  "TESLA",
-  "TOYOTA",
-  "VOLKSWAGEN",
-  "VOLVO",
-];
+function detectFromStock(stockNumber) {
+  if (!stockNumber) return null;
+
+  const clean = normalizeStock(stockNumber);
+  if (!clean) return null;
+  const rules = (USER_PREFIX_RULES.length ? USER_PREFIX_RULES : STOCK_PREFIX_RULES)
+    .slice()
+    .sort((a, b) => b.prefix.length - a.prefix.length);
+
+  for (const rule of rules) {
+    const prefix = String(rule.prefix || "").toUpperCase();
+    if (prefix && clean.startsWith(prefix)) {
+      const brand = rule.brand !== "Unknown" ? rule.brand : null;
+      const type = rule.type || rule.vehicle_type || "Unknown";
+      return { brand, type };
+    }
+  }
+
+  const parsed = parseStockNumber(stockNumber);
+  if (!parsed) return null;
+  return {
+    brand: parsed.brand && parsed.brand !== "Unknown" ? parsed.brand : null,
+    type: parsed.type || "Unknown",
+  };
+}
+
+async function classifyEntry({ stock, ocrText }) {
+  // 1. Try stock rules first
+  const stockMatch = detectFromStock(stock);
+  if (stockMatch?.brand) {
+    return stockMatch;
+  }
+
+  // 2. Try OCR brand detection
+  const brandFromText = detectBrandFromText(ocrText);
+  if (brandFromText) {
+    return {
+      brand: brandFromText,
+      type: stockMatch?.type || "Unknown"
+    };
+  }
+
+  // 3. Unknown fallback
+  return {
+    brand: "Unknown",
+    type: stockMatch?.type || "Unknown"
+  };
+}
 
 function detectBrand({ ro = "", stock = "", ocrText = "" }) {
-  const classified = classifyStock(stock || ro);
-  if (classified.brand && String(classified.brand).toUpperCase() !== "UNKNOWN") {
-    return classified.brand;
-  }
+  const stockHit = detectFromStock(stock || ro);
+  if (stockHit?.brand) return stockHit.brand;
 
-  const text = String(ocrText || "").toUpperCase();
-  for (const brand of BRAND_KEYWORDS) {
-    if (text.includes(brand)) return brand;
-  }
+  const textHit = detectBrandFromText(ocrText);
+  if (textHit) return textHit;
 
   return "Unknown";
 }
@@ -676,18 +802,19 @@ async function detectBrandFromPhoto(signedUrl, log) {
   const { data } = await worker.recognize(signedUrl);
   await worker.terminate();
 
-  return detectBrand({
-    ro: log.ro_number,
-    stock: log.stock_number,
-    ocrText: data.text
+  const classification = await classifyEntry({
+    stock: log?.stock_number || log?.ro_number || log?.ref || log?.ro,
+    ocrText: data?.text
   });
+  return classification?.brand || "Unknown";
 }
 
 async function resolveDealerForLog(log) {
-  const roNumber = log?.ro_number || log?.ref || log?.ro || null;
+  const stockOrRo = log?.stock_number || log?.ro_number || log?.ref || log?.ro || null;
 
-  // 1. Try RO prefix first (fast)
-  let dealer = detectDealer(roNumber);
+  // 1. Try stock/RO rules first (fast)
+  const firstPass = await classifyEntry({ stock: stockOrRo, ocrText: "" });
+  let dealer = firstPass?.brand || "Unknown";
 
   if (dealer && String(dealer).toUpperCase() !== "UNKNOWN") {
     return dealer;
@@ -751,6 +878,7 @@ async function backfillDealersFromPhotos(logs) {
 window.__FR = window.__FR || {};
 window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
 window.__FR.resolveDealerForLog = resolveDealerForLog;
+window.__FR.loadUserPrefixRules = loadUserPrefixRules;
 
 
 function normalizeEntryForApi(entry) {
@@ -1803,33 +1931,21 @@ function groupByDay(entries){
   return keys.map(k => ({ dayKey: k, entries: map.get(k) }));
 }
 
-function groupAndSortByBrand(logs) {
+function groupEntriesByBrand(entries) {
   const grouped = {};
 
-  for (const log of logs) {
-    const brand = log.brand || "UNKNOWN";
+  for (const entry of entries) {
+    const brand = entry.detected_brand || "Unknown";
 
     if (!grouped[brand]) grouped[brand] = [];
-    grouped[brand].push(log);
-  }
-
-  for (const brand in grouped) {
-    grouped[brand].sort((a, b) => {
-      const aNum = parseInt(a.ro_number?.replace(/\D/g, "")) || 0;
-      const bNum = parseInt(b.ro_number?.replace(/\D/g, "")) || 0;
-      return aNum - bNum;
-    });
+    grouped[brand].push(entry);
   }
 
   return grouped;
 }
 
 function groupByDealer(entries){
-  const grouped = groupAndSortByBrand((entries || []).map((e) => ({
-    ...e,
-    brand: e.brand || e.dealer || "UNKNOWN",
-    ro_number: e.ro_number || e.ro || e.ref || "",
-  })));
+  const grouped = groupEntriesByBrand(entries || []);
   const keys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
   return keys.map((k) => ({ dealer: k, entries: grouped[k] || [] }));
 }
@@ -1960,6 +2076,21 @@ function handleClear(ev) {
 
 async function renderLogs(logs) {
   const entries = Array.isArray(logs) ? normalizeEntries(logs) : [];
+  const rules = await loadUserPrefixRules();
+  const fallbackRules = STOCK_PREFIX_RULES.map((r) => ({
+    prefix: r.prefix,
+    brand: r.brand,
+    vehicle_type: r.type || "Unknown",
+  }));
+  const activeRules = (rules && rules.length) ? rules : fallbackRules;
+
+  entries.forEach(entry => {
+    const stock = entry.stock || entry.ro || entry.ro_number || entry.ref;
+    const result = classifyStock(stock, activeRules);
+
+    entry.detected_brand = result?.brand || entry.dealer || "Unknown";
+    entry.detected_type = result?.vehicle_type || null;
+  });
   await refreshUI(entries);
 }
 
@@ -3394,6 +3525,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.sb) {
       wireAuthUI(window.sb);
       await initAuth();
+    }
+
+    try {
+      USER_PREFIX_RULES = await loadUserPrefixRules();
+    } catch (e) {
+      USER_PREFIX_RULES = [];
     }
 
     await ensureDefaultTypes();
