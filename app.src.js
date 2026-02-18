@@ -146,7 +146,7 @@ async function getProofSignedUrl(sb, photoPath) {
   return data.signedUrl;
 }
 
-async function uploadProofPhoto({ sb, empId, logId, file }) {
+async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
   const uid = await requireUserId(sb);
 
   const ext = (file.type === "image/png") ? "png" : "jpg";
@@ -161,25 +161,39 @@ async function uploadProofPhoto({ sb, empId, logId, file }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
+  let resolvedDealer = "Unknown";
   try {
-    const signedUrl = await getProofSignedUrl(sb, path);
-    const dealer = await detectDealerFromPhoto(signedUrl);
-    await sb.from("work_logs").update({ dealer }).eq("id", logId);
+    resolvedDealer = await resolveDealerForLog({
+      ro_number: roNumber || null,
+      photo_path: path,
+    });
+    await updateWorkLogWithFallback(sb, logId, {
+      dealer: resolvedDealer,
+      updated_at: new Date().toISOString(),
+    });
   } catch (ocrErr) {
     console.error("Dealer OCR failed", ocrErr);
   }
-  return path;
+  return { path, dealer: resolvedDealer };
 }
 
 async function sbListRows(empId) {
   if (!empId) return [];
   const uid = await requireUserId(sb);
-  const q = sb
+  const dealerFilter = document.getElementById("dealerFilter")?.value;
+
+  let q = sb
     .from("work_logs")
     .select("*")
     .eq("user_id", uid)
     .eq("employee_number", empId)
-    .or("is_deleted.is.null,is_deleted.eq.false")
+    .or("is_deleted.is.null,is_deleted.eq.false");
+
+  if (dealerFilter && dealerFilter !== "all") {
+    q = q.eq("dealer", dealerFilter);
+  }
+
+  q = q
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
   const { data, error } = await q;
@@ -245,33 +259,20 @@ async function updateWorkLogWithFallback(sbClient, logId, patch) {
   return false;
 }
 
-async function runOCRAndClassify({ sb, logId, file }) {
-  if (!file || logId == null) return null;
-
-  const tesseract = globalThis.Tesseract || window.Tesseract;
-  if (!tesseract?.recognize) return null;
-
-  try {
-    const { data: { text = "" } = {} } = await tesseract.recognize(file, "eng");
-    const dealer = detectDealerFromText(text);
-    await updateWorkLogWithFallback(sb, logId, {
-      extracted_text: text || null,
-      dealer,
-      updated_at: new Date().toISOString(),
-    });
-    return { text, dealer };
-  } catch (err) {
-    console.error("OCR failed", err);
-    return null;
-  }
-}
-
 async function saveEditedLog(logId, patch) {
   const empId = getEmpId();
   const file = getSelectedPhotoFile();
   if (file) {
-    const newPath = await uploadProofPhoto({ sb, empId, logId, file });
+    const uploaded = await uploadProofPhoto({
+      sb,
+      empId,
+      logId,
+      file,
+      roNumber: patch.ro_number || null,
+    });
+    const newPath = uploaded?.path || null;
     patch.photo_path = newPath;
+    patch.dealer = uploaded?.dealer || patch.dealer || "Unknown";
   }
 
   const runUpdate = (body) => sb
@@ -288,6 +289,21 @@ async function saveEditedLog(logId, patch) {
   }
 
   if (error) throw error;
+
+  if (!file) {
+    try {
+      const resolvedDealer = await resolveDealerForLog({
+        ro_number: patch.ro_number || null,
+        photo_path: data?.photo_path || null,
+      });
+      await updateWorkLogWithFallback(sb, logId, {
+        dealer: resolvedDealer,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (resolveErr) {
+      console.error("Dealer resolve failed", resolveErr);
+    }
+  }
 
   window.SELECTED_PHOTO_FILE = null;
   SELECTED_PHOTO_FILE = null;
@@ -361,6 +377,7 @@ async function apiCreateLog(payload) {
   if (!empId) throw new Error("Employee # required");
 
   const uid = await requireUserId(sb);
+  const dealer = await resolveDealerForLog(payload);
 
   const insertRow = {
     user_id: uid,
@@ -368,7 +385,7 @@ async function apiCreateLog(payload) {
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
-    dealer: payload.dealer || null,
+    dealer,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -407,12 +424,13 @@ async function apiUpdateLog(id, payload) {
   if (!empId) return null;
   const uid = await requireUserId(sb);
   if (!uid) return null;
+  const dealer = await resolveDealerForLog(payload);
 
   const updateFields = {
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
-    dealer: payload.dealer || null,
+    dealer,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -590,6 +608,7 @@ function detectDealer(roNumber) {
   if (!roNumber) return "Unknown";
 
   const clean = String(roNumber).trim().toUpperCase();
+  if (/^\d{5,}$/.test(clean)) return "Numeric-Stock";
 
   for (const prefix of Object.keys(DEALER_PREFIX_MAP).sort((a, b) => b.length - a.length)) {
     if (clean.startsWith(prefix)) {
@@ -628,18 +647,50 @@ async function detectDealerFromPhoto(signedUrl) {
 
   const created = await tesseract.createWorker("eng");
   const worker = created?.data || created;
-  const { data = {} } = await worker.recognize(signedUrl);
-  await worker.terminate();
+  try {
+    const { data = {} } = await worker.recognize(signedUrl);
+    const text = String(data.text || "").toUpperCase();
 
-  const text = String(data.text || "").toUpperCase();
+    // Fast brand detection
+    if (text.includes("FLOW MOTORS WINSTON")) return "Flow Winston";
+    if (text.includes("FLOW MOTORS GREENSBORO")) return "Flow Greensboro";
+    if (text.includes("ACURA")) return "Acura";
+    if (text.includes("VOLKSWAGEN") || text.includes("VW")) return "Volkswagen";
+    if (text.includes("AUDI")) return "Audi";
+    if (text.includes("SUBARU")) return "Subaru";
 
-  // Fast brand detection
-  if (text.includes("FLOW MOTORS WINSTON")) return "Flow Winston";
-  if (text.includes("FLOW MOTORS GREENSBORO")) return "Flow Greensboro";
-  if (text.includes("ACURA")) return "Acura";
-  if (text.includes("VOLKSWAGEN") || text.includes("VW")) return "Volkswagen";
-  if (text.includes("AUDI")) return "Audi";
-  if (text.includes("SUBARU")) return "Subaru";
+    return "Unknown";
+  } finally {
+    await worker.terminate().catch(() => {});
+  }
+}
+
+async function resolveDealerForLog(log) {
+  const roNumber = log?.ro_number || log?.ref || log?.ro || null;
+
+  // 1. Try RO prefix first (fast)
+  let dealer = detectDealer(roNumber);
+
+  if (dealer && dealer !== "Unknown" && dealer !== "Other") {
+    return dealer;
+  }
+
+  // 2. If still unknown and photo exists -> OCR
+  if (log?.photo_path) {
+    try {
+      const { data } = await sb.storage
+        .from("proofs")
+        .createSignedUrl(log.photo_path, 60);
+
+      if (!data?.signedUrl) return "Unknown";
+
+      dealer = await detectDealerFromPhoto(data.signedUrl);
+      return dealer || "Unknown";
+    } catch (e) {
+      console.error("OCR failed:", e);
+      return "Unknown";
+    }
+  }
 
   return "Unknown";
 }
@@ -652,23 +703,19 @@ async function backfillDealersFromPhotos(logs) {
     sourceLogs = await apiListLogs(empId);
   }
 
-  const targetLogs = sourceLogs.filter((log) => log?.id != null && !!log?.photo_path);
+  const targetLogs = sourceLogs.filter(
+    (log) => log?.id && (!log.dealer || log.dealer === "Unknown")
+  );
   let updated = 0;
 
   for (const log of targetLogs) {
     try {
-      const { data } = await sb.storage
-        .from("proofs")
-        .createSignedUrl(log.photo_path, 60);
+      const dealer = await resolveDealerForLog(log);
 
-      if (!data?.signedUrl) continue;
-
-      const dealer = await detectDealerFromPhoto(data.signedUrl);
-
-      await sb
-        .from("work_logs")
-        .update({ dealer })
-        .eq("id", log.id);
+      await updateWorkLogWithFallback(sb, log.id, {
+        dealer,
+        updated_at: new Date().toISOString(),
+      });
 
       updated += 1;
       console.log("Updated:", log.id, dealer);
@@ -676,7 +723,7 @@ async function backfillDealersFromPhotos(logs) {
       console.error("Failed:", log.id, e);
     }
 
-    await new Promise(r => setTimeout(r, 300)); // small throttle
+    await new Promise(r => setTimeout(r, 200)); // small throttle
   }
 
   await safeLoadEntries();
@@ -685,17 +732,19 @@ async function backfillDealersFromPhotos(logs) {
 
 window.__FR = window.__FR || {};
 window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
+window.__FR.resolveDealerForLog = resolveDealerForLog;
 
 
 function normalizeEntryForApi(entry) {
   const roNumber = entry.ref || entry.ro || entry.ro_number || null;
+  const dealer = entry.dealer || "Unknown";
   // Map your existing entry object into the backend schema.
   // Edit these mappings to match your real fields.
   return {
     work_date: entry.dayKey || entry.date || entry.work_date || (entry.createdAt ? dayKeyFromISO(entry.createdAt) : null), // MUST be "YYYY-MM-DD"
     category: entry.typeText || entry.type || entry.category || "work",
     ro_number: roNumber,
-    dealer: entry.dealer || detectDealer(roNumber),
+    dealer,
     description: entry.notes || entry.desc || entry.description || null,
     flat_hours: Number(entry.hours || entry.flat || entry.flat_hours || 0),
     cash_amount: Number(entry.earnings || entry.cash || entry.cash_amount || 0),
@@ -1394,6 +1443,37 @@ function applySearch(entries, q){
   });
 }
 
+function populateDealerFilter(entries) {
+  const select = document.getElementById("dealerFilter");
+  if (!select) return;
+
+  const prev = select.value || "all";
+  const dealers = [...new Set((entries || []).map((e) => String(e?.dealer || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  select.innerHTML = "";
+  const allOpt = document.createElement("option");
+  allOpt.value = "all";
+  allOpt.textContent = "All Dealers";
+  select.appendChild(allOpt);
+
+  for (const d of dealers) {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.textContent = d;
+    select.appendChild(opt);
+  }
+
+  select.value = dealers.includes(prev) || prev === "all" ? prev : "all";
+}
+
+function applyDealerFilter(entries) {
+  const select = document.getElementById("dealerFilter");
+  const selected = select?.value || "all";
+  if (selected === "all") return entries;
+  return (entries || []).filter((e) => (e?.dealer || "Unknown") === selected);
+}
+
 function weekdayLabel(i){
   // i: 0..6 where 0 = Monday
   return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i] || "";
@@ -1857,13 +1937,20 @@ async function loadEntries() {
   if (!empId) throw new Error("Employee # required");
 
   const uid = await requireUserId(sb);
+  const dealerFilter = document.getElementById("dealerFilter")?.value;
 
-  const res = await sb
+  let query = sb
     .from("work_logs")
     .select("*")
     .eq("user_id", uid)
     .eq("employee_number", empId)
-    .or("is_deleted.is.null,is_deleted.eq.false")
+    .or("is_deleted.is.null,is_deleted.eq.false");
+
+  if (dealerFilter && dealerFilter !== "all") {
+    query = query.eq("dealer", dealerFilter);
+  }
+
+  const res = await query
     .order("work_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -1905,7 +1992,14 @@ async function saveEntry(entry) {
     if (photoFile) {
       toast("Uploading photo...");
       try {
-        const newPath = await uploadProofPhoto({ sb, empId, logId: saved.id, file: photoFile });
+        const uploaded = await uploadProofPhoto({
+          sb,
+          empId,
+          logId: saved.id,
+          file: photoFile,
+          roNumber: payload.ro_number || null,
+        });
+        const newPath = uploaded?.path || null;
         setPhotoUploadTarget(newPath);
         photo_path = newPath;
         photoStatus = "ok";
@@ -2000,7 +2094,7 @@ async function handleSave(ev) {
       refType: currentRefType,
       ref,
       ro: ref,
-      dealer: detectDealer(ref),
+      dealer: baseEntry.dealer || "Unknown",
       vin8,
       type: typeName,
       typeText: typeName,
@@ -2749,6 +2843,7 @@ async function refreshUI(entriesOverride){
     : await getAll(STORES.entries);
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  populateDealerFilter(entries);
 
   window.__RANGE_ENTRIES__ = entries;
 
@@ -2794,7 +2889,8 @@ async function refreshUI(entriesOverride){
 
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = searchInput?.value || "";
-  const searched = applySearch(shownEntries, q);
+  const dealerFiltered = applyDealerFilter(shownEntries);
+  const searched = applySearch(dealerFiltered, q);
 
   window.__RANGE_FILTERED__ = searched; // replace for list + totals
   let totals = computeTotals(searched);
@@ -2860,8 +2956,10 @@ async function refreshUI(entriesOverride){
   const status = document.getElementById("filterStatus");
   if (status) {
     const rangeLabel = title;
+    const dealerVal = document.getElementById("dealerFilter")?.value || "all";
+    const dealerTxt = dealerVal !== "all" ? ` • Dealer: ${dealerVal}` : "";
     const qtxt = q.trim() ? ` • Search: "${q.trim()}"` : "";
-    status.textContent = `Showing: ${rangeLabel}${qtxt} • ${searched.length} entries`;
+    status.textContent = `Showing: ${rangeLabel}${dealerTxt}${qtxt} • ${searched.length} entries`;
   }
 
   const hasWeekHeader =
@@ -3283,6 +3381,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await renderTypesListInMore();
 
       document.getElementById("filterSelect")?.addEventListener("change", refreshUI);
+      document.getElementById("dealerFilter")?.addEventListener("change", refreshUI);
       document.getElementById("refreshBtn")?.addEventListener("click", refreshUI);
 
       const sIn = document.getElementById("searchInput");
