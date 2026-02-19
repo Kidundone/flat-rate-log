@@ -59,8 +59,17 @@ async function bootAuth() {
     if ((event === "INITIAL_SESSION" || event === "SIGNED_IN") && window.CURRENT_UID) {
       if (window.__PAGE__ === "main") {
         console.log("↩️ Loading entries after auth...");
-        await safeLoadEntries();
-        await refreshUI();
+
+        try {
+          const rows = await safeLoadEntries();
+          console.log("✅ safeLoadEntries returned:", rows?.length);
+
+          await refreshUI();
+          console.log("✅ refreshUI complete");
+
+        } catch (e) {
+          console.error("💥 LOAD FAILED:", e);
+        }
       }
     }
   });
