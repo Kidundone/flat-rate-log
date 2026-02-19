@@ -2797,15 +2797,22 @@ function renderList(entries, mode){
     return;
   }
 
-  let lastBrand = null;
+  let currentBrand = null;
   for (const e of capped) {
     const brand = String(e.detected_brand || e.dealer || "Unknown");
-    if (brand !== lastBrand) {
+    if (brand !== currentBrand) {
+      currentBrand = brand;
+
       const header = document.createElement("div");
-      header.className = "item";
-      header.innerHTML = `<div class="mono">=== ${escapeHtml(brand)} ===</div>`;
+      header.style.padding = "12px 10px";
+      header.style.fontWeight = "600";
+      header.style.fontSize = "14px";
+      header.style.background = "#111";
+      header.style.borderTop = "1px solid #333";
+      header.style.borderBottom = "1px solid #333";
+      header.style.marginTop = "12px";
+      header.textContent = currentBrand.toUpperCase();
       list.appendChild(header);
-      lastBrand = brand;
     }
     list.appendChild(buildEntry(e));
   }
