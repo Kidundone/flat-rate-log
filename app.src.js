@@ -64,7 +64,7 @@ async function bootAuth() {
           const rows = await safeLoadEntries();
           console.log("✅ safeLoadEntries returned:", rows?.length);
 
-          await refreshUI();
+          await refreshUI(rows);
           console.log("✅ refreshUI complete");
 
         } catch (e) {
@@ -598,6 +598,14 @@ async function onUndoDelete() {
 }
 
 let CURRENT_ENTRIES = [];
+window.STATE = window.STATE || {};
+if (!Array.isArray(window.STATE.entries)) window.STATE.entries = [];
+
+function syncStateEntries(entries) {
+  window.STATE = window.STATE || {};
+  window.STATE.entries = normalizeEntries(Array.isArray(entries) ? entries : []);
+  return window.STATE.entries;
+}
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
@@ -985,7 +993,7 @@ let summaryRange = (window.__WEEK_WHICH__ === "last" || window.__WEEK_WHICH__ ==
 function setSummaryRange(next) {
   summaryRange = (next === "lastWeek") ? "lastWeek" : "thisWeek";
   window.__WEEK_WHICH__ = summaryRange;
-  if (PAGE === "main") refreshUI();
+  if (PAGE === "main") refreshUI(CURRENT_ENTRIES);
 }
 
 function setRefType(t) {
@@ -1155,7 +1163,7 @@ function setRangeMode(m, opts = {}) {
   const row = document.getElementById("weekWhichRow");
   if (row) row.style.display = (m === "week") ? "inline-flex" : "none";
 
-  if (PAGE === "main" && !opts.skipRefresh) refreshUI();
+  if (PAGE === "main" && !opts.skipRefresh) refreshUI(CURRENT_ENTRIES);
 }
 
 function getRate(){
@@ -1306,7 +1314,7 @@ async function put(storeName, item) {
     const idx = rows.findIndex((r) => String(r?.id) === String(next?.id));
     if (idx >= 0) rows[idx] = next;
     else rows.push(next);
-    CURRENT_ENTRIES = normalizeEntries(rows);
+    CURRENT_ENTRIES = syncStateEntries(rows);
     return;
   }
   const map = getStoreMap(storeName);
@@ -1316,15 +1324,17 @@ async function put(storeName, item) {
 
 async function del(storeName, key) {
   if (storeName === STORES.entries && USE_BACKEND) {
-    CURRENT_ENTRIES = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
-      .filter((r) => String(r?.id) !== String(key));
+    CURRENT_ENTRIES = syncStateEntries(
+      (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+        .filter((r) => String(r?.id) !== String(key))
+    );
     return;
   }
   getStoreMap(storeName).delete(key);
 }
 
 async function clearStore(storeName) {
-  if (storeName === STORES.entries && USE_BACKEND) CURRENT_ENTRIES = [];
+  if (storeName === STORES.entries && USE_BACKEND) CURRENT_ENTRIES = syncStateEntries([]);
   getStoreMap(storeName).clear();
 }
 
@@ -1580,7 +1590,7 @@ function renderWeekBreakdown(days){
     el.addEventListener("click", () => {
       const dk = el.getAttribute("data-daykey") || "";
       window.__WEEK_DAY_PICK__ = (window.__WEEK_DAY_PICK__ === dk) ? "" : dk;
-      refreshUI();
+      refreshUI(CURRENT_ENTRIES);
     });
   });
 }
@@ -1640,7 +1650,7 @@ function setPaidHoursForThisWeek(value) {
   const map = loadPaidMap();
   map[weekKey(new Date())] = Number(value) || 0;
   savePaidMap(map);
-  if (typeof refreshUI === "function") refreshUI();
+  if (typeof refreshUI === "function") refreshUI(CURRENT_ENTRIES);
 }
 
 function getPaidHoursForWeekStart(startDate) {
@@ -1950,7 +1960,7 @@ async function renderLogs(logs) {
 
 async function renderEntries(rows) {
   const mapped = (rows || []).map(mapServerLogToEntry);
-  CURRENT_ENTRIES = mapped;
+  CURRENT_ENTRIES = syncStateEntries(mapped);
   await renderLogs(mapped);
   return mapped;
 }
@@ -1990,7 +2000,7 @@ async function loadEntries() {
 async function saveEntry(entry) {
   if (!USE_BACKEND) {
     await put(STORES.entries, entry);
-    await refreshUI();
+    await refreshUI(CURRENT_ENTRIES);
     return;
   }
 
@@ -2860,20 +2870,21 @@ function closePhotoModal(){
 }
 
 async function refreshUI(entriesOverride){
+  if (!entriesOverride && !window.STATE?.entries?.length) {
+    console.warn("refreshUI skipped — no data yet");
+    return;
+  }
+
+  const allEntries = Array.isArray(entriesOverride)
+    ? normalizeEntries(entriesOverride)
+    : normalizeEntries(window.STATE.entries);
+
   const setText = (id, val) => { 
     const el = document.getElementById(id); 
     if (el) el.textContent = val; 
   };
 
   const empId = getEmpId();
-
-  let allEntries;
-
-  if (Array.isArray(entriesOverride)) {
-    allEntries = normalizeEntries(entriesOverride);
-  } else {
-    allEntries = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
-  }
 
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
@@ -3384,14 +3395,14 @@ async function runOnce() {
     await renderTypeDatalist();
     await renderTypesListInMore();
 
-    document.getElementById("filterSelect")?.addEventListener("change", refreshUI);
-    document.getElementById("dealerFilter")?.addEventListener("change", refreshUI);
-    document.getElementById("refreshBtn")?.addEventListener("click", refreshUI);
+    document.getElementById("filterSelect")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
+    document.getElementById("dealerFilter")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
+    document.getElementById("refreshBtn")?.addEventListener("click", () => refreshUI(CURRENT_ENTRIES));
 
     const sIn = document.getElementById("searchInput");
     const sClr = document.getElementById("clearSearchBtn");
-    if (sIn) sIn.addEventListener("input", () => refreshUI());
-    if (sClr) sClr.addEventListener("click", () => { if (sIn) sIn.value = ""; refreshUI(); });
+    if (sIn) sIn.addEventListener("input", () => refreshUI(CURRENT_ENTRIES));
+    if (sClr) sClr.addEventListener("click", () => { if (sIn) sIn.value = ""; refreshUI(CURRENT_ENTRIES); });
 
     document.getElementById("rangeDayBtn")?.addEventListener("click", () => setRangeMode("day"));
     document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
