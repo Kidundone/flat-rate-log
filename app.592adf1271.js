@@ -1967,7 +1967,10 @@ async function renderEntries(rows) {
 
 async function loadEntries() {
   const empId = getEmpId();
-  if (!empId) throw new Error("Employee # required");
+  if (!empId) {
+    console.warn("No employee number set. Returning empty.");
+    return [];
+  }
 
   const uid = await requireUserId(sb);
   if (!uid) {
