@@ -1,3 +1,37 @@
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
+
+export const sb = createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      storage: window.localStorage
+    }
+  }
+);
+
+window.sb = sb; // debugging access replace annon key with reall key in code 
+
+sb.auth.onAuthStateChange(async (event, session) => {
+  console.log("AUTH EVENT:", event);
+  window.CURRENT_UID = session?.user?.id || null;
+
+  if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+    console.log("User:", session?.user?.id);
+    await safeLoadEntries();
+  }
+
+  if (event === "SIGNED_OUT") {
+    console.log("Signed out");
+  }
+});
+
 window.BUILD = "20260107a-hotfix1";
 console.log("__FR_MARKER_20260121");
 
@@ -14,20 +48,6 @@ console.log("__FR_MARKER_20260121");
 })();
 
 const USE_BACKEND = true;
-// --- Supabase ---
-const sb = supabase.createClient(
-  window.__SUPABASE_CONFIG__.url,
-  window.__SUPABASE_CONFIG__.anonKey,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  },
-);
-
-window.sb = sb;
 window.__FR = window.__FR || {};
 window.__FR.sb = window.sb;
 console.log("__FR_READY_20260121", !!window.__FR.sb);
@@ -36,15 +56,17 @@ window.__FR.supabase = window.supabase;
 async function initAuth() {
   const statusEl = document.getElementById("authStatus");
   if (!statusEl) return;
+  statusEl.textContent = window.CURRENT_UID ? "Signed in" : "Not signed in";
+}
 
-  const { data: { session } } = await sb.auth.getSession();
+async function signIn(email, password) {
+  const { data, error } = await sb.auth.signInWithPassword({
+    email,
+    password
+  });
 
-  if (session?.user) {
-    window.CURRENT_UID = session.user.id;
-    statusEl.textContent = "Signed in as " + (session.user.email || "User");
-  } else {
-    window.CURRENT_UID = null;
-    statusEl.textContent = "Not signed in";
+  if (error) {
+    alert(error.message);
   }
 }
 
@@ -75,12 +97,7 @@ function wireAuthUI(sb) {
     const email = emailEl.value.trim();
     const password = passEl.value.trim();
     if (!email || !password) return alert("Email and password required");
-
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) return alert(error.message);
-
-    await initAuth();
-    await safeLoadEntries();
+    await signIn(email, password);
   });
 
   resetBtn?.addEventListener("click", async () => {
@@ -98,26 +115,6 @@ function wireAuthUI(sb) {
     await initAuth();
   });
 
-  sb.auth.onAuthStateChange(async (event, session) => {
-    console.log("AUTH EVENT:", event);
-
-    if (session?.user) {
-      window.CURRENT_UID = session.user.id;
-    } else {
-      window.CURRENT_UID = null;
-    }
-
-    await initAuth();
-
-    if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
-      try {
-        await safeLoadEntries();
-        console.log("Entries reloaded after auth.");
-      } catch (e) {
-        console.error("Reload failed:", e);
-      }
-    }
-  });
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -130,8 +127,7 @@ function setPhotoUploadTarget(path) {
 }
 
 async function requireUserId(sb) {
-  const { data } = await sb.auth.getUser();
-  const uid = data?.user?.id;
+  const uid = window.CURRENT_UID;
   if (!uid) throw new Error("Sign in required");
   return uid;
 }
@@ -469,7 +465,7 @@ async function apiUpdateLog(id, payload) {
 
 // --- Soft delete helpers ---
 async function softDeleteLog(sb, id) {
-  const uid = (await sb.auth.getUser()).data.user?.id;
+  const uid = window.CURRENT_UID;
   if (!uid) throw new Error("Not signed in");
 
   const { error } = await sb
