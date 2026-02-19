@@ -3474,11 +3474,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const bootEmpId = getEmpId();
     if (bootEmpId) bootLoaded = true;
 
-    if (window.sb) {
-      wireAuthUI(window.sb);
-      await initAuth();
-    }
-
     try {
       USER_PREFIX_RULES = await loadUserPrefixRules();
     } catch (e) {
@@ -3702,4 +3697,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
   })();
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  wireAuthUI(sb);
+  await initAuth();
 });
