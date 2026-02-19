@@ -47,7 +47,7 @@ async function bootAuth() {
   await setUidFromSession(data?.session || null);
 
   await initAuth();
-  if (window.CURRENT_UID && document.getElementById("reviewList")) {
+  if (window.__PAGE__ === "main" && window.CURRENT_UID && document.getElementById("reviewList")) {
     try {
       const rows = await safeLoadEntries();
       if (rows?.length) {
@@ -66,7 +66,7 @@ async function bootAuth() {
     await setUidFromSession(session || null);
     await initAuth();
 
-    if (event === "SIGNED_IN" && document.getElementById("reviewList")) {
+    if (event === "SIGNED_IN" && window.__PAGE__ === "main" && document.getElementById("reviewList")) {
       try {
         const rows = await safeLoadEntries();
         if (rows?.length) {
@@ -120,10 +120,10 @@ async function signIn(email, password) {
 
   window.CURRENT_UID = data?.session?.user?.id || null;
   await initAuth();
-  if (document.getElementById("reviewList")) {
+  if (window.__PAGE__ === "main" && document.getElementById("reviewList")) {
     await safeLoadEntries();
+    await refreshUI();
   }
-  await refreshUI();
 }
 
 function wireAuthUI(sb) {
@@ -987,7 +987,9 @@ const STORES = {
 const $ = (id) => document.getElementById(id);
 
 // ---- Page detect (GLOBAL) ----
-const PAGE = location.pathname.endsWith("/more.html") ? "more" : "main";
+const PAGE = location.pathname.includes("more") ? "more" : "main";
+window.__PAGE__ = PAGE;
+console.log("PAGE MODE:", PAGE);
 const IS_MAIN = PAGE === "main";
 const IS_MORE = PAGE === "more";
 
@@ -1245,7 +1247,7 @@ function initEmpIdBoot() {
   if (saved && !el.value) el.value = saved;
 
   // If we already have a valid empId, load immediately
-  if ((el.value || "").trim().replace(/\D/g, "").length >= 5) {
+  if (window.__PAGE__ === "main" && (el.value || "").trim().replace(/\D/g, "").length >= 5) {
     safeLoadEntries();
   }
 }
@@ -1254,6 +1256,7 @@ function wireEmpIdReload() {
   if (!el) return;
 
   const maybeReload = () => {
+    if (window.__PAGE__ !== "main") return;
     const digits = (el.value || "").trim().replace(/\D/g, "");
     if (digits.length >= 5) {
       localStorage.setItem("fr_emp_id", digits);
@@ -3395,7 +3398,7 @@ async function runOnce() {
   await ensureDefaultTypes();
 
   // ================= MAIN PAGE ONLY =================
-  if (PAGE === "main") {
+  if (window.__PAGE__ === "main") {
     if (typeof handleSave !== "function") {
       return;
     }
@@ -3458,7 +3461,7 @@ async function runOnce() {
     });
 
     const logForm = document.getElementById("logForm");
-    if (logForm && typeof handleSave === "function") {
+    if (window.__PAGE__ === "main" && logForm && typeof handleSave === "function") {
       if (!logForm.dataset.saveWired) {
         logForm.dataset.saveWired = "1";
         logForm.addEventListener("submit", (e) => {
@@ -3529,7 +3532,7 @@ async function runOnce() {
   }
 
   // ================= MORE PAGE ONLY =================
-  if (PAGE === "more") {
+  if (window.__PAGE__ === "more") {
     const wrapMoreClick = (id, handler) => {
       const el = document.getElementById(id);
       if (!el || typeof handler !== "function") return;
