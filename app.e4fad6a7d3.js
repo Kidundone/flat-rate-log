@@ -57,19 +57,18 @@ async function bootAuth() {
     await initAuth();
 
     if ((event === "INITIAL_SESSION" || event === "SIGNED_IN") && window.CURRENT_UID) {
-      if (window.__PAGE__ === "main") {
-        console.log("↩️ Loading entries after auth...");
+      console.log("↩️ Loading entries after auth...");
 
-        try {
-          const rows = await safeLoadEntries();
-          console.log("✅ safeLoadEntries returned:", rows?.length);
+      try {
+        const rows = await safeLoadEntries();
+        console.log("✅ safeLoadEntries returned:", rows?.length);
 
+        if (window.__PAGE__ === "main") {
           await refreshUI(rows);
           console.log("✅ refreshUI complete");
-
-        } catch (e) {
-          console.error("💥 LOAD FAILED:", e);
         }
+      } catch (e) {
+        console.error("💥 LOAD FAILED:", e);
       }
     }
   });
