@@ -19,14 +19,13 @@ const sb = supabase.createClient(
   window.__SUPABASE_CONFIG__.url,
   window.__SUPABASE_CONFIG__.anonKey,
   {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage,   // forces simple storage
-    lock: false                     // disables navigator lock
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
   },
-});
+);
 
 window.sb = sb;
 window.__FR = window.__FR || {};
