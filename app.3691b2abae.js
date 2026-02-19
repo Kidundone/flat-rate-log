@@ -49,8 +49,10 @@ async function bootAuth() {
   await initAuth();
   if (window.CURRENT_UID && document.getElementById("reviewList")) {
     try {
-      await safeLoadEntries();
-      await refreshUI();
+      const rows = await safeLoadEntries();
+      if (rows?.length) {
+        await refreshUI(rows);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -66,8 +68,10 @@ async function bootAuth() {
 
     if (event === "SIGNED_IN" && document.getElementById("reviewList")) {
       try {
-        await safeLoadEntries();
-        await refreshUI();
+        const rows = await safeLoadEntries();
+        if (rows?.length) {
+          await refreshUI(rows);
+        }
       } catch (e) {
         console.error(e);
       }
@@ -1212,11 +1216,22 @@ function bootEmp() {
   if (input && empId) input.value = empId;
 }
 async function safeLoadEntries() {
+  if (!window.CURRENT_UID) {
+    console.warn("No UID - skipping loadEntries");
+    return [];
+  }
+
+  const emp = getEmpId();
+  if (!emp) {
+    console.warn("No employee number - skipping loadEntries");
+    return [];
+  }
+
   try {
     const rows = await loadEntries();
     return rows;
   } catch (e) {
-    console.error(e);
+    console.error("loadEntries failed:", e);
     return [];
   }
 }
@@ -3364,7 +3379,12 @@ async function runOnce() {
   initEmpIdBoot?.();
   wireEmpIdReload?.();
   wireAuthUI(sb);
-  bootAuth().catch(console.error);
+  if (window.__APP_BOOTED__) {
+    console.warn("App already booted.");
+  } else {
+    window.__APP_BOOTED__ = true;
+    bootAuth().catch(console.error);
+  }
 
   try {
     USER_PREFIX_RULES = await loadUserPrefixRules();
