@@ -21,38 +21,62 @@ function extractVinWMI(vin) {
   return vin.toUpperCase().slice(0, 3);
 }
 
+function classifyEntry({ ro, stock, vin }) {
+  const result = {
+    brand: null,
+    store_code: null,
+    campus: null,
+  };
+
+  // BRAND via VIN WMI (strongest signal)
+  const wmi = extractVinWMI(vin);
+  if (wmi) {
+    result.brand = wmi;
+  }
+
+  // STORE via stock prefix
+  const stockPrefix = extractPrefix(stock);
+  if (stockPrefix) {
+    result.store_code = stockPrefix;
+  }
+
+  // CAMPUS via RO first letter
+  const roPrefix = extractPrefix(ro, 1);
+  if (roPrefix) {
+    result.campus = roPrefix;
+  }
+
+  return result;
+}
+
 function classifyDealerUniversal({ ro, stock, vin, ocrText }) {
   const blob = `${ro || ""}
 ${stock || ""}
 ${vin || ""}
 ${ocrText || ""}`.toUpperCase();
 
-  const stockPrefix = extractPrefix(stock);
-  const roPrefix = extractPrefix(ro);
-  const vinWMI = extractVinWMI(vin);
+  const structured = classifyEntry({ ro, stock, vin });
 
-  // VIN-based universal patterns
-  if (vinWMI === "WAU") return "Audi";
-  if (vinWMI === "1VW") return "Volkswagen";
-  if (vinWMI === "JF1") return "Subaru";
-  if (vinWMI === "J58") return "Acura";
+  // 1) VIN WMI cluster
+  if (structured.brand) {
+    return `VIN:${structured.brand}`;
+  }
 
-  // Stock / RO prefix pattern grouping
-  if (stockPrefix === "SLV") return "Volkswagen";
-  if (stockPrefix === "SLB") return "Audi";
-  if (stockPrefix === "SLS") return "Subaru";
-  if (stockPrefix === "SLA") return "Acura";
+  // 2) Stock prefix cluster
+  if (structured.store_code) {
+    return `STK:${structured.store_code}`;
+  }
 
-  if (roPrefix === "V") return "Volkswagen";
-  if (roPrefix === "B") return "Audi";
-  if (roPrefix === "S") return "Subaru";
-  if (roPrefix === "A") return "Acura";
+  // 3) RO prefix cluster
+  if (structured.campus) {
+    return `RO:${structured.campus}`;
+  }
 
-  // OCR pattern detection
-  if (blob.includes("VOLKSWAGEN")) return "Volkswagen";
-  if (blob.includes("AUDI")) return "Audi";
-  if (blob.includes("SUBARU")) return "Subaru";
-  if (blob.includes("ACURA")) return "Acura";
+  // 4) OCR fallback cluster
+  const ocrMatch = blob.match(/\b[A-Z]{3,}\b/);
+  if (ocrMatch) {
+    return `OCR:${ocrMatch[0]}`;
+  }
 
   return "Unknown";
 }
@@ -476,7 +500,7 @@ async function apiCreateLog(payload) {
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
-  const dealer = await resolveDealerForLog(payload);
+  const dealer = "Processing";
 
   const insertRow = {
     user_id: uid,
@@ -485,6 +509,9 @@ async function apiCreateLog(payload) {
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
     dealer,
+    brand: payload.brand || null,
+    store_code: payload.store_code || null,
+    campus: payload.campus || null,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -495,24 +522,29 @@ async function apiCreateLog(payload) {
   };
 
   // 1) Create row first (no photo_path yet)
-  let { data: created, error: e1 } = await sb
-    .from("work_logs")
-    .insert([insertRow])
-    .select("id")
-    .maybeSingle();
-
-  if (e1 && isDealerColumnMissingError(e1)) {
-    const { dealer: _dealer, ...insertWithoutDealer } = insertRow;
+  let created = null;
+  let e1 = null;
+  let insertBody = { ...insertRow };
+  while (Object.keys(insertBody).length > 0) {
     ({ data: created, error: e1 } = await sb
       .from("work_logs")
-      .insert([insertWithoutDealer])
-      .select("id")
+      .insert([insertBody])
+      .select("id,photo_path,ro_number,vin8")
       .maybeSingle());
+    if (!e1) break;
+
+    const missingField = Object.keys(insertBody).find((k) => isMissingColumnError(e1, k));
+    if (!missingField) break;
+    delete insertBody[missingField];
   }
 
   if (e1) throw e1;
   const createdRow = created ?? null;
   if (!createdRow) throw new Error("Create failed: no row returned");
+
+  if (createdRow.photo_path) {
+    runOCRAndClassify(createdRow).catch((err) => console.error("OCR failed:", err));
+  }
 
   return createdRow;
 }
@@ -812,29 +844,6 @@ function detectFromStock(stockNumber) {
   return null;
 }
 
-async function classifyEntry({ stock, ocrText }) {
-  // 1. Try stock rules first
-  const stockMatch = detectFromStock(stock);
-  if (stockMatch?.brand) {
-    return stockMatch;
-  }
-
-  // 2. Try OCR brand detection
-  const brandFromText = detectBrandFromText(ocrText);
-  if (brandFromText) {
-    return {
-      brand: brandFromText,
-      type: stockMatch?.type || "Unknown"
-    };
-  }
-
-  // 3. Unknown fallback
-  return {
-    brand: "Unknown",
-    type: stockMatch?.type || "Unknown"
-  };
-}
-
 function detectBrand({ ro = "", stock = "", ocrText = "" }) {
   const stockHit = detectFromStock(stock || ro);
   if (stockHit?.brand) return stockHit.brand;
@@ -846,11 +855,21 @@ function detectBrand({ ro = "", stock = "", ocrText = "" }) {
 }
 
 function detectDealer(roNumber) {
-  return detectBrand({ ro: String(roNumber || "").trim().toUpperCase() });
+  return classifyDealerUniversal({
+    ro: String(roNumber || "").trim().toUpperCase(),
+    stock: "",
+    vin: "",
+    ocrText: "",
+  });
 }
 
 function detectDealerFromText(text) {
-  return detectBrand({ ocrText: text });
+  return classifyDealerUniversal({
+    ro: "",
+    stock: "",
+    vin: "",
+    ocrText: text || "",
+  });
 }
 
 async function detectBrandFromPhoto(signedUrl, log) {
@@ -863,11 +882,13 @@ async function detectBrandFromPhoto(signedUrl, log) {
   const { data } = await worker.recognize(signedUrl);
   await worker.terminate();
 
-  const classification = await classifyEntry({
-    stock: log?.stock_number || log?.ro_number || log?.ref || log?.ro,
-    ocrText: data?.text
+  const pattern = classifyDealerUniversal({
+    ro: log?.ro_number || log?.ref || log?.ro || "",
+    stock: log?.stock_number || log?.stock || "",
+    vin: log?.vin8 || "",
+    ocrText: data?.text || "",
   });
-  return classification?.brand || "Unknown";
+  return pattern || "Unknown";
 }
 
 async function runOCRAndClassify(row) {
@@ -932,11 +953,13 @@ async function runOCRAndClassify(row) {
 }
 
 async function resolveDealerForLog(log) {
-  const stockOrRo = log?.stock_number || log?.ro_number || log?.ref || log?.ro || null;
-
-  // 1. Try stock/RO rules first (fast)
-  const firstPass = await classifyEntry({ stock: stockOrRo, ocrText: "" });
-  let dealer = firstPass?.brand || "Unknown";
+  // 1. Try deterministic pattern rules first (fast)
+  let dealer = classifyDealerUniversal({
+    ro: log?.ro_number || log?.ref || log?.ro || "",
+    stock: log?.stock_number || log?.stock || "",
+    vin: log?.vin8 || "",
+    ocrText: "",
+  });
 
   if (dealer && String(dealer).toUpperCase() !== "UNKNOWN") {
     return dealer;
@@ -1033,6 +1056,9 @@ function normalizeSupabaseLog(r) {
     ref: r.ro_number ?? "",
     ro_number: r.ro_number ?? "",
     dealer: r.dealer ?? null,
+    brand: r.brand ?? null,
+    store_code: r.store_code ?? null,
+    campus: r.campus ?? null,
 
     typeText: r.category ?? "",
     category: r.category ?? "",
@@ -2061,20 +2087,10 @@ function handleClear(ev) {
 
 async function renderLogs(logs) {
   const entries = Array.isArray(logs) ? normalizeEntries(logs) : [];
-  const rules = await loadUserPrefixRules();
-  const fallbackRules = getStockPrefixRules().map((r) => ({
-    prefix: r.prefix,
-    brand: r.brand,
-    vehicle_type: r.type || "Unknown",
-  }));
-  const activeRules = (rules && rules.length) ? rules : fallbackRules;
 
   entries.forEach(entry => {
-    const stock = entry.stock || entry.ro || entry.ro_number || entry.ref;
-    const result = classifyStock(stock, activeRules);
-
-    entry.detected_brand = result?.brand || entry.dealer || "Unknown";
-    entry.detected_type = result?.vehicle_type || null;
+    entry.detected_brand = entry.brand || "Unknown";
+    entry.detected_type = null;
   });
 
   // Group by detected brand, then newest first within each brand.
@@ -2158,6 +2174,15 @@ async function saveEntry(entry) {
     photo_path = saved?.photo_path || null;
     if (photoFile) photoStatus = "ok";
   } else {
+    const classification = classifyEntry({
+      ro: payload.ro_number,
+      stock: entry?.stock || (entry?.refType === "STOCK" ? payload.ro_number : ""),
+      vin: payload.vin8,
+    });
+    payload.brand = classification.brand;
+    payload.store_code = classification.store_code;
+    payload.campus = classification.campus;
+
     saved = await apiCreateLog(payload);
     photo_path = saved?.photo_path || payload.photo_path || null;
     if (photoFile) {
