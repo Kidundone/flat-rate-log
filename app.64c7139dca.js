@@ -2824,12 +2824,20 @@ function closePhotoModal(){
 }
 
 async function refreshUI(entriesOverride){
-  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const setText = (id, val) => { 
+    const el = document.getElementById(id); 
+    if (el) el.textContent = val; 
+  };
 
   const empId = getEmpId();
-  const allEntries = Array.isArray(entriesOverride)
-    ? normalizeEntries(entriesOverride)
-    : normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+
+  let allEntries;
+
+  if (Array.isArray(entriesOverride)) {
+    allEntries = normalizeEntries(entriesOverride);
+  } else {
+    allEntries = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  }
 
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
