@@ -3346,8 +3346,6 @@ async function runOnce() {
   setPhotoUploadTarget?.("");
   initEmpIdBoot?.();
   wireEmpIdReload?.();
-  wireAuthUI(sb);
-  bootAuth().catch(console.error);
 
   try {
     USER_PREFIX_RULES = await loadUserPrefixRules();
@@ -3551,3 +3549,8 @@ if (document.readyState === "loading") {
 } else {
   runOnce().catch(console.error);
 }
+
+document.addEventListener("DOMContentLoaded", async () => {
+  wireAuthUI(sb);
+  await bootAuth();
+});
