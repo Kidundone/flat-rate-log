@@ -38,10 +38,12 @@ if (!window.__AUTH_WIRED__) {
 
     if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
       console.log("User:", session?.user?.id);
+      await initAuth();
       await safeLoadEntries();
     }
 
     if (event === "SIGNED_OUT") {
+      await initAuth();
       console.log("Signed out");
     }
   });
