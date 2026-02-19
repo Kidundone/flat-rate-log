@@ -511,12 +511,9 @@ async function onDeleteClicked(btn, idOverride = null) {
     await softDeleteLog(sb, id);
     LAST_DELETED = { id, at: Date.now() };
 
-    if (window.STATE?.entries) {
-      window.STATE.entries = window.STATE.entries.filter(x => String(x.id) !== String(id));
-      await renderEntries(window.STATE.entries);
-    } else {
-      await loadEntries();
-    }
+    const next = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+      .filter((x) => String(x.id) !== String(id));
+    await renderEntries(next);
 
     showUndoBar({
       text: "Entry deleted.",
@@ -554,7 +551,7 @@ async function onUndoDelete() {
   }
 }
 
-let BACKEND_ENTRIES = null;
+let CURRENT_ENTRIES = [];
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
@@ -1162,6 +1159,7 @@ async function safeLoadEntries() {
     const rows = await loadEntries();
     return rows;
   } catch (e) {
+    console.error(e);
     return [];
   }
 }
@@ -1212,81 +1210,20 @@ function escapeHtml(s){
   }[c]));
 }
 
-function openDB(){
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+const MEMORY_STORES = {
+  [STORES.entries]: new Map(),
+  [STORES.types]: new Map(),
+  [STORES.weekflags]: new Map(),
+  [STORES.payroll]: new Map(),
+};
 
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      const upgradeTxn = e.target.transaction;
-
-      if (!db.objectStoreNames.contains(STORES.entries)) {
-        const os = db.createObjectStore(STORES.entries, { keyPath: "id" });
-        os.createIndex("createdAt", "createdAt", { unique: false });
-        os.createIndex("dayKey", "dayKey", { unique: false });
-        os.createIndex("ro", "ro", { unique: false });
-        os.createIndex("type", "type", { unique: false });
-      }
-
-      if (!db.objectStoreNames.contains(STORES.types)) {
-        const os = db.createObjectStore(STORES.types, { keyPath: "id" });
-        os.createIndex("empId", "empId", { unique: false });
-        os.createIndex("empId_nameLower", ["empId", "nameLower"], { unique: true });
-      }
-
-      // Migrate legacy types store -> types_v2 (leave old store; it becomes unused)
-      if (
-        upgradeTxn &&
-        db.objectStoreNames.contains("types") &&
-        STORES.types !== "types"
-      ) {
-        try {
-          const oldStore = upgradeTxn.objectStore("types");
-          const newStore = upgradeTxn.objectStore(STORES.types);
-          const migrate = oldStore.getAll();
-          migrate.onsuccess = () => {
-            const items = (migrate.result || []).map((item) => ({
-              ...item,
-              empId: String(item.empId || "").trim(),
-              nameLower: String(item.name || "").trim().toLowerCase()
-            }));
-            items.forEach((item) => {
-              try { newStore.put(item); }
-              catch {} 
-            });
-          };
-        } catch (err) {
-        }
-      }
-
-      if (!db.objectStoreNames.contains(STORES.weekflags)) {
-        // key: weekStartKey (YYYY-MM-DD)
-        const os = db.createObjectStore(STORES.weekflags, { keyPath: "weekStartKey" });
-      }
-
-      if (!db.objectStoreNames.contains(STORES.payroll)) {
-        // key: weekStartKey (YYYY-MM-DD)
-        db.createObjectStore(STORES.payroll, { keyPath: "weekStartKey" });
-      }
-    };
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function cloneStoreValue(v) {
+  return v == null ? v : JSON.parse(JSON.stringify(v));
 }
 
-async function tx(storeName, mode = "readonly") {
-  const db = await openDB();
-  const t = db.transaction(storeName, mode);
-  const store = t.objectStore(storeName);
-
-  const done = new Promise((resolve, reject) => {
-    t.oncomplete = () => resolve(true);
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error || new Error("Transaction aborted"));
-  });
-
-  return { db, t, store, done };
+function getStoreMap(storeName) {
+  if (!MEMORY_STORES[storeName]) MEMORY_STORES[storeName] = new Map();
+  return MEMORY_STORES[storeName];
 }
 
 function normalizeEntries(entries) {
@@ -1299,77 +1236,43 @@ function normalizeEntries(entries) {
 
 async function getAll(storeName) {
   if (storeName === STORES.entries && USE_BACKEND) {
-    return normalizeEntries(Array.isArray(BACKEND_ENTRIES) ? BACKEND_ENTRIES : []);
+    return normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
   }
-  const { db, store, done } = await tx(storeName, "readonly");
-  try {
-    const items = await new Promise((resolve, reject) => {
-      const r = store.getAll();
-      r.onsuccess = () => resolve(r.result || []);
-      r.onerror = () => reject(r.error);
-    });
-    await done; // wait for txn
-    return storeName === STORES.entries ? normalizeEntries(items) : items;
-  } finally {
-    db.close();
-  }
+  const items = Array.from(getStoreMap(storeName).values()).map(cloneStoreValue);
+  return storeName === STORES.entries ? normalizeEntries(items) : items;
 }
 
 async function get(storeName, key) {
-  const { db, store, done } = await tx(storeName, "readonly");
-  try {
-    const item = await new Promise((resolve, reject) => {
-      const r = store.get(key);
-      r.onsuccess = () => resolve(r.result || null);
-      r.onerror = () => reject(r.error);
-    });
-    await done; // wait for txn
-    return item;
-  } finally {
-    db.close();
-  }
+  return cloneStoreValue(getStoreMap(storeName).get(key) || null);
 }
 
 async function put(storeName, item) {
-  const { db, store, done } = await tx(storeName, "readwrite");
-  try {
-    await new Promise((resolve, reject) => {
-      const r = store.put(item);
-      r.onsuccess = () => resolve(true);
-      r.onerror = () => reject(r.error);
-    });
-    await done; // IMPORTANT: wait for commit
-  } finally {
-    db.close();
+  if (storeName === STORES.entries && USE_BACKEND) {
+    const next = cloneStoreValue(item);
+    const rows = Array.isArray(CURRENT_ENTRIES) ? [...CURRENT_ENTRIES] : [];
+    const idx = rows.findIndex((r) => String(r?.id) === String(next?.id));
+    if (idx >= 0) rows[idx] = next;
+    else rows.push(next);
+    CURRENT_ENTRIES = normalizeEntries(rows);
+    return;
   }
+  const map = getStoreMap(storeName);
+  const key = item?.id ?? item?.weekStartKey ?? crypto.randomUUID?.() ?? String(Date.now());
+  map.set(key, cloneStoreValue(item));
 }
 
 async function del(storeName, key) {
-  const { db, store, done } = await tx(storeName, "readwrite");
-  try {
-    await new Promise((resolve, reject) => {
-      const r = store.delete(key);
-      r.onsuccess = () => resolve(true);
-      r.onerror = () => reject(r.error);
-    });
-    await done;
-  } finally {
-    db.close();
+  if (storeName === STORES.entries && USE_BACKEND) {
+    CURRENT_ENTRIES = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+      .filter((r) => String(r?.id) !== String(key));
+    return;
   }
+  getStoreMap(storeName).delete(key);
 }
 
 async function clearStore(storeName) {
-  const { db, store, done } = await tx(storeName, "readwrite");
-  try {
-    await new Promise((resolve, reject) => {
-      const r = store.clear();
-      r.onsuccess = () => resolve(true);
-      r.onerror = () => reject(r.error);
-    });
-    await done;
-  } finally {
-    db.close();
-  }
+  if (storeName === STORES.entries && USE_BACKEND) CURRENT_ENTRIES = [];
+  getStoreMap(storeName).clear();
 }
 
 async function fileToDataURL(file){
@@ -1763,59 +1666,7 @@ async function backfillDayKeysForEmp(empId){
 }
 
 async function backfillDayKeysForEmpCursor(empId, { batch = 150 } = {}) {
-  const id = String(empId || "").trim();
-  if (!id) return 0;
-
-  const db = await openDB();
-  let changed = 0;
-
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORES.entries, "readwrite");
-      const store = tx.objectStore(STORES.entries);
-
-      const req = store.openCursor();
-      let processed = 0;
-
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) return resolve();
-
-        const e = cursor.value;
-
-        if (String(e?.empId || "").trim() === id) {
-          const okDayKey = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(e.dayKey || ""));
-          if (!okDayKey) {
-            const fixed = dayKeyFromISO(e.createdAt);
-            if (fixed) {
-              e.dayKey = fixed;
-
-              const ws = startOfWeekFromDateKey(fixed);
-              e.weekStartKey = dateKey(ws);
-
-              cursor.update(e);
-              changed += 1;
-            }
-          }
-        }
-
-        processed += 1;
-
-        if (processed % batch === 0) {
-          setTimeout(() => cursor.continue(), 0);
-        } else {
-          cursor.continue();
-        }
-      };
-
-      req.onerror = () => reject(req.error);
-      tx.onabort = () => reject(tx.error || new Error("backfill aborted"));
-    });
-
-    return changed;
-  } finally {
-    db.close();
-  }
+  return backfillDayKeysForEmp(empId);
 }
 
 function startOfWeekFromDateKey(dayKeyStr){
@@ -1976,7 +1827,7 @@ document.addEventListener("click", (ev) => {
   const id = (btn.getAttribute("data-edit-id") || "").trim();
   if (!id) return;
 
-  const pool = (window.STATE?.entries) || [];
+  const pool = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
   const entry = pool.find(e => String(e.id) === id);
   if (!entry) return;
 
@@ -2046,7 +1897,7 @@ async function renderLogs(logs) {
 
 async function renderEntries(rows) {
   const mapped = (rows || []).map(mapServerLogToEntry);
-  BACKEND_ENTRIES = mapped;
+  CURRENT_ENTRIES = mapped;
   await renderLogs(mapped);
   return mapped;
 }
@@ -2076,8 +1927,6 @@ async function loadEntries() {
   if (res.error) throw res.error;
 
   const rows = (res.data || []).map(normalizeSupabaseLog);
-  window.STATE = window.STATE || {};
-  window.STATE.entries = rows;
   return await renderEntries(rows);
 }
 
@@ -2891,7 +2740,7 @@ function ensurePhotoImg(id, container, styleText, beforeEl) {
 }
 
 async function viewPhotoById(id) {
-  const entries = (window.STATE && window.STATE.entries) || [];
+  const entries = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
   const row = entries.find(e => String(e.id) === String(id));
 
   if (!row) {
@@ -2956,10 +2805,13 @@ function closePhotoModal(){
 async function refreshUI(entriesOverride){
   const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
+  if (!Array.isArray(entriesOverride)) {
+    console.warn("No entriesOverride passed to refreshUI");
+    return;
+  }
+
   const empId = getEmpId();
-  const allEntries = Array.isArray(entriesOverride)
-    ? normalizeEntries(entriesOverride)
-    : await getAll(STORES.entries);
+  const allEntries = normalizeEntries(entriesOverride);
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   populateDealerFilter(entries);
@@ -3174,42 +3026,11 @@ function formatWhen(iso){
 async function getRecentPhotoEntriesByEmp(empId, limit = 24) {
   const id = String(empId || "").trim();
   if (!id) return [];
-
-  const db = await openDB();
-  try {
-    return await new Promise((resolve, reject) => {
-      const out = [];
-      const tx = db.transaction(STORES.entries, "readonly");
-      const store = tx.objectStore(STORES.entries);
-
-      let source = store;
-      try {
-        source = store.index("createdAt");
-      } catch {}
-
-      const req = source.openCursor ? source.openCursor(null, "prev") : null;
-      if (!req) return resolve([]);
-
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) return resolve(out);
-
-        const e = cursor.value;
-        const matchEmp = String(e?.empId || "").trim() === id;
-        const hasPhoto = entryHasPhoto(e);
-        if (e && hasPhoto && matchEmp) {
-          out.push(e);
-          if (out.length >= limit) return resolve(out);
-        }
-        cursor.continue();
-      };
-
-      req.onerror = () => reject(req.error);
-      tx.onabort = () => reject(tx.error || new Error("txn abort"));
-    });
-  } finally {
-    db.close();
-  }
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  return all
+    .filter((e) => String(e?.empId || "").trim() === id && entryHasPhoto(e))
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+    .slice(0, limit);
 }
 
 function setGalleryStatus(msg){
