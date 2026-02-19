@@ -9,6 +9,54 @@ function getStockPrefixRules() {
   return [];
 }
 
+function extractPrefix(value, length = 3) {
+  if (!value) return null;
+  const match = String(value).toUpperCase().match(/^[A-Z]+/);
+  if (!match) return null;
+  return match[0].slice(0, length);
+}
+
+function extractVinWMI(vin) {
+  if (!vin) return null;
+  return vin.toUpperCase().slice(0, 3);
+}
+
+function classifyDealerUniversal({ ro, stock, vin, ocrText }) {
+  const blob = `${ro || ""}
+${stock || ""}
+${vin || ""}
+${ocrText || ""}`.toUpperCase();
+
+  const stockPrefix = extractPrefix(stock);
+  const roPrefix = extractPrefix(ro);
+  const vinWMI = extractVinWMI(vin);
+
+  // VIN-based universal patterns
+  if (vinWMI === "WAU") return "Audi";
+  if (vinWMI === "1VW") return "Volkswagen";
+  if (vinWMI === "JF1") return "Subaru";
+  if (vinWMI === "J58") return "Acura";
+
+  // Stock / RO prefix pattern grouping
+  if (stockPrefix === "SLV") return "Volkswagen";
+  if (stockPrefix === "SLB") return "Audi";
+  if (stockPrefix === "SLS") return "Subaru";
+  if (stockPrefix === "SLA") return "Acura";
+
+  if (roPrefix === "V") return "Volkswagen";
+  if (roPrefix === "B") return "Audi";
+  if (roPrefix === "S") return "Subaru";
+  if (roPrefix === "A") return "Acura";
+
+  // OCR pattern detection
+  if (blob.includes("VOLKSWAGEN")) return "Volkswagen";
+  if (blob.includes("AUDI")) return "Audi";
+  if (blob.includes("SUBARU")) return "Subaru";
+  if (blob.includes("ACURA")) return "Acura";
+
+  return "Unknown";
+}
+
 function makeSupabase() {
   if (!window.supabase?.createClient) {
     console.error("Supabase UMD not loaded. Check script tag order.");
@@ -197,19 +245,32 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
-  let resolvedDealer = "UNKNOWN";
-  try {
-    resolvedDealer = await resolveDealerForLog({
-      ro_number: roNumber || null,
-      photo_path: path,
-    });
-    await updateWorkLogWithFallback(sb, logId, {
-      dealer: resolvedDealer,
-      updated_at: new Date().toISOString(),
-    });
-  } catch (ocrErr) {
-    console.error("Dealer OCR failed", ocrErr);
+  const dealerGuess = classifyDealerUniversal({
+    ro: roNumber || null,
+    stock: null,
+    vin: null,
+    ocrText: "",
+  });
+  const resolvedDealer = dealerGuess && dealerGuess !== "Unknown" ? dealerGuess : null;
+
+  if (resolvedDealer) {
+    try {
+      await updateWorkLogWithFallback(sb, logId, {
+        dealer: resolvedDealer,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (dealerErr) {
+      console.error("Dealer seed update failed", dealerErr);
+    }
   }
+
+  // Run OCR classification in background; do not block photo upload/save flow.
+  runOCRAndClassify({
+    id: logId,
+    ro_number: roNumber || null,
+    photo_path: path,
+  }).catch((ocrErr) => console.error("OCR failed:", ocrErr));
+
   return { path, dealer: resolvedDealer };
 }
 
@@ -807,6 +868,67 @@ async function detectBrandFromPhoto(signedUrl, log) {
     ocrText: data?.text
   });
   return classification?.brand || "Unknown";
+}
+
+async function runOCRAndClassify(row) {
+  try {
+    if (!row?.id || !row?.photo_path) return;
+
+    let payload = { ...(row || {}) };
+    if (!payload.ro_number || !payload.stock || !payload.vin8) {
+      const { data: fresh, error } = await sb
+        .from("work_logs")
+        .select("id,ro_number,vin8,photo_path")
+        .eq("id", row.id)
+        .maybeSingle();
+      if (error) throw error;
+      payload = {
+        ...payload,
+        ...fresh,
+      };
+    }
+
+    const signedUrl = await getProofSignedUrl(sb, payload.photo_path);
+    let ocrText = "";
+    const tesseract = window.Tesseract;
+
+    if (tesseract?.recognize) {
+      const result = await tesseract.recognize(signedUrl, "eng");
+      ocrText = result?.data?.text || "";
+    } else if (tesseract?.createWorker) {
+      const created = await tesseract.createWorker("eng");
+      const worker = created?.data || created;
+      try {
+        const result = await worker.recognize(signedUrl);
+        ocrText = result?.data?.text || "";
+      } finally {
+        await worker.terminate();
+      }
+    } else {
+      throw new Error("Tesseract not available");
+    }
+
+    const dealer = classifyDealerUniversal({
+      ro: payload.ro_number || null,
+      stock: payload.stock || null,
+      vin: payload.vin8 || null,
+      ocrText,
+    });
+
+    await updateWorkLogWithFallback(sb, row.id, {
+      dealer,
+      updated_at: new Date().toISOString(),
+    });
+
+    console.log("Dealer updated:", dealer);
+
+    if (window.__PAGE__ === "main") {
+      const rows = await safeLoadEntries();
+      await refreshUI(rows);
+    }
+  } catch (err) {
+    console.error("OCR failed:", err);
+  }
 }
 
 async function resolveDealerForLog(log) {
