@@ -171,7 +171,7 @@ function setPhotoUploadTarget(path) {
 
 async function requireUserId(sb) {
   const uid = window.CURRENT_UID;
-  if (!uid) throw new Error("Sign in required");
+  if (!uid) return null;
   return uid;
 }
 
@@ -186,6 +186,7 @@ async function getProofSignedUrl(sb, photoPath) {
 
 async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
   const uid = await requireUserId(sb);
+  if (!uid) throw new Error("Sign in required");
 
   const ext = (file.type === "image/png") ? "png" : "jpg";
   const path = `${uid}/${empId}/${logId}.${ext}`;
@@ -218,6 +219,7 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
 async function sbListRows(empId) {
   if (!empId) return [];
   const uid = await requireUserId(sb);
+  if (!uid) return [];
   const dealerFilter = document.getElementById("dealerFilter")?.value;
 
   let q = sb
@@ -243,6 +245,7 @@ async function sbListRows(empId) {
 async function probeEmpHasRows(empId) {
   if (!empId) return false;
   const uid = await requireUserId(sb);
+  if (!uid) return false;
   const { count, error } = await sb
     .from("work_logs")
     .select("id", { count: "exact", head: true })
@@ -410,11 +413,11 @@ async function apiListLogs(empId) {
 
 // CREATE
 async function apiCreateLog(payload) {
-  await requireUserId(sb);
+  const uid = await requireUserId(sb);
+  if (!uid) throw new Error("Sign in required");
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
-  const uid = await requireUserId(sb);
   const dealer = await resolveDealerForLog(payload);
 
   const insertRow = {
@@ -1952,6 +1955,10 @@ async function loadEntries() {
   if (!empId) throw new Error("Employee # required");
 
   const uid = await requireUserId(sb);
+  if (!uid) {
+    console.warn("No UID - skipping loadEntries");
+    return [];
+  }
   const dealerFilter = document.getElementById("dealerFilter")?.value;
 
   let query = sb
