@@ -34,17 +34,22 @@ if (!window.__AUTH_WIRED__) {
   sb.auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
     window.CURRENT_UID = session?.user?.id || null;
+    await initAuth();
 
-    if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
-      console.log("User:", session?.user?.id);
-      await initAuth();
-      await safeLoadEntries();
+    if (!window.CURRENT_UID) {
+      console.log("No user yet - skipping load");
+      return;
     }
 
-    if (event === "SIGNED_OUT") {
-      await initAuth();
-      console.log("Signed out");
+    const emp = getEmpId();
+    if (!emp) {
+      console.log("No employee # yet - waiting");
+      return;
     }
+
+    console.log("User ready:", window.CURRENT_UID);
+    await safeLoadEntries();
+    await refreshUI();
   });
 }
 
