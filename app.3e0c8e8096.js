@@ -1,5 +1,5 @@
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
+const SUPABASE_ANON_KEY = "YOUR_REAL_ANON_KEY";
 
 const sb = supabase.createClient(
   SUPABASE_URL,
@@ -8,13 +8,12 @@ const sb = supabase.createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false,
-      storage: window.localStorage
+      detectSessionInUrl: false
     }
   }
 );
 
-window.sb = sb; // debugging access replace annon key with reall key in code 
+window.sb = sb; // keep this for debugging
 
 async function bootSession() {
   const { data } = await sb.auth.getSession();
