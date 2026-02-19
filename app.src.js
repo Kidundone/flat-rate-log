@@ -47,7 +47,7 @@ async function bootAuth() {
   await setUidFromSession(data?.session || null);
 
   await initAuth();
-  if (window.CURRENT_UID && getEmpId()) {
+  if (window.CURRENT_UID && document.getElementById("reviewList")) {
     try {
       await safeLoadEntries();
       await refreshUI();
@@ -64,7 +64,7 @@ async function bootAuth() {
     await setUidFromSession(session || null);
     await initAuth();
 
-    if (event === "SIGNED_IN") {
+    if (event === "SIGNED_IN" && document.getElementById("reviewList")) {
       try {
         await safeLoadEntries();
         await refreshUI();
@@ -116,7 +116,9 @@ async function signIn(email, password) {
 
   window.CURRENT_UID = data?.session?.user?.id || null;
   await initAuth();
-  await safeLoadEntries();
+  if (document.getElementById("reviewList")) {
+    await safeLoadEntries();
+  }
   await refreshUI();
 }
 
