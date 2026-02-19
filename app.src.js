@@ -56,18 +56,11 @@ async function bootAuth() {
     window.CURRENT_UID = session?.user?.id || null;
     await initAuth();
 
-    if (event === "INITIAL_SESSION" || event === "SIGNED_IN") {
-      if (window.__PAGE__ === "main" && window.CURRENT_UID) {
+    if ((event === "INITIAL_SESSION" || event === "SIGNED_IN") && window.CURRENT_UID) {
+      if (window.__PAGE__ === "main") {
+        console.log("↩️ Loading entries after auth...");
         await safeLoadEntries();
         await refreshUI();
-      }
-    }
-
-    if (event === "SIGNED_OUT") {
-      try {
-        await refreshUI();
-      } catch (e) {
-        console.error(e);
       }
     }
   });
@@ -1141,7 +1134,7 @@ function num(v){
   return Number.isFinite(x) ? x : 0;
 }
 
-function setRangeMode(m) {
+function setRangeMode(m, opts = {}) {
   rangeMode = m;
   window.__RANGE_MODE__ = m;
 
@@ -1153,7 +1146,7 @@ function setRangeMode(m) {
   const row = document.getElementById("weekWhichRow");
   if (row) row.style.display = (m === "week") ? "inline-flex" : "none";
 
-  if (PAGE === "main") refreshUI();
+  if (PAGE === "main" && !opts.skipRefresh) refreshUI();
 }
 
 function getRate(){
@@ -3412,7 +3405,7 @@ async function runOnce() {
     });
 
     syncWeekBtns();
-    setRangeMode(window.__RANGE_MODE__ || "day");
+    setRangeMode(window.__RANGE_MODE__ || "day", { skipRefresh: true });
 
     document.getElementById("refTypeRO")?.addEventListener("click", () => setRefType("RO"));
     document.getElementById("refTypeSTK")?.addEventListener("click", () => setRefType("STOCK"));
@@ -3500,7 +3493,6 @@ async function runOnce() {
     document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
     initPhotosUI();
-    await refreshUI();
     return;
   }
 
