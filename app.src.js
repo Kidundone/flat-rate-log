@@ -16,19 +16,36 @@ const sb = supabase.createClient(
 
 window.sb = sb; // debugging access replace annon key with reall key in code 
 
-sb.auth.onAuthStateChange(async (event, session) => {
-  console.log("AUTH EVENT:", event);
+async function bootSession() {
+  const { data } = await sb.auth.getSession();
+  const session = data?.session || null;
   window.CURRENT_UID = session?.user?.id || null;
+  await initAuth();
 
-  if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
-    console.log("User:", session?.user?.id);
+  // If already signed in and we have empId, load entries
+  if (window.CURRENT_UID && getEmpId()) {
     await safeLoadEntries();
+    await refreshUI();
   }
+}
+bootSession();
 
-  if (event === "SIGNED_OUT") {
-    console.log("Signed out");
-  }
-});
+if (!window.__AUTH_WIRED__) {
+  window.__AUTH_WIRED__ = true;
+  sb.auth.onAuthStateChange(async (event, session) => {
+    console.log("AUTH EVENT:", event);
+    window.CURRENT_UID = session?.user?.id || null;
+
+    if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+      console.log("User:", session?.user?.id);
+      await safeLoadEntries();
+    }
+
+    if (event === "SIGNED_OUT") {
+      console.log("Signed out");
+    }
+  });
+}
 
 window.BUILD = "20260107a-hotfix1";
 console.log("__FR_MARKER_20260121");
@@ -63,9 +80,12 @@ async function signIn(email, password) {
     password
   });
 
-  if (error) {
-    alert(error.message);
-  }
+  if (error) return alert(error.message);
+
+  window.CURRENT_UID = data?.session?.user?.id || null;
+  await initAuth();
+  await safeLoadEntries();
+  await refreshUI();
 }
 
 function wireAuthUI(sb) {
@@ -2805,13 +2825,18 @@ function closePhotoModal(){
 async function refreshUI(entriesOverride){
   const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-  if (!Array.isArray(entriesOverride)) {
-    console.warn("No entriesOverride passed to refreshUI");
-    return;
+  const empId = getEmpId();
+
+  // If no override passed, use CURRENT_ENTRIES (backend mode) or local store
+  let allEntries;
+  if (Array.isArray(entriesOverride)) {
+    allEntries = normalizeEntries(entriesOverride);
+  } else if (USE_BACKEND) {
+    allEntries = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  } else {
+    allEntries = normalizeEntries(await getAll(STORES.entries));
   }
 
-  const empId = getEmpId();
-  const allEntries = normalizeEntries(entriesOverride);
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   populateDealerFilter(entries);
@@ -3289,10 +3314,6 @@ function initPhotosUI(){
 /* -------------------- Boot -------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   (async () => {
-    let bootLoaded = false;
-    const bootEmpId = getEmpId();
-    if (bootEmpId) bootLoaded = true;
-
     try {
       USER_PREFIX_RULES = await loadUserPrefixRules();
     } catch (e) {
@@ -3302,7 +3323,11 @@ document.addEventListener("DOMContentLoaded", () => {
     await ensureDefaultTypes();
     await (async () => {
       try {
-        if (!bootLoaded) await loadEntries();
+        // only load if we're signed in + have empId
+        try {
+          const emp = getEmpId();
+          if (emp) await safeLoadEntries();
+        } catch {}
       } catch (e) {
       } finally {
         // MUST bind UI no matter what
@@ -3453,6 +3478,11 @@ document.addEventListener("DOMContentLoaded", () => {
       initPhotosUI();
       initEmpIdBoot();
       wireEmpIdReload();
+
+      // If signed in and empId exists, actually load from Supabase
+      await safeLoadEntries();
+
+      // Now render using whatever is in CURRENT_ENTRIES
       await refreshUI();
       return;
     }
