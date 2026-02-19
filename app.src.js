@@ -1,3 +1,4 @@
+const { createClient} = window.supabase || {};
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
 
@@ -3346,6 +3347,8 @@ async function runOnce() {
   setPhotoUploadTarget?.("");
   initEmpIdBoot?.();
   wireEmpIdReload?.();
+  wireAuthUI(sb);
+  bootAuth().catch(console.error);
 
   try {
     USER_PREFIX_RULES = await loadUserPrefixRules();
@@ -3549,8 +3552,3 @@ if (document.readyState === "loading") {
 } else {
   runOnce().catch(console.error);
 }
-
-document.addEventListener("DOMContentLoaded", async () => {
-  wireAuthUI(sb);
-  await bootAuth();
-});
