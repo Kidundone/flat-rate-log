@@ -1,7 +1,7 @@
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
 
-const sb = supabase.createClient(
+const sb = window.supabase.createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   {
@@ -3553,4 +3553,24 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("DOMContentLoaded", async () => {
   wireAuthUI(sb);
   await initAuth();
+});
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("logForm");
+  if (!form) {
+    console.log("No logForm on this page");
+    return;
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    console.log("FORM SUBMIT WORKING");
+
+    try {
+      await handleSave(e);
+    } catch (err) {
+      console.error("HANDLE SAVE ERROR:", err);
+    }
+  });
+
+  console.log("FORM WIRED MANUALLY");
 });
