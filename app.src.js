@@ -1955,6 +1955,18 @@ async function renderLogs(logs) {
     entry.detected_brand = result?.brand || entry.dealer || "Unknown";
     entry.detected_type = result?.vehicle_type || null;
   });
+
+  // Group by detected brand, then newest first within each brand.
+  entries.sort((a, b) => {
+    const brandA = a.detected_brand || "";
+    const brandB = b.detected_brand || "";
+
+    if (brandA < brandB) return -1;
+    if (brandA > brandB) return 1;
+
+    return new Date(b.work_date) - new Date(a.work_date);
+  });
+
   await refreshUI(entries);
 }
 
@@ -2698,7 +2710,22 @@ function renderList(entries, mode){
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = (searchInput?.value || "").trim().toLowerCase();
 
-  const visible = sortEntriesByRo(applySearch(ranged, q).slice());
+  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
+  const visible = applySearch(ranged, q).slice();
+  if (!isWeekRange) {
+    visible.sort((a, b) => {
+      const brandA = String(a.detected_brand || a.dealer || "Unknown");
+      const brandB = String(b.detected_brand || b.dealer || "Unknown");
+      const byBrand = brandA.localeCompare(brandB, undefined, { sensitivity: "base" });
+      if (byBrand !== 0) return byBrand;
+
+      const aTs = Date.parse(a.work_date || a.createdAt || "") || 0;
+      const bTs = Date.parse(b.work_date || b.createdAt || "") || 0;
+      return bTs - aTs;
+    });
+  } else {
+    visible.sort((a, b) => (b.dayKey || "").localeCompare(a.dayKey || ""));
+  }
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
@@ -2743,7 +2770,6 @@ function renderList(entries, mode){
     return row;
   };
 
-  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
   if (isWeekRange) {
     const groups = new Map();
     for (const e of capped) {
@@ -2771,7 +2797,16 @@ function renderList(entries, mode){
     return;
   }
 
+  let lastBrand = null;
   for (const e of capped) {
+    const brand = String(e.detected_brand || e.dealer || "Unknown");
+    if (brand !== lastBrand) {
+      const header = document.createElement("div");
+      header.className = "item";
+      header.innerHTML = `<div class="mono">=== ${escapeHtml(brand)} ===</div>`;
+      list.appendChild(header);
+      lastBrand = brand;
+    }
     list.appendChild(buildEntry(e));
   }
 }
