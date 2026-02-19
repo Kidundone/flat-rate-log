@@ -47,7 +47,7 @@ async function bootAuth() {
   await setUidFromSession(data?.session || null);
 
   await initAuth();
-  if (window.CURRENT_UID) {
+  if (window.CURRENT_UID && getEmpId()) {
     try {
       await safeLoadEntries();
       await refreshUI();
