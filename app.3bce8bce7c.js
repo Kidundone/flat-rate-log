@@ -47,38 +47,28 @@ async function bootAuth() {
   await setUidFromSession(data?.session || null);
 
   await initAuth();
-  if (window.__PAGE__ === "main" && window.CURRENT_UID && document.getElementById("reviewList")) {
-    try {
-      const rows = await safeLoadEntries();
-      if (rows?.length) {
-        await refreshUI(rows);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
 
   if (window.__AUTH_WIRED__) return;
   window.__AUTH_WIRED__ = true;
 
   sb.auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
-    await setUidFromSession(session || null);
+    window.CURRENT_UID = session?.user?.id || null;
     await initAuth();
 
-    if (event === "SIGNED_IN" && window.__PAGE__ === "main" && document.getElementById("reviewList")) {
-      try {
-        const rows = await safeLoadEntries();
-        if (rows?.length) {
-          await refreshUI(rows);
-        }
-      } catch (e) {
-        console.error(e);
+    if (event === "INITIAL_SESSION" || event === "SIGNED_IN") {
+      if (window.__PAGE__ === "main" && window.CURRENT_UID) {
+        await safeLoadEntries();
+        await refreshUI();
       }
     }
 
     if (event === "SIGNED_OUT") {
-      await initAuth();
+      try {
+        await refreshUI();
+      } catch (e) {
+        console.error(e);
+      }
     }
   });
 }
@@ -111,19 +101,12 @@ async function initAuth() {
 }
 
 async function signIn(email, password) {
-  const { data, error } = await sb.auth.signInWithPassword({
+  const { error } = await sb.auth.signInWithPassword({
     email,
     password
   });
 
   if (error) return alert(error.message);
-
-  window.CURRENT_UID = data?.session?.user?.id || null;
-  await initAuth();
-  if (window.__PAGE__ === "main" && document.getElementById("reviewList")) {
-    await safeLoadEntries();
-    await refreshUI();
-  }
 }
 
 function wireAuthUI(sb) {
@@ -603,7 +586,7 @@ async function onUndoDelete() {
     LAST_DELETED = null;
 
     if (window.__FR?.safeLoadEntries) await window.__FR.safeLoadEntries();
-    else await loadEntries();
+    else await safeLoadEntries();
     const bar = document.getElementById("undoBar");
     if (bar) bar.style.display = "none";
   } catch (e) {
@@ -1245,22 +1228,15 @@ function initEmpIdBoot() {
 
   const saved = (localStorage.getItem("fr_emp_id") || "").trim();
   if (saved && !el.value) el.value = saved;
-
-  // If we already have a valid empId, load immediately
-  if (window.__PAGE__ === "main" && (el.value || "").trim().replace(/\D/g, "").length >= 5) {
-    safeLoadEntries();
-  }
 }
 function wireEmpIdReload() {
   const el = document.getElementById("empId");
   if (!el) return;
 
   const maybeReload = () => {
-    if (window.__PAGE__ !== "main") return;
     const digits = (el.value || "").trim().replace(/\D/g, "");
     if (digits.length >= 5) {
       localStorage.setItem("fr_emp_id", digits);
-      safeLoadEntries();
     }
   };
 
@@ -2072,7 +2048,7 @@ async function saveEntry(entry) {
   setEditingEntry(null);
 
   // Refresh after photo upload so it shows up immediately
-  await loadEntries();
+  await safeLoadEntries();
   if (photoStatus === "fail") toast("Saved (photo failed)");
   else if (photoStatus === "ok") toast("Saved + Photo");
   else toast("Saved");
@@ -3524,9 +3500,6 @@ async function runOnce() {
     document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
     initPhotosUI();
-    if (window.CURRENT_UID && getEmpId()) {
-      await safeLoadEntries();
-    }
     await refreshUI();
     return;
   }
