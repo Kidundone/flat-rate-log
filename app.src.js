@@ -9,76 +9,66 @@ function getStockPrefixRules() {
   return [];
 }
 
-function extractPrefix(value, length = 3) {
-  if (!value) return null;
-  const match = String(value).toUpperCase().match(/^[A-Z]+/);
-  if (!match) return null;
-  return match[0].slice(0, length);
-}
+async function classifyEntryUniversal({ ro, stock, vin }) {
+  const patterns = [];
 
-function extractVinWMI(vin) {
-  if (!vin) return null;
-  return vin.toUpperCase().slice(0, 3);
-}
+  if (vin && String(vin).length >= 3) {
+    patterns.push({
+      type: "VIN",
+      value: String(vin).slice(0, 3).toUpperCase(),
+    });
+  }
 
-function classifyEntry({ ro, stock, vin }) {
-  const result = {
-    brand: null,
-    store_code: null,
+  if (stock) {
+    const prefix = String(stock).replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase();
+    if (prefix) {
+      patterns.push({
+        type: "STK",
+        value: prefix,
+      });
+    }
+  }
+
+  if (ro) {
+    const prefix = String(ro).replace(/[^A-Z]/gi, "").slice(0, 1).toUpperCase();
+    if (prefix) {
+      patterns.push({
+        type: "RO",
+        value: prefix,
+      });
+    }
+  }
+
+  for (const p of patterns) {
+    const { data } = await window.sb
+      .from("pattern_mappings")
+      .select("*")
+      .eq("pattern_type", p.type)
+      .eq("pattern_value", p.value)
+      .maybeSingle();
+
+    if (data) {
+      return {
+        brand: data.brand,
+        store: data.store,
+        campus: data.campus,
+        matched_on: `${p.type}:${p.value}`,
+      };
+    }
+  }
+
+  return {
+    brand: "Unmapped",
+    store: null,
     campus: null,
+    matched_on: null,
   };
-
-  // BRAND via VIN WMI (strongest signal)
-  const wmi = extractVinWMI(vin);
-  if (wmi) {
-    result.brand = wmi;
-  }
-
-  // STORE via stock prefix
-  const stockPrefix = extractPrefix(stock);
-  if (stockPrefix) {
-    result.store_code = stockPrefix;
-  }
-
-  // CAMPUS via RO first letter
-  const roPrefix = extractPrefix(ro, 1);
-  if (roPrefix) {
-    result.campus = roPrefix;
-  }
-
-  return result;
 }
 
-function classifyDealerUniversal({ ro, stock, vin, ocrText }) {
-  const blob = `${ro || ""}
-${stock || ""}
-${vin || ""}
-${ocrText || ""}`.toUpperCase();
-
-  const structured = classifyEntry({ ro, stock, vin });
-
-  // 1) VIN WMI cluster
-  if (structured.brand) {
-    return `VIN:${structured.brand}`;
-  }
-
-  // 2) Stock prefix cluster
-  if (structured.store_code) {
-    return `STK:${structured.store_code}`;
-  }
-
-  // 3) RO prefix cluster
-  if (structured.campus) {
-    return `RO:${structured.campus}`;
-  }
-
-  // 4) OCR fallback cluster
-  const ocrMatch = blob.match(/\b[A-Z]{3,}\b/);
-  if (ocrMatch) {
-    return `OCR:${ocrMatch[0]}`;
-  }
-
-  return "Unknown";
+async function classifyDealerUniversal({ ro, stock, vin }) {
+  const classification = await classifyEntryUniversal({ ro, stock, vin });
+  if (!classification || classification.brand === "Unmapped") return "Unknown";
+  return classification.brand;
 }
 
 function makeSupabase() {
@@ -269,11 +259,10 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
-  const dealerGuess = classifyDealerUniversal({
+  const dealerGuess = await classifyDealerUniversal({
     ro: roNumber || null,
     stock: null,
     vin: null,
-    ocrText: "",
   });
   const resolvedDealer = dealerGuess && dealerGuess !== "Unknown" ? dealerGuess : null;
 
@@ -854,24 +843,6 @@ function detectBrand({ ro = "", stock = "", ocrText = "" }) {
   return "Unknown";
 }
 
-function detectDealer(roNumber) {
-  return classifyDealerUniversal({
-    ro: String(roNumber || "").trim().toUpperCase(),
-    stock: "",
-    vin: "",
-    ocrText: "",
-  });
-}
-
-function detectDealerFromText(text) {
-  return classifyDealerUniversal({
-    ro: "",
-    stock: "",
-    vin: "",
-    ocrText: text || "",
-  });
-}
-
 async function detectBrandFromPhoto(signedUrl, log) {
   const tesseract = window.Tesseract;
   if (!tesseract?.createWorker) return "UNKNOWN";
@@ -882,11 +853,10 @@ async function detectBrandFromPhoto(signedUrl, log) {
   const { data } = await worker.recognize(signedUrl);
   await worker.terminate();
 
-  const pattern = classifyDealerUniversal({
+  const pattern = await classifyDealerUniversal({
     ro: log?.ro_number || log?.ref || log?.ro || "",
     stock: log?.stock_number || log?.stock || "",
     vin: log?.vin8 || "",
-    ocrText: data?.text || "",
   });
   return pattern || "Unknown";
 }
@@ -929,11 +899,10 @@ async function runOCRAndClassify(row) {
       throw new Error("Tesseract not available");
     }
 
-    const dealer = classifyDealerUniversal({
+    const dealer = await classifyDealerUniversal({
       ro: payload.ro_number || null,
       stock: payload.stock || null,
       vin: payload.vin8 || null,
-      ocrText,
     });
 
     await updateWorkLogWithFallback(sb, row.id, {
@@ -954,11 +923,10 @@ async function runOCRAndClassify(row) {
 
 async function resolveDealerForLog(log) {
   // 1. Try deterministic pattern rules first (fast)
-  let dealer = classifyDealerUniversal({
+  let dealer = await classifyDealerUniversal({
     ro: log?.ro_number || log?.ref || log?.ro || "",
     stock: log?.stock_number || log?.stock || "",
     vin: log?.vin8 || "",
-    ocrText: "",
   });
 
   if (dealer && String(dealer).toUpperCase() !== "UNKNOWN") {
@@ -1045,8 +1013,8 @@ function normalizeEntryForApi(entry) {
   };
 }
 
-function normalizeSupabaseLog(r) {
-  return {
+async function normalizeSupabaseLog(r) {
+  const entry = {
     id: r.id,
     work_date: r.work_date,
     created_at: r.created_at,
@@ -1081,6 +1049,20 @@ function normalizeSupabaseLog(r) {
     employee_number: r.employee_number ?? null,
     is_deleted: r.is_deleted ?? false,
   };
+
+  const classification = await classifyEntryUniversal({
+    ro: entry.ro_number,
+    stock: entry.ref,
+    vin: entry.vin8
+  });
+
+  entry.brand = classification.brand;
+  entry.store = classification.store;
+  entry.store_code = classification.store;
+  entry.campus = classification.campus;
+  entry.classMatched = classification.matched_on;
+
+  return entry;
 }
 
 function mapServerLogToEntry(r) {
@@ -1099,7 +1081,12 @@ function mapServerLogToEntry(r) {
     refType: "RO",
     ref: r.ro_number || "",
     ro: r.ro_number || "",
-    dealer: r.dealer || detectDealer(r.ro_number || ""),
+    dealer: r.dealer || "UNKNOWN",
+    brand: r.brand || null,
+    store: r.store || r.store_code || null,
+    store_code: r.store_code || r.store || null,
+    campus: r.campus || null,
+    classMatched: r.classMatched || null,
     vin8: r.vin8 || "",
     type: r.category || "work",
     typeText: r.category || "work",
@@ -2145,7 +2132,7 @@ async function loadEntries() {
 
   if (res.error) throw res.error;
 
-  const rows = (res.data || []).map(normalizeSupabaseLog);
+  const rows = await Promise.all((res.data || []).map(normalizeSupabaseLog));
   return await renderEntries(rows);
 }
 
@@ -2174,13 +2161,13 @@ async function saveEntry(entry) {
     photo_path = saved?.photo_path || null;
     if (photoFile) photoStatus = "ok";
   } else {
-    const classification = classifyEntry({
+    const classification = await classifyEntryUniversal({
       ro: payload.ro_number,
       stock: entry?.stock || (entry?.refType === "STOCK" ? payload.ro_number : ""),
       vin: payload.vin8,
     });
     payload.brand = classification.brand;
-    payload.store_code = classification.store_code;
+    payload.store_code = classification.store;
     payload.campus = classification.campus;
 
     saved = await apiCreateLog(payload);
