@@ -2,6 +2,8 @@ const { createClient} = window.supabase || {};
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
 const STOCK_PREFIX_RULES = [];
+const OCR_TEXT_CACHE = new Map();
+const OCR_CLASSIFICATION_CACHE = new Map();
 
 function getStockPrefixRules() {
   if (Array.isArray(window.STOCK_PREFIX_RULES)) return window.STOCK_PREFIX_RULES;
@@ -9,7 +11,38 @@ function getStockPrefixRules() {
   return [];
 }
 
-async function classifyEntryUniversal({ ro, stock, vin }) {
+function unmappedClassification() {
+  return {
+    brand: "Unmapped",
+    store: null,
+    campus: null,
+    matched_on: null,
+  };
+}
+
+async function lookupPatternMappings(patterns) {
+  for (const p of (patterns || [])) {
+    const { data } = await window.sb
+      .from("pattern_mappings")
+      .select("*")
+      .eq("pattern_type", p.type)
+      .eq("pattern_value", p.value)
+      .maybeSingle();
+
+    if (data) {
+      return {
+        brand: data.brand,
+        store: data.store,
+        campus: data.campus,
+        matched_on: p.matched_on || `${p.type}:${p.value}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractStructuredPatterns({ ro, stock, vin }) {
   const patterns = [];
 
   if (vin && String(vin).length >= 3) {
@@ -39,34 +72,85 @@ async function classifyEntryUniversal({ ro, stock, vin }) {
     }
   }
 
-  for (const p of patterns) {
-    const { data } = await window.sb
-      .from("pattern_mappings")
-      .select("*")
-      .eq("pattern_type", p.type)
-      .eq("pattern_value", p.value)
-      .maybeSingle();
+  return patterns;
+}
 
-    if (data) {
-      return {
-        brand: data.brand,
-        store: data.store,
-        campus: data.campus,
-        matched_on: `${p.type}:${p.value}`,
-      };
+async function classifyEntryUniversal({ ro, stock, vin }) {
+  const patterns = extractStructuredPatterns({ ro, stock, vin });
+  const classification = await lookupPatternMappings(patterns);
+  return classification || unmappedClassification();
+}
+
+function extractOcrPatterns(ocrText) {
+  const upper = String(ocrText || "").toUpperCase();
+  const out = [];
+  const seen = new Set();
+  const add = (type, value, matched_on = null) => {
+    const v = String(value || "").toUpperCase().trim();
+    if (!v) return;
+    const key = `${type}:${v}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ type, value: v, matched_on: matched_on || key });
+  };
+
+  const vinHits = upper.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  for (const token of vinHits.slice(0, 3)) {
+    const wmi = token.slice(0, 3);
+    add("VIN", wmi, `OCR:VIN:${wmi}`);
+  }
+
+  const words = upper.match(/[A-Z0-9]{3,}/g) || [];
+  for (const token of words.slice(0, 24)) {
+    const letters = token.replace(/[^A-Z]/g, "");
+    if (letters.length >= 3) {
+      const prefix = letters.slice(0, 3);
+      add("STK", prefix, `OCR:STK:${prefix}`);
     }
   }
 
-  return {
-    brand: "Unmapped",
-    store: null,
-    campus: null,
-    matched_on: null,
-  };
+  return out;
 }
 
-async function classifyDealerUniversal({ ro, stock, vin }) {
-  const classification = await classifyEntryUniversal({ ro, stock, vin });
+async function classifyEntryFromOCR(ocrText) {
+  const patterns = extractOcrPatterns(ocrText);
+  if (!patterns.length) return unmappedClassification();
+  const classification = await lookupPatternMappings(patterns);
+  return classification || unmappedClassification();
+}
+
+async function classifyEntryWithFallback({ ro, stock, vin, photoPath }) {
+  let classification = await classifyEntryUniversal({ ro, stock, vin });
+
+  if (classification.brand !== "Unmapped") {
+    return classification;
+  }
+
+  if (!photoPath) {
+    return classification;
+  }
+
+  if (OCR_CLASSIFICATION_CACHE.has(photoPath)) {
+    return OCR_CLASSIFICATION_CACHE.get(photoPath);
+  }
+
+  try {
+    const ocrText = await runOCR(photoPath);
+    if (!ocrText) return classification;
+    const retry = await classifyEntryFromOCR(ocrText);
+    if (retry.brand !== "Unmapped") {
+      classification = retry;
+      OCR_CLASSIFICATION_CACHE.set(photoPath, classification);
+    }
+  } catch (err) {
+    console.error("OCR fallback classification failed", err);
+  }
+
+  return classification;
+}
+
+async function classifyDealerUniversal({ ro, stock, vin, photoPath }) {
+  const classification = await classifyEntryWithFallback({ ro, stock, vin, photoPath });
   if (!classification || classification.brand === "Unmapped") return "Unknown";
   return classification.brand;
 }
@@ -483,11 +567,26 @@ async function apiListLogs(empId) {
 }
 
 // CREATE
-async function apiCreateLog(payload) {
+async function apiCreateLog(payload, sourceEntry = null) {
   const uid = await requireUserId(sb);
   if (!uid) throw new Error("Sign in required");
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
+
+  const classification = await classifyEntryUniversal({
+    ro: payload.ro_number || null,
+    stock: sourceEntry?.ref || null,
+  });
+
+  payload.brand = classification.brand;
+  payload.store = classification.store;
+  payload.store_code = classification.store;
+  payload.campus = classification.campus;
+  if (sourceEntry && typeof sourceEntry === "object") {
+    sourceEntry.brand = classification.brand;
+    sourceEntry.store = classification.store;
+    sourceEntry.campus = classification.campus;
+  }
 
   const dealer = "Processing";
 
@@ -843,22 +942,32 @@ function detectBrand({ ro = "", stock = "", ocrText = "" }) {
   return "Unknown";
 }
 
-async function detectBrandFromPhoto(signedUrl, log) {
+async function runOCR(photoPath) {
+  if (!photoPath) return "";
+  if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
+
+  const signedUrl = await getProofSignedUrl(sb, photoPath);
   const tesseract = window.Tesseract;
-  if (!tesseract?.createWorker) return "UNKNOWN";
+  let ocrText = "";
 
-  const created = await tesseract.createWorker("eng");
-  const worker = created?.data || created;
+  if (tesseract?.recognize) {
+    const result = await tesseract.recognize(signedUrl, "eng");
+    ocrText = result?.data?.text || "";
+  } else if (tesseract?.createWorker) {
+    const created = await tesseract.createWorker("eng");
+    const worker = created?.data || created;
+    try {
+      const result = await worker.recognize(signedUrl);
+      ocrText = result?.data?.text || "";
+    } finally {
+      await worker.terminate();
+    }
+  } else {
+    throw new Error("Tesseract not available");
+  }
 
-  const { data } = await worker.recognize(signedUrl);
-  await worker.terminate();
-
-  const pattern = await classifyDealerUniversal({
-    ro: log?.ro_number || log?.ref || log?.ro || "",
-    stock: log?.stock_number || log?.stock || "",
-    vin: log?.vin8 || "",
-  });
-  return pattern || "Unknown";
+  OCR_TEXT_CACHE.set(photoPath, ocrText);
+  return ocrText;
 }
 
 async function runOCRAndClassify(row) {
@@ -866,10 +975,10 @@ async function runOCRAndClassify(row) {
     if (!row?.id || !row?.photo_path) return;
 
     let payload = { ...(row || {}) };
-    if (!payload.ro_number || !payload.stock || !payload.vin8) {
+    if (!payload.ro_number && !payload.ref && !payload.ro && !payload.stock && !payload.stock_number && !payload.vin8) {
       const { data: fresh, error } = await sb
         .from("work_logs")
-        .select("id,ro_number,vin8,photo_path")
+        .select("*")
         .eq("id", row.id)
         .maybeSingle();
       if (error) throw error;
@@ -879,36 +988,25 @@ async function runOCRAndClassify(row) {
       };
     }
 
-    const signedUrl = await getProofSignedUrl(sb, payload.photo_path);
-    let ocrText = "";
-    const tesseract = window.Tesseract;
-
-    if (tesseract?.recognize) {
-      const result = await tesseract.recognize(signedUrl, "eng");
-      ocrText = result?.data?.text || "";
-    } else if (tesseract?.createWorker) {
-      const created = await tesseract.createWorker("eng");
-      const worker = created?.data || created;
-      try {
-        const result = await worker.recognize(signedUrl);
-        ocrText = result?.data?.text || "";
-      } finally {
-        await worker.terminate();
-      }
-    } else {
-      throw new Error("Tesseract not available");
-    }
-
-    const dealer = await classifyDealerUniversal({
+    const classification = await classifyEntryWithFallback({
       ro: payload.ro_number || null,
-      stock: payload.stock || null,
+      stock: payload.stock_number || payload.stock || payload.ref || payload.ro_number || null,
       vin: payload.vin8 || null,
+      photoPath: payload.photo_path || null,
     });
-
-    await updateWorkLogWithFallback(sb, row.id, {
+    const dealer = classification.brand !== "Unmapped" ? classification.brand : "UNKNOWN";
+    const updatePatch = {
       dealer,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    if (classification.brand !== "Unmapped") {
+      updatePatch.brand = classification.brand;
+      updatePatch.store_code = classification.store;
+      updatePatch.campus = classification.campus;
+    }
+
+    await updateWorkLogWithFallback(sb, row.id, updatePatch);
 
     console.log("Dealer updated:", dealer);
 
@@ -922,34 +1020,14 @@ async function runOCRAndClassify(row) {
 }
 
 async function resolveDealerForLog(log) {
-  // 1. Try deterministic pattern rules first (fast)
-  let dealer = await classifyDealerUniversal({
+  const classification = await classifyEntryWithFallback({
     ro: log?.ro_number || log?.ref || log?.ro || "",
     stock: log?.stock_number || log?.stock || "",
     vin: log?.vin8 || "",
+    photoPath: log?.photo_path || null,
   });
 
-  if (dealer && String(dealer).toUpperCase() !== "UNKNOWN") {
-    return dealer;
-  }
-
-  // 2. If still unknown and photo exists -> OCR
-  if (log?.photo_path) {
-    try {
-      const { data } = await sb.storage
-        .from("proofs")
-        .createSignedUrl(log.photo_path, 60);
-
-      if (!data?.signedUrl) return "UNKNOWN";
-
-      dealer = await detectBrandFromPhoto(data.signedUrl, log);
-      return dealer || "UNKNOWN";
-    } catch (e) {
-      console.error("OCR failed:", e);
-      return "UNKNOWN";
-    }
-  }
-
+  if (classification.brand !== "Unmapped") return classification.brand;
   return "UNKNOWN";
 }
 
@@ -1013,7 +1091,7 @@ function normalizeEntryForApi(entry) {
   };
 }
 
-async function normalizeSupabaseLog(r) {
+function normalizeSupabaseLog(r) {
   const entry = {
     id: r.id,
     work_date: r.work_date,
@@ -1024,8 +1102,8 @@ async function normalizeSupabaseLog(r) {
     ref: r.ro_number ?? "",
     ro_number: r.ro_number ?? "",
     dealer: r.dealer ?? null,
-    brand: r.brand ?? null,
-    store_code: r.store_code ?? null,
+    brand: r.brand ?? "Unmapped",
+    store: r.store ?? null,
     campus: r.campus ?? null,
 
     typeText: r.category ?? "",
@@ -1049,18 +1127,6 @@ async function normalizeSupabaseLog(r) {
     employee_number: r.employee_number ?? null,
     is_deleted: r.is_deleted ?? false,
   };
-
-  const classification = await classifyEntryUniversal({
-    ro: entry.ro_number,
-    stock: entry.ref,
-    vin: entry.vin8
-  });
-
-  entry.brand = classification.brand;
-  entry.store = classification.store;
-  entry.store_code = classification.store;
-  entry.campus = classification.campus;
-  entry.classMatched = classification.matched_on;
 
   return entry;
 }
@@ -2076,7 +2142,7 @@ async function renderLogs(logs) {
   const entries = Array.isArray(logs) ? normalizeEntries(logs) : [];
 
   entries.forEach(entry => {
-    entry.detected_brand = entry.brand || "Unknown";
+    entry.detected_brand = entry.brand;
     entry.detected_type = null;
   });
 
@@ -2132,7 +2198,7 @@ async function loadEntries() {
 
   if (res.error) throw res.error;
 
-  const rows = await Promise.all((res.data || []).map(normalizeSupabaseLog));
+  const rows = (res.data || []).map(normalizeSupabaseLog);
   return await renderEntries(rows);
 }
 
@@ -2161,16 +2227,7 @@ async function saveEntry(entry) {
     photo_path = saved?.photo_path || null;
     if (photoFile) photoStatus = "ok";
   } else {
-    const classification = await classifyEntryUniversal({
-      ro: payload.ro_number,
-      stock: entry?.stock || (entry?.refType === "STOCK" ? payload.ro_number : ""),
-      vin: payload.vin8,
-    });
-    payload.brand = classification.brand;
-    payload.store_code = classification.store;
-    payload.campus = classification.campus;
-
-    saved = await apiCreateLog(payload);
+    saved = await apiCreateLog(payload, entry);
     photo_path = saved?.photo_path || payload.photo_path || null;
     if (photoFile) {
       toast("Uploading photo...");
