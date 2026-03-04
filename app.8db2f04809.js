@@ -4,6 +4,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const STOCK_PREFIX_RULES = [];
 const OCR_TEXT_CACHE = new Map();
 const OCR_CLASSIFICATION_CACHE = new Map();
+console.log("BOOT START", window.__PAGE__);
 
 function getStockPrefixRules() {
   if (Array.isArray(window.STOCK_PREFIX_RULES)) return window.STOCK_PREFIX_RULES;
@@ -188,6 +189,7 @@ async function setUidFromSession(session) {
 }
 
 async function bootAuth() {
+  console.log("bootAuth called");
   const { data, error } = await sb.auth.getSession();
   if (error) console.error("getSession error:", error);
   await setUidFromSession(data?.session || null);
@@ -2886,6 +2888,23 @@ async function downloadText(filename, text, mime="text/plain"){
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function setEntrySelectedById(id, selected) {
+  const key = String(id ?? "").trim();
+  if (!key) return;
+  const next = !!selected;
+
+  const apply = (rows) => {
+    if (!Array.isArray(rows)) return;
+    const hit = rows.find((row) => String(row?.id ?? "").trim() === key);
+    if (hit) hit.selected = next;
+  };
+
+  apply(CURRENT_ENTRIES);
+  apply(window.STATE?.entries);
+  apply(window.__RANGE_ENTRIES__);
+  apply(window.__RANGE_FILTERED__);
+}
+
 function renderList(entries, mode){
   const list = $("entryList");
   if (!list) return;
@@ -2931,6 +2950,7 @@ function renderList(entries, mode){
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
+    const entryId = escapeHtml(String(e.id ?? ""));
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
@@ -2940,7 +2960,13 @@ function renderList(entries, mode){
     row.innerHTML = `
       <div class="itemTop">
         <div>
-          <div><span class="mono">${refDisplay}</span> <span class="muted">(${escapeHtml(e.type)})</span></div>
+          <div>
+            <label class="small muted" style="display:inline-flex;align-items:center;gap:6px;margin-right:8px;">
+              <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} />
+              Select
+            </label>
+            <span class="mono">${refDisplay}</span> <span class="muted">(${escapeHtml(e.type)})</span>
+          </div>
           <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8 || "-")}</span> • ${ts}</div>
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
           <div style="margin-top:8px;">${actionButtons}</div>
@@ -2953,6 +2979,12 @@ function renderList(entries, mode){
     `;
     const editBtnEl = row.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
+    const selectEl = row.querySelector('input[data-select-id]');
+    if (selectEl) {
+      selectEl.addEventListener("change", (ev) => {
+        setEntrySelectedById(e.id, !!ev.target?.checked);
+      });
+    }
     if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhoto(e));
@@ -3253,6 +3285,122 @@ async function refreshUI(entriesOverride){
   // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
 }
+
+function rateForPdfEntry(entry, hours) {
+  const directRate = Number(entry?.rate);
+  if (Number.isFinite(directRate) && directRate >= 0) return directRate;
+
+  const earnings = Number(entry?.earnings);
+  if (Number.isFinite(earnings) && hours > 0) return earnings / hours;
+
+  return 0;
+}
+
+function payForPdfEntry(entry, hours, rate) {
+  const earnings = Number(entry?.earnings);
+  if (Number.isFinite(earnings)) return round2(earnings);
+  return round2(hours * rate);
+}
+
+async function exportEntriesToPDF(entries) {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) {
+    alert("PDF export is not ready yet. Refresh and try again.");
+    return;
+  }
+
+  const rows = Array.isArray(entries) ? entries : [];
+  if (!rows.length) {
+    alert("No entries to export.");
+    return;
+  }
+
+  const doc = new jsPDF();
+  const left = 20;
+  const pageBottom = doc.internal.pageSize.getHeight() - 16;
+  let y = 20;
+
+  const nextLine = (step = 6) => {
+    y += step;
+    if (y > pageBottom) {
+      doc.addPage();
+      y = 20;
+    }
+  };
+
+  doc.setFontSize(16);
+  doc.text("Flat Rate Tracker Report", left, y);
+
+  nextLine(10);
+
+  const emp = getEmpId() || "N/A";
+  doc.setFontSize(11);
+  doc.text(`Employee: ${emp}`, left, y);
+
+  nextLine(10);
+  doc.text("RO      Type      Hours      Pay", left, y);
+  nextLine(6);
+
+  let totalHours = 0;
+  let totalPay = 0;
+
+  for (const e of rows) {
+    const ro = e?.ro_number || e?.ref || e?.ro || "-";
+    const type = e?.type || e?.typeText || e?.category || "-";
+    const hours = Number(e?.hours ?? e?.flat_hours ?? 0) || 0;
+    const rate = rateForPdfEntry(e, hours);
+    const pay = payForPdfEntry(e, hours, rate);
+
+    doc.text(
+      `${String(ro).slice(0, 14)}   ${String(type).slice(0, 18)}   ${round1(hours)}   $${pay.toFixed(2)}`,
+      left,
+      y
+    );
+    nextLine(6);
+
+    totalHours += hours;
+    totalPay += pay;
+  }
+
+  nextLine(4);
+  doc.text(`Total Hours: ${round1(totalHours)}`, left, y);
+  nextLine(6);
+  doc.text(`Total Pay: $${round2(totalPay).toFixed(2)}`, left, y);
+
+  doc.save(`flat-rate-report-${todayKeyLocal()}.pdf`);
+}
+
+function exportSelected() {
+  const selected = (window.STATE?.entries || []).filter((entry) => entry?.selected);
+
+  if (!selected.length) {
+    alert("No entries selected");
+    return;
+  }
+
+  exportEntriesToPDF(selected);
+}
+
+function exportWeek(weekKey) {
+  const currentWeekKey = dateKey(startOfWeekLocal(new Date()));
+  const key = String(weekKey || currentWeekKey).trim();
+
+  const entries = (window.STATE?.entries || []).filter((entry) => (
+    String(entry?.weekStartKey || "") === key
+    || String(entry?.dayKey || "").startsWith(key)
+  ));
+
+  if (!entries.length) {
+    alert(`No entries found for week: ${key}`);
+    return;
+  }
+
+  exportEntriesToPDF(entries);
+}
+
+window.exportEntriesToPDF = exportEntriesToPDF;
+window.exportSelected = exportSelected;
+window.exportWeek = exportWeek;
 
 async function exportCSV(){
   const all = await getAll(STORES.entries);
@@ -3806,6 +3954,7 @@ async function runOnce() {
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
+    console.log("DOMContentLoaded fired");
     runOnce().catch(console.error);
   });
 } else {
