@@ -56,13 +56,21 @@
     </div>
 
     <section class="card">
-      <div class="h">Payroll Compare (This Week)</div>
-      <div class="muted">Set what payroll flagged so the main page can show the difference.</div>
-      <div class="row" style="margin-top:10px">
-        <input id="flaggedHours" inputmode="decimal" type="number" step="0.1" placeholder="e.g., 35.0"
+      <div class="h">Pay Stub Entry</div>
+      <div class="muted">Enter your pay-stub week and compare paid values against expected values from your entries.</div>
+      <div class="row" style="margin-top:10px; gap:10px; flex-wrap:wrap;">
+        <input id="payStubWeekEnding" type="date"
                style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
-        <button class="btn primary" id="saveFlaggedBtn">Save Flagged Hours</button>
+        <input id="payStubHoursPaid" inputmode="decimal" type="number" step="0.1" min="0" placeholder="Hours Paid (e.g., 35)"
+               style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+        <input id="payStubAmountPaid" inputmode="decimal" type="number" step="0.01" min="0" placeholder="Amount Paid (e.g., 525)"
+               style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
       </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn primary" id="savePayStubBtn" type="button">Save Pay Stub</button>
+      </div>
+      <div id="payStubSummary" class="muted" style="margin-top:10px"></div>
+      <div id="payStubExpected" class="small mono" style="margin-top:6px"></div>
     </section>
 
     <section class="card">
@@ -70,6 +78,7 @@
       <div class="row">
         <button class="btn" type="button" id="exportCsvBtn">Export CSV</button>
         <button class="btn" type="button" id="exportJsonBtn">Export JSON</button>
+        <button class="btn" type="button" id="exportAuditBtn">Audit Report (PDF)</button>
         <button class="btn" type="button" id="repairBtn">Repair / Reindex Data</button>
       </div>
       <div class="row" style="margin-top:10px">
@@ -155,6 +164,7 @@
 
   </main>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
     window.__SUPABASE_CONFIG__ = {
@@ -162,6 +172,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.8db2f04809.js" defer></script>
+  <script src="/flat-rate-log/app.bacc2af4e9.js" defer></script>
 </body>
 </html>

@@ -1489,11 +1489,34 @@ function getStoreMap(storeName) {
   return MEMORY_STORES[storeName];
 }
 
+function getWeekEnding(dateStr) {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const day = d.getDay(); // 0=Sun
+  const diff = 5 - day;   // Friday payroll assumption
+
+  d.setDate(d.getDate() + diff);
+
+  return d.toISOString().slice(0,10);
+}
+
 function normalizeEntries(entries) {
   return (entries || []).map((e) => {
-    if (typeof e?.createdAtMs === "number") return e;
     const parsed = e?.createdAt ? Date.parse(e.createdAt) : (e?.date ? Date.parse(e.date) : NaN);
-    return { ...e, createdAtMs: Number.isFinite(parsed) ? parsed : Date.now() };
+    const createdAtMs = (typeof e?.createdAtMs === "number")
+      ? e.createdAtMs
+      : (Number.isFinite(parsed) ? parsed : Date.now());
+
+    const dayKey = e?.dayKey || dayKeyFromISO(e?.createdAt || e?.date) || "";
+    const entry = {
+      ...e,
+      createdAtMs,
+      dayKey: dayKey || e?.dayKey || "",
+    };
+
+    entry.weekEnding = entry.dayKey ? getWeekEnding(entry.dayKey) : (entry.weekEnding || "");
+    return entry;
   });
 }
 
@@ -1839,6 +1862,8 @@ function weekKey(date) {
   return `${y}-${m}-${d}`;
 }
 
+const PAY_STUBS_KEY = "frPayStubsByWeek";
+
 function loadPaidMap() {
   try { return JSON.parse(localStorage.getItem("paidHoursByWeek") || "{}"); }
   catch { return {}; }
@@ -1848,16 +1873,86 @@ function savePaidMap(map) {
   localStorage.setItem("paidHoursByWeek", JSON.stringify(map));
 }
 
-function setPaidHoursForThisWeek(value) {
+function setPaidHoursForWeekKey(weekStartKey, value) {
   const map = loadPaidMap();
-  map[weekKey(new Date())] = Number(value) || 0;
+  map[String(weekStartKey || "")] = Number(value) || 0;
   savePaidMap(map);
+}
+
+function getPaidRecordForWeekStart(startDate) {
+  const key = weekKey(startDate);
+  const map = loadPaidMap();
+  if (!Object.prototype.hasOwnProperty.call(map, key)) return null;
+  return Number(map[key]) || 0;
+}
+
+function setPaidHoursForThisWeek(value) {
+  setPaidHoursForWeekKey(weekKey(new Date()), value);
   if (typeof refreshUI === "function") refreshUI(CURRENT_ENTRIES);
 }
 
 function getPaidHoursForWeekStart(startDate) {
-  const map = loadPaidMap();
-  return Number(map[weekKey(startDate)]) || 0;
+  const v = getPaidRecordForWeekStart(startDate);
+  return v == null ? 0 : v;
+}
+
+function loadPayStubMap() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PAY_STUBS_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePayStubMap(map) {
+  localStorage.setItem(PAY_STUBS_KEY, JSON.stringify(map || {}));
+}
+
+function getPayStubForWeekKey(weekStartKey) {
+  const key = String(weekStartKey || "").trim();
+  if (!key) return null;
+  const map = loadPayStubMap();
+  const row = map[key];
+  return row && typeof row === "object" ? row : null;
+}
+
+function upsertPayStubEntry(entry) {
+  const key = String(entry?.weekStartKey || "").trim();
+  if (!key) return;
+  const map = loadPayStubMap();
+  map[key] = {
+    weekStartKey: key,
+    weekEnding: String(entry?.weekEnding || ""),
+    hoursPaid: Number(entry?.hoursPaid || 0),
+    amountPaid: Number(entry?.amountPaid || 0),
+    updatedAt: nowISO(),
+  };
+  savePayStubMap(map);
+  setPaidHoursForWeekKey(key, Number(entry?.hoursPaid || 0));
+}
+
+function parseDateInputValue(ymd) {
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mon = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(y, mon - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mon - 1 || dt.getDate() !== d) return null;
+  return dt;
+}
+
+function weekStartKeyFromDateInput(ymd) {
+  const dt = parseDateInputValue(ymd);
+  if (!dt) return "";
+  return dateKey(startOfWeekLocal(dt));
+}
+
+function weekEndingForWeekStartKey(weekStartKey) {
+  const dt = parseDateInputValue(weekStartKey);
+  if (!dt) return "";
+  return dateKey(endOfWeekLocal(dt));
 }
 
 /* -------------------- Week helpers (Mon–Sun) -------------------- */
@@ -1995,6 +2090,18 @@ function groupByDay(entries){
   }
   const keys = Array.from(map.keys()).sort((a,b)=>b.localeCompare(a));
   return keys.map(k => ({ dayKey: k, entries: map.get(k) }));
+}
+
+function groupEntriesByWeek(entries){
+  const groups = {};
+
+  (entries || []).forEach(e => {
+    const week = e.weekEnding || "unknown";
+    if (!groups[week]) groups[week] = [];
+    groups[week].push(e);
+  });
+
+  return groups;
 }
 
 function groupEntriesByBrand(entries) {
@@ -2627,12 +2734,27 @@ async function renderTypesListInMore(){
 async function getThisWeekFlag(){
   const ws = startOfWeekLocal(new Date());
   const key = dateKey(ws);
-  return await get(STORES.weekflags, key);
+  const stored = await get(STORES.weekflags, key);
+  if (stored && Number.isFinite(Number(stored.flaggedHours))) return stored;
+
+  const paid = getPaidRecordForWeekStart(ws);
+  if (paid != null) {
+    return { weekStartKey: key, flaggedHours: Number(paid || 0), updatedAt: null };
+  }
+
+  const stub = getPayStubForWeekKey(key);
+  if (stub) {
+    return { weekStartKey: key, flaggedHours: Number(stub.hoursPaid || 0), updatedAt: stub.updatedAt || null };
+  }
+
+  return null;
 }
 async function setThisWeekFlag(flaggedHours){
   const ws = startOfWeekLocal(new Date());
   const key = dateKey(ws);
-  await put(STORES.weekflags, { weekStartKey: key, flaggedHours: Number(flaggedHours || 0), updatedAt: nowISO() });
+  const value = Number(flaggedHours || 0);
+  await put(STORES.weekflags, { weekStartKey: key, flaggedHours: value, updatedAt: nowISO() });
+  setPaidHoursForWeekKey(key, value);
 }
 
 /* -------------------- Payroll scans (per week) -------------------- */
@@ -3424,9 +3546,283 @@ async function saveFlaggedHours(){
   alert("Flagged hours saved for this week.");
 }
 
+function expectedTotalsForWeekKey(weekStartKey, empId = getEmpId()) {
+  const dt = parseDateInputValue(weekStartKey);
+  if (!dt) return { totals: computeTotals([]), entries: [] };
+
+  const source = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const ownEntries = filterEntriesByEmp(source, empId);
+  const weekEntries = ownEntries.filter((entry) => {
+    const day = entry?.dayKey || dayKeyFromISO(entry?.createdAt);
+    return day ? inWeek(day, dt) : false;
+  });
+
+  return { totals: computeTotals(weekEntries), entries: weekEntries };
+}
+
+function signedHoursLabel(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n === 0) return "0";
+  const sign = n > 0 ? "+" : "−";
+  return `${sign}${formatHours(Math.abs(n))}`;
+}
+
+function signedMoneyLabel(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n === 0) return "$0.00";
+  const sign = n > 0 ? "+" : "−";
+  return `${sign}${formatMoney(Math.abs(n))}`;
+}
+
+function comparePayroll(expected, actual){
+  const expHours = Number(expected?.hours || 0);
+  const expPay = Number(expected?.pay || 0);
+  const actHours = Number(actual?.hours || 0);
+  const actPay = Number(actual?.pay || 0);
+
+  return {
+    missingHours: round1(expHours - actHours),
+    missingPay: round2(expPay - actPay),
+  };
+}
+
+function getPayStubAuditContext() {
+  const weekEl = document.getElementById("payStubWeekEnding");
+  const hoursEl = document.getElementById("payStubHoursPaid");
+  const amountEl = document.getElementById("payStubAmountPaid");
+  if (!weekEl || !hoursEl || !amountEl) {
+    return { error: "Pay stub fields are not available on this page." };
+  }
+
+  const weekEnding = String(weekEl.value || "").trim();
+  if (!weekEnding) return { error: "Week ending is required." };
+
+  const weekStartKey = weekStartKeyFromDateInput(weekEnding);
+  if (!weekStartKey) return { error: "Week ending date is invalid." };
+
+  const hoursPaid = Number(hoursEl.value || 0);
+  const amountPaid = Number(amountEl.value || 0);
+  if (!Number.isFinite(hoursPaid) || hoursPaid < 0) return { error: "Hours paid must be a number >= 0." };
+  if (!Number.isFinite(amountPaid) || amountPaid < 0) return { error: "Amount paid must be a number >= 0." };
+
+  const { totals, entries } = expectedTotalsForWeekKey(weekStartKey);
+  const expected = {
+    hours: Number(totals?.hours || 0),
+    pay: Number(totals?.dollars || 0),
+  };
+  const actual = {
+    hours: hoursPaid,
+    pay: amountPaid,
+  };
+  const comparison = comparePayroll(expected, actual);
+
+  const ws = parseDateInputValue(weekStartKey);
+  const weekEnd = ws ? dateKey(endOfWeekLocal(ws)) : "";
+
+  return {
+    weekEnding,
+    weekStartKey,
+    weekEnd,
+    expected,
+    actual,
+    comparison,
+    entries: Array.isArray(entries) ? entries : [],
+  };
+}
+
+function hydratePayStubFormForWeek(weekStartKey) {
+  const weekEl = document.getElementById("payStubWeekEnding");
+  const hoursEl = document.getElementById("payStubHoursPaid");
+  const amountEl = document.getElementById("payStubAmountPaid");
+  if (!weekEl || !hoursEl || !amountEl) return;
+
+  const key = String(weekStartKey || "").trim();
+  const stub = getPayStubForWeekKey(key);
+  if (stub) {
+    weekEl.value = stub.weekEnding || weekEndingForWeekStartKey(key);
+    hoursEl.value = String(Number(stub.hoursPaid || 0));
+    amountEl.value = String(Number(stub.amountPaid || 0));
+    return;
+  }
+
+  const weekEnd = weekEndingForWeekStartKey(key);
+  if (weekEnd) weekEl.value = weekEnd;
+
+  const startDate = parseDateInputValue(key);
+  const paid = startDate ? getPaidRecordForWeekStart(startDate) : null;
+  hoursEl.value = paid != null && Number(paid || 0) > 0 ? String(Number(paid)) : "";
+  amountEl.value = "";
+}
+
+function renderPayStubComparison() {
+  const weekEl = document.getElementById("payStubWeekEnding");
+  const hoursEl = document.getElementById("payStubHoursPaid");
+  const amountEl = document.getElementById("payStubAmountPaid");
+  const summaryEl = document.getElementById("payStubSummary");
+  const detailsEl = document.getElementById("payStubExpected");
+  if (!weekEl || !hoursEl || !amountEl || !summaryEl || !detailsEl) return;
+
+  if (!weekEl.value) {
+    weekEl.value = dateKey(endOfWeekLocal(new Date()));
+  }
+
+  const ctx = getPayStubAuditContext();
+  if (ctx.error) {
+    summaryEl.textContent = ctx.error;
+    detailsEl.textContent = "";
+    return;
+  }
+
+  summaryEl.textContent = `Week: ${ctx.weekStartKey}${ctx.weekEnd ? ` → ${ctx.weekEnd}` : ""}`;
+  detailsEl.textContent =
+    `Paid: ${formatHours(ctx.actual.hours)} hrs • ${formatMoney(ctx.actual.pay)} | ` +
+    `Expected: ${formatHours(ctx.expected.hours)} hrs • ${formatMoney(ctx.expected.pay)} | ` +
+    `Missing (expected-actual): ${signedHoursLabel(ctx.comparison.missingHours)} hrs • ${signedMoneyLabel(ctx.comparison.missingPay)}`;
+}
+
+function drawAuditLines(doc, rows, left, startY) {
+  const pageBottom = doc.internal.pageSize.getHeight() - 16;
+  let y = startY;
+
+  for (const row of rows) {
+    const line = String(row || "");
+    doc.text(line, left, y);
+    y += 6;
+    if (y > pageBottom) {
+      doc.addPage();
+      y = 20;
+    }
+  }
+
+  return y;
+}
+
+async function exportAuditReport() {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) {
+    alert("PDF export is not ready yet. Refresh and try again.");
+    return;
+  }
+
+  const ctx = getPayStubAuditContext();
+  if (ctx.error) {
+    alert(ctx.error);
+    return;
+  }
+
+  const doc = new jsPDF();
+  const left = 20;
+  let y = 20;
+  const emp = getEmpId() || "N/A";
+
+  doc.setFontSize(16);
+  doc.text("Flat Rate Audit Report", left, y);
+  y += 10;
+
+  doc.setFontSize(11);
+  y = drawAuditLines(doc, [
+    `Employee: ${emp}`,
+    `Week Ending: ${ctx.weekEnding}`,
+    `Week Range: ${ctx.weekStartKey}${ctx.weekEnd ? ` -> ${ctx.weekEnd}` : ""}`,
+    "",
+    `Actual Paid Hours: ${formatHours(ctx.actual.hours)}`,
+    `Actual Amount Paid: ${formatMoney(ctx.actual.pay)}`,
+    `Expected Hours: ${formatHours(ctx.expected.hours)}`,
+    `Expected Pay: ${formatMoney(ctx.expected.pay)}`,
+    `Missing Hours (expected-actual): ${signedHoursLabel(ctx.comparison.missingHours)}`,
+    `Missing Pay (expected-actual): ${signedMoneyLabel(ctx.comparison.missingPay)}`,
+    "",
+    `Entries used in expected totals: ${ctx.entries.length}`,
+    "RO      Type      Day      Hours      Pay",
+  ], left, y);
+
+  const entryRows = ctx.entries.map((e) => {
+    const ro = e?.ro_number || e?.ref || e?.ro || "-";
+    const type = e?.type || e?.typeText || e?.category || "-";
+    const day = e?.dayKey || dayKeyFromISO(e?.createdAt) || "-";
+    const hours = Number(e?.hours ?? e?.flat_hours ?? 0) || 0;
+    const rate = rateForPdfEntry(e, hours);
+    const pay = payForPdfEntry(e, hours, rate);
+    return `${String(ro).slice(0, 10)}   ${String(type).slice(0, 14)}   ${day}   ${round1(hours)}   $${pay.toFixed(2)}`;
+  });
+
+  if (entryRows.length) {
+    y = drawAuditLines(doc, entryRows, left, y + 2);
+  } else {
+    y = drawAuditLines(doc, ["No entries found for that week."], left, y + 2);
+  }
+
+  y = drawAuditLines(doc, [
+    "",
+    `Totals: ${formatHours(ctx.expected.hours)} hrs • ${formatMoney(ctx.expected.pay)}`,
+  ], left, y + 2);
+
+  doc.save(`flat-rate-audit-${ctx.weekStartKey}.pdf`);
+}
+
+async function savePayStubEntry() {
+  const weekEl = document.getElementById("payStubWeekEnding");
+  const hoursEl = document.getElementById("payStubHoursPaid");
+  const amountEl = document.getElementById("payStubAmountPaid");
+  if (!weekEl || !hoursEl || !amountEl) return;
+
+  const weekEnding = String(weekEl.value || "").trim();
+  const hoursPaid = Number(hoursEl.value || 0);
+  const amountPaid = Number(amountEl.value || 0);
+
+  if (!weekEnding) return alert("Week ending is required.");
+  if (!Number.isFinite(hoursPaid) || hoursPaid < 0) return alert("Hours paid must be a number >= 0.");
+  if (!Number.isFinite(amountPaid) || amountPaid < 0) return alert("Amount paid must be a number >= 0.");
+
+  const weekStartKey = weekStartKeyFromDateInput(weekEnding);
+  if (!weekStartKey) return alert("Week ending date is invalid.");
+
+  upsertPayStubEntry({
+    weekStartKey,
+    weekEnding,
+    hoursPaid,
+    amountPaid,
+  });
+
+  const thisWeekKey = dateKey(startOfWeekLocal(new Date()));
+  if (weekStartKey === thisWeekKey) {
+    await setThisWeekFlag(hoursPaid);
+  }
+
+  renderPayStubComparison();
+  if (typeof refreshUI === "function") await refreshUI(CURRENT_ENTRIES);
+  alert("Pay stub saved.");
+}
+
+function initPayStubUI() {
+  const weekEl = document.getElementById("payStubWeekEnding");
+  const hoursEl = document.getElementById("payStubHoursPaid");
+  const amountEl = document.getElementById("payStubAmountPaid");
+  if (!weekEl || !hoursEl || !amountEl) return;
+
+  if (!weekEl.value) weekEl.value = dateKey(endOfWeekLocal(new Date()));
+
+  const startKey = weekStartKeyFromDateInput(weekEl.value);
+  if (startKey) hydratePayStubFormForWeek(startKey);
+  renderPayStubComparison();
+
+  weekEl.addEventListener("change", () => {
+    const key = weekStartKeyFromDateInput(weekEl.value);
+    if (key) hydratePayStubFormForWeek(key);
+    renderPayStubComparison();
+  });
+  hoursEl.addEventListener("input", renderPayStubComparison);
+  amountEl.addEventListener("input", renderPayStubComparison);
+}
+
+window.comparePayroll = comparePayroll;
+window.exportAuditReport = exportAuditReport;
+
 async function wipeLocalOnly(){
   await clearStore(STORES.entries);
   await clearStore(STORES.types);
+  localStorage.removeItem(PAY_STUBS_KEY);
+  localStorage.removeItem("paidHoursByWeek");
   if (_photosRequested) await renderPhotoGrid(true, { updateStatus: true });
   else clearPhotoGallery();
   await ensureDefaultTypes();
@@ -3458,6 +3854,8 @@ async function wipeAllData(){
   await clearStore(STORES.types);
   await clearStore(STORES.weekflags);
   await clearStore(STORES.payroll);
+  localStorage.removeItem(PAY_STUBS_KEY);
+  localStorage.removeItem("paidHoursByWeek");
   if (_photosRequested) await renderPhotoGrid(true, { updateStatus: true });
   else clearPhotoGallery();
 }
@@ -3914,7 +4312,9 @@ async function runOnce() {
 
     wrapMoreClick("exportCsvBtn", exportCSV);
     wrapMoreClick("exportJsonBtn", exportJSON);
+    wrapMoreClick("exportAuditBtn", exportAuditReport);
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
+    wrapMoreClick("savePayStubBtn", savePayStubEntry);
     wrapMoreClick("wipeBtn", wipeLocalOnly);
     document.getElementById("refreshBtn")?.addEventListener("click", () => {
       if (!_photosRequested) {
@@ -3947,7 +4347,9 @@ async function runOnce() {
       }
     });
 
+    await safeLoadEntries();
     initPhotosUI();
+    initPayStubUI();
     await renderReview();
   }
 }
