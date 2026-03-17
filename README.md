@@ -1,142 +1,73 @@
 # Flat Rate Log
 
-A simple, offline-first log for flat-rate technicians to **track work, hours, pay, and proof** — without relying on memory, spreadsheets, or dealership systems.
+Flat Rate Log tracks flat-rate jobs, hours, pay, and proof with a single-browser frontend and a live Supabase data path.
 
-This tool exists for one reason: **protect your pay**.
+## Current Status
 
----
+- Build tag: `weekend-stable`
+- Feature status: frozen for stabilization
+- Active entry data path: `supabase`
+- Source of truth: Supabase `work_logs` plus Supabase Storage for proof photos
 
-## What Flat Rate Log Does
+The old local-only entry path is no longer the active runtime path for this weekend pass.
 
-- Log flat-rate jobs with:
-  - RO / Stock #
-  - Job type
-  - Hours
-  - Rate
-  - Notes
-  - Photo proof (optional)
-- Automatically calculates:
-  - Daily totals
-  - Weekly totals
-  - Monthly totals
-  - Average hours per job
-- Compare **logged hours vs flagged payroll hours**
-- Filter by:
-  - Day
-  - Week
-  - Month
-  - All time
-- Export your data as:
-  - CSV
-  - JSON
-- Works **offline**
-- No account required
+## Runtime Layout
 
----
+The app is split into source modules under `src/`:
 
-## How Data Works (Important)
+- `src/classification-service.js`
+  Classifies jobs, prefixes, and work types.
+- `src/data-service.js`
+  Owns Supabase auth, row reads/writes, payroll data, and shared data normalization.
+- `src/utils.js`
+  Shared DOM helpers, date/math helpers, store helpers, formatting, and small cross-page utilities.
+- `src/photo-service.js`
+  Handles photo picking, compression, OCR helpers, uploads, and photo modal behavior.
+- `src/main-page.js`
+  Main logging page behavior, save flow, filters, totals, entry list rendering, and export actions tied to the main page.
+- `src/more-page.js`
+  More page behavior, payroll/settings/admin-style screens, and related event wiring.
+- `src/boot.js`
+  Build metadata, freeze flags, boot sequencing, page wiring, and startup registration.
 
-- All data is stored **locally on your device** using IndexedDB.
-- Each technician is separated by **Employee Number**.
-- Nothing is uploaded.
-- Clearing browser data will remove logs.
-- Exports are the source of truth.
+## Build Flow
 
-This is intentional.
+Do not edit the hashed bundle directly.
 
----
+1. Edit files in `src/`
+2. Run `node build.mjs`
+3. `build.mjs` concatenates `src/*.js` into generated `app.src.js`
+4. The same build writes a versioned `app.<hash>.js`
+5. `index.html` and `more.html` are updated to the newest hashed bundle
+6. Older hashed bundles are removed automatically
 
-## Who This Is For
+Current generated artifacts:
 
-- Flat-rate technicians  
-- Detailers  
-- Anyone paid by flagged hours who needs proof  
+- `app.src.js`
+  Generated, readable source bundle for inspection
+- `app.<hash>.js`
+  Generated deployable bundle referenced by the HTML entry points
 
-This is **not** payroll software and does **not** replace dealership systems.
+## Data Notes
 
----
+- Supabase is the active data path for auth and work log storage.
+- Employee number still scopes the visible work log set inside the signed-in user account.
+- Proof photos are stored in Supabase Storage.
+- Exports remain available from the UI for CSV and JSON.
 
-## How to Use
+## Stability Notes
 
-1. Open the app  
-2. Enter your **Employee Number**  
-3. Log each job as you complete it  
-4. Attach a photo if proof is needed  
-5. Review totals by Day / Week / Month  
-6. Set flagged hours for the week (More → Payroll)  
-7. Export your data if payroll doesn’t match  
+- This pass is for cleanup and hardening, not feature expansion.
+- `boot.js` actively clears old service workers and caches during startup so stale client assets do not survive the module split.
+- The removed local backend directory was not part of the active runtime path.
 
-That’s it.
-
----
-
-## Exporting Data
-
-- Exports are filtered by the **active Employee Number**
-- To export:
-  1. Enter your Employee Number
-  2. Open **More**
-  3. Choose CSV or JSON
-
-CSV is recommended for payroll disputes.
-
----
-
-## Why This Exists
-
-Flat-rate work fails when:
-- Jobs are forgotten
-- Hours are shorted
-- Proof is missing
-- Payroll disputes turn into “he said / she said”
-
-Flat Rate Log gives you:
-- A record
-- A timeline
-- Proof
-
-Nothing more. Nothing less.
-
----
-
-## Installation (Optional)
-
-You can run this directly from GitHub Pages, or locally.
+## Local Run
 
 ```bash
-git clone https://github.com/Kidundone/flat-rate-log.git
-cd flat-rate-log
+node build.mjs
+open index.html
 ```
-
-Open `index.html` in a browser.
-
----
-
-## Tech Stack
-
-- Vanilla JavaScript
-- IndexedDB
-- Service Workers
-- Progressive Web App (PWA)
-
-No frameworks. No backend.
-
----
-
-## MVP Status
-
-This project is intentionally scoped as an MVP.
-
-Planned only after real-world use:
-- Optional cloud sync
-- Optional backend
-- Team/manager views
-
-Nothing will be added without a proven need.
-
----
 
 ## License
 
-MIT License  
-Use it. Modify it. Improve it.
+MIT

@@ -1,4 +1,5 @@
-window.BUILD = "20260316-weekend-freeze";
+window.BUILD = "20260316-weekend-stable";
+const BUILD_TAG = "weekend-stable";
 const FEATURE_FREEZE = Object.freeze({
   active: true,
   entriesDataPath: "supabase",
@@ -19,10 +20,11 @@ console.log("__FR_MARKER_20260316");
 })();
 
 window.__FR = window.__FR || {};
+window.__FR.buildTag = BUILD_TAG;
 window.__FR.featureFreeze = FEATURE_FREEZE;
 window.__FR.activeDataPath = ACTIVE_DATA_PATH;
-window.__FR.sb = window.sb;
-console.log("__FR_READY_20260316", ACTIVE_DATA_PATH, !!window.__FR.sb);
+window.__FR.sb = sb();
+console.log("__FR_READY_20260316", BUILD_TAG, ACTIVE_DATA_PATH, !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 /* -------------------- Boot -------------------- */
@@ -35,7 +37,7 @@ async function runOnce() {
   setPhotoUploadTarget?.("");
   initEmpIdBoot?.();
   wireEmpIdReload?.();
-  wireAuthUI(sb);
+  wireAuthUI();
   if (window.__APP_BOOTED__) {
     console.warn("App already booted.");
   } else {
@@ -233,6 +235,7 @@ async function runOnce() {
 
     await safeLoadEntries();
     initPhotosUI();
+    wireOcrReprocessButton?.();
     initPayStubUI();
     await renderReview();
   }

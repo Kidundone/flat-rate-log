@@ -168,6 +168,49 @@ async function exportJSON(){
   downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
 }
 
+function wireOcrReprocessButton() {
+  const btn = document.getElementById("processPhotosBtn");
+  const status = document.getElementById("galleryStatus");
+  if (!btn || !status) return;
+  if (btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    status.textContent = "Looking for saved photos to process...";
+
+    try {
+      const entries = await listEntriesNeedingOcr(30);
+      if (!entries.length) {
+        status.textContent = "No saved photos need OCR.";
+        return;
+      }
+
+      let done = 0;
+      for (const entry of entries) {
+        try {
+          status.textContent = `Processing ${done + 1}/${entries.length}...`;
+          await markEntryProcessingOcr(entry.id);
+          const signedUrl = await getSignedPhotoUrl(entry.photo_path);
+          const ocr = await runOcrOnImage(signedUrl);
+          await saveOcrResult(entry.id, ocr);
+          done += 1;
+        } catch (err) {
+          console.error("Saved photo OCR failed", entry.id, err);
+          await markOcrFailed(entry.id, err);
+        }
+      }
+
+      status.textContent = `Processed ${done} photo(s).`;
+    } catch (err) {
+      console.error(err);
+      status.textContent = "OCR batch failed.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 async function saveFlaggedHours(){
   const fh = document.getElementById("flaggedHours");
   const val = fh ? Number(fh.value || 0) : 0;
@@ -592,3 +635,6 @@ async function exportAllCsvAdmin() {
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   downloadText(`flat_rate_log_ALL_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
 }
+
+window.__FR = window.__FR || {};
+window.__FR.wireOcrReprocessButton = wireOcrReprocessButton;

@@ -1,6 +1,7 @@
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
+let ocrBusy = false;
 
 function setEditingEntry(entry) {
   EDITING_ENTRY = entry || null;
@@ -126,11 +127,54 @@ function handleClear(ev) {
   setRefType("RO");
 }
 
+function showToast(msg) {
+  console.log(msg);
+  toast(msg);
+}
+
+function buildOcrToast(ocr) {
+  const bits = [];
+  if (ocr.stock_suggestion) bits.push(`STK ${ocr.stock_suggestion}`);
+  if (ocr.vin8_suggestion) bits.push(`VIN ${ocr.vin8_suggestion}`);
+  return bits.length ? `Found ${bits.join(" · ")}` : "Saved. No OCR match found";
+}
+
+async function queueOcrForSavedEntry(entry, refreshEntries) {
+  if (!entry?.id || !entry?.photo_path) return;
+  if (ocrBusy) return;
+
+  ocrBusy = true;
+  try {
+    await markEntryQueuedForOcr(entry.id);
+    showToast("Saved. Reading sheet...");
+
+    await markEntryProcessingOcr(entry.id);
+
+    const signedUrl = await getSignedPhotoUrl(entry.photo_path);
+    if (!signedUrl) throw new Error("Could not open photo for OCR");
+
+    const ocr = await runOcrOnImage(signedUrl);
+    await saveOcrResult(entry.id, ocr);
+
+    showToast(buildOcrToast(ocr));
+    if (typeof refreshEntries === "function") await refreshEntries();
+  } catch (err) {
+    console.error("OCR queue failed", err);
+    try { await markOcrFailed(entry.id, err); } catch {}
+    showToast("Saved, but OCR failed");
+  } finally {
+    ocrBusy = false;
+  }
+}
+window.__FR = window.__FR || {};
+window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
+
 async function saveEntry(entry) {
   const payload = normalizeEntryForApi(entry);
   const photoFile = getSelectedPhotoFile();
   const empId = getEmpId();
-  const uid = empId ? await requireUserId(sb) : null;
+  const client = empId ? sb() : null;
+  const uid = client ? await requireUserId(client) : null;
 
   // SAVE LOG FIRST
   let saved;
@@ -151,7 +195,7 @@ async function saveEntry(entry) {
       toast("Uploading photo...");
       try {
         const uploaded = await uploadProofPhoto({
-          sb,
+          sb: client,
           empId,
           logId: saved.id,
           file: photoFile,
@@ -169,7 +213,7 @@ async function saveEntry(entry) {
 
   const shouldUpdatePhotoPath = !photoFile && !!photo_path;
   if (shouldUpdatePhotoPath && empId && uid) {
-    const { error } = await sb
+    const { error } = await client
       .from("work_logs")
       .update({ photo_path })
       .eq("id", saved.id)
@@ -181,13 +225,15 @@ async function saveEntry(entry) {
   }
 
   setEditingEntry(null);
-
-  // Refresh after photo upload so it shows up immediately
-  await safeLoadEntries();
+  const savedEntryForOcr = {
+    id: saved?.id || null,
+    photo_path: photo_path || saved?.photo_path || null,
+  };
   if (photoStatus === "fail") toast("Saved (photo failed)");
   else if (photoStatus === "ok") toast("Saved + Photo");
   else toast("Saved");
   handleClear();
+  return savedEntryForOcr;
 }
 
 async function handleSave(ev) {
@@ -254,7 +300,12 @@ async function handleSave(ev) {
       location: baseEntry.location ?? null
     };
 
-    await saveEntry(entry);
+    const refreshEntries = async () => {
+      await safeLoadEntries();
+    };
+    const savedEntry = await saveEntry(entry);
+    await refreshEntries();
+    queueOcrForSavedEntry(savedEntry, refreshEntries).catch((err) => console.error("OCR queue failed", err));
     setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");

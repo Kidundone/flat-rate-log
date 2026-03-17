@@ -21,7 +21,7 @@ function unmappedClassification() {
 
 async function lookupPatternMappings(patterns) {
   for (const p of (patterns || [])) {
-    const { data } = await window.sb
+    const { data } = await sb()
       .from("pattern_mappings")
       .select("*")
       .eq("pattern_type", p.type)
@@ -179,7 +179,7 @@ const SPECIAL_PREFIX_RULES = Object.freeze([
 let USER_PREFIX_RULES = [];
 
 async function loadUserPrefixRules() {
-  const { data, error } = await sb
+  const { data, error } = await sb()
     .from("dealer_prefix_rules")
     .select("*");
 
@@ -306,30 +306,137 @@ function detectBrand({ ro = "", stock = "", ocrText = "" }) {
   return "Unknown";
 }
 
+function normalizeText(s = "") {
+  return String(s)
+    .replace(/\r/g, "\n")
+    .replace(/[|]/g, "I")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\S\n]+/g, " ")
+    .trim();
+}
+
+function up(s = "") {
+  return String(s || "").toUpperCase().trim();
+}
+
+function last8(vin = "") {
+  const clean = up(vin).replace(/[^A-Z0-9]/g, "");
+  return clean.length >= 8 ? clean.slice(-8) : "";
+}
+
+function detectSheetType(text) {
+  const t = up(text);
+  if (t.includes("NEW - PRE-OWNED GET READY") || t.includes("GET READY")) return "get_ready";
+  if (t.includes("WORKORDER") || t.includes("FLOW MOTORS OF WINSTON-SALEM")) return "ro";
+  return "unknown";
+}
+
+function extractVin(text) {
+  const matches = up(text).match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  return matches[0] || "";
+}
+
+function extractStockFromRo(text) {
+  const patterns = [
+    /STK[:\s#-]*([A-Z0-9]{3,12})/i,
+    /STOCK[:\s#-]*([A-Z0-9]{3,12})/i,
+  ];
+  for (const rx of patterns) {
+    const m = text.match(rx);
+    if (m?.[1]) return up(m[1]);
+  }
+  return "";
+}
+
+function extractStockFromGetReady(text) {
+  const patterns = [
+    /STOCK\s*#\s*([A-Z0-9]{3,12})/i,
+    /MILES\s+([A-Z0-9]{3,12})\s+SALESPERSON/i,
+  ];
+  for (const rx of patterns) {
+    const m = text.match(rx);
+    if (m?.[1]) return up(m[1]);
+  }
+  return "";
+}
+
+function extractVinLast6FromGetReady(text) {
+  const patterns = [
+    /VIN\s*\(LAST\s*6\)\s*([A-Z0-9]{6})/i,
+    /VIN\s+LAST\s*6\s+([A-Z0-9]{6})/i,
+  ];
+  for (const rx of patterns) {
+    const m = text.match(rx);
+    if (m?.[1]) return up(m[1]);
+  }
+  return "";
+}
+
+function parseRoText(text) {
+  const vin = extractVin(text);
+  const stock = extractStockFromRo(text);
+
+  return {
+    sheet_type: "ro",
+    stock_suggestion: stock || null,
+    vin_suggestion: vin || null,
+    vin8_suggestion: vin ? last8(vin) : null,
+    work_suggestion: null,
+    confidence: vin || stock ? 0.9 : 0.15,
+  };
+}
+
+function parseGetReadyText(text) {
+  const stock = extractStockFromGetReady(text);
+  const vinLast6 = extractVinLast6FromGetReady(text);
+
+  return {
+    sheet_type: "get_ready",
+    stock_suggestion: stock || null,
+    vin_suggestion: null,
+    vin8_suggestion: vinLast6 || null,
+    work_suggestion: null,
+    confidence: stock || vinLast6 ? 0.85 : 0.2,
+  };
+}
+
+function parseUnknownText(text) {
+  const vin = extractVin(text);
+  const stock = extractStockFromRo(text) || extractStockFromGetReady(text);
+
+  return {
+    sheet_type: "unknown",
+    stock_suggestion: stock || null,
+    vin_suggestion: vin || null,
+    vin8_suggestion: vin ? last8(vin) : null,
+    work_suggestion: null,
+    confidence: vin || stock ? 0.5 : 0.1,
+  };
+}
+
+async function runOcrOnImage(imageUrlOrBlob) {
+  if (!window.Tesseract) throw new Error("Tesseract not loaded");
+
+  const result = await window.Tesseract.recognize(imageUrlOrBlob, "eng", {
+    logger: () => {}
+  });
+
+  const raw = normalizeText(result?.data?.text || "");
+  const sheetType = detectSheetType(raw);
+
+  if (sheetType === "ro") return { raw_text: raw, ...parseRoText(raw) };
+  if (sheetType === "get_ready") return { raw_text: raw, ...parseGetReadyText(raw) };
+  return { raw_text: raw, ...parseUnknownText(raw) };
+}
+
 async function runOCR(photoPath) {
   if (!photoPath) return "";
   if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
 
-  const signedUrl = await getProofSignedUrl(sb, photoPath);
-  const tesseract = window.Tesseract;
-  let ocrText = "";
-
-  if (tesseract?.recognize) {
-    const result = await tesseract.recognize(signedUrl, "eng");
-    ocrText = result?.data?.text || "";
-  } else if (tesseract?.createWorker) {
-    const created = await tesseract.createWorker("eng");
-    const worker = created?.data || created;
-    try {
-      const result = await worker.recognize(signedUrl);
-      ocrText = result?.data?.text || "";
-    } finally {
-      await worker.terminate();
-    }
-  } else {
-    throw new Error("Tesseract not available");
-  }
-
+  const signedUrl = await getSignedPhotoUrl(photoPath);
+  const ocrResult = await runOcrOnImage(signedUrl);
+  const ocrText = ocrResult?.raw_text || "";
   OCR_TEXT_CACHE.set(photoPath, ocrText);
   return ocrText;
 }
@@ -337,10 +444,11 @@ async function runOCR(photoPath) {
 async function runOCRAndClassify(row) {
   try {
     if (!row?.id || !row?.photo_path) return;
+    await markEntryProcessingOcr(row.id);
 
     let payload = { ...(row || {}) };
     if (!payload.ro_number && !payload.ref && !payload.ro && !payload.stock && !payload.stock_number && !payload.vin8) {
-      const { data: fresh, error } = await sb
+      const { data: fresh, error } = await sb()
         .from("work_logs")
         .select("*")
         .eq("id", row.id)
@@ -352,9 +460,14 @@ async function runOCRAndClassify(row) {
       };
     }
 
+    const signedUrl = await getSignedPhotoUrl(payload.photo_path || null);
+    const ocrResult = await runOcrOnImage(signedUrl);
+    const ocrText = ocrResult?.raw_text || "";
+    OCR_TEXT_CACHE.set(payload.photo_path, ocrText);
+
     const classification = await classifyEntryWithFallback({
       ro: payload.ro_number || null,
-      stock: payload.stock_number || payload.stock || payload.ref || payload.ro_number || null,
+      stock: payload.stock_number || payload.stock || ocrResult?.stock_suggestion || payload.ref || payload.ro_number || null,
       vin: payload.vin8 || null,
       photoPath: payload.photo_path || null,
     });
@@ -370,7 +483,16 @@ async function runOCRAndClassify(row) {
       updatePatch.campus = classification.campus;
     }
 
-    await updateWorkLogWithFallback(sb, row.id, updatePatch);
+    await updateWorkLogWithFallback(sb(), row.id, updatePatch);
+    await saveOcrResult(row.id, {
+      raw_text: ocrResult?.raw_text || "",
+      sheet_type: ocrResult?.sheet_type || null,
+      stock_suggestion: ocrResult?.stock_suggestion || null,
+      vin_suggestion: ocrResult?.vin_suggestion || null,
+      vin8_suggestion: ocrResult?.vin8_suggestion || null,
+      work_suggestion: ocrResult?.work_suggestion || null,
+      confidence: ocrResult?.confidence ?? null,
+    });
 
     console.log("Dealer updated:", dealer);
 
@@ -379,6 +501,13 @@ async function runOCRAndClassify(row) {
       await refreshUI(rows);
     }
   } catch (err) {
+    if (row?.id) {
+      try {
+        await markOcrFailed(row.id, err);
+      } catch (markErr) {
+        console.error("OCR failure state update failed:", markErr);
+      }
+    }
     console.error("OCR failed:", err);
   }
 }
@@ -412,7 +541,7 @@ async function backfillDealersFromPhotos(logs) {
     try {
       const dealer = await resolveDealerForLog(log);
 
-      await updateWorkLogWithFallback(sb, log.id, {
+      await updateWorkLogWithFallback(sb(), log.id, {
         dealer,
         updated_at: new Date().toISOString(),
       });
@@ -434,3 +563,4 @@ window.__FR = window.__FR || {};
 window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
 window.__FR.resolveDealerForLog = resolveDealerForLog;
 window.__FR.loadUserPrefixRules = loadUserPrefixRules;
+window.__FR.runOcrOnImage = runOcrOnImage;

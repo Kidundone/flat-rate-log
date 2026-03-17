@@ -1,29 +1,13 @@
-function makeSupabase() {
-  if (!window.supabase?.createClient) {
-    console.error("Supabase UMD not loaded. Check script tag order.");
-    return null;
+function sb() {
+  const cfg = window.__SUPABASE_CONFIG__;
+  if (!cfg?.url || !cfg?.anonKey || !window.supabase) {
+    throw new Error("Supabase config missing");
   }
-
-  const sb = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
-    {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-        storageKey: "fr-auth-token",
-        storage: window.localStorage
-      }
-    }
-  );
-
-  window.sb = sb;
-  return sb;
+  if (!window.__frtSupabase) {
+    window.__frtSupabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+  }
+  return window.__frtSupabase;
 }
-
-const sb = makeSupabase();
-if (!sb) throw new Error("Supabase failed to initialize");
 
 async function setUidFromSession(session) {
   window.CURRENT_UID = session?.user?.id || null;
@@ -32,7 +16,7 @@ async function setUidFromSession(session) {
 
 async function bootAuth() {
   console.log("bootAuth called");
-  const { data, error } = await sb.auth.getSession();
+  const { data, error } = await sb().auth.getSession();
   if (error) console.error("getSession error:", error);
   await setUidFromSession(data?.session || null);
 
@@ -41,7 +25,7 @@ async function bootAuth() {
   if (window.__AUTH_WIRED__) return;
   window.__AUTH_WIRED__ = true;
 
-  sb.auth.onAuthStateChange(async (event, session) => {
+  sb().auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
     window.CURRENT_UID = session?.user?.id || null;
     await initAuth();
@@ -71,7 +55,7 @@ async function initAuth() {
 }
 
 async function signIn(email, password) {
-  const { error } = await sb.auth.signInWithPassword({
+  const { error } = await sb().auth.signInWithPassword({
     email,
     password
   });
@@ -79,7 +63,8 @@ async function signIn(email, password) {
   if (error) return alert(error.message);
 }
 
-function wireAuthUI(sb) {
+function wireAuthUI() {
+  const client = sb();
   const emailEl = document.getElementById("authEmail");
   const passEl  = document.getElementById("authPassword");
 
@@ -96,7 +81,7 @@ function wireAuthUI(sb) {
     const password = passEl.value.trim();
     if (!email || !password) return alert("Email and password required");
 
-    const { error } = await sb.auth.signUp({ email, password });
+    const { error } = await client.auth.signUp({ email, password });
     if (error) return alert(error.message);
 
     alert("Account created. You can now sign in.");
@@ -113,14 +98,14 @@ function wireAuthUI(sb) {
     const email = emailEl.value.trim();
     if (!email) return alert("Enter your email");
 
-    const { error } = await sb.auth.resetPasswordForEmail(email);
+    const { error } = await client.auth.resetPasswordForEmail(email);
     if (error) return alert(error.message);
 
     alert("Password reset email sent.");
   });
 
   outBtn?.addEventListener("click", async () => {
-    await sb.auth.signOut();
+    await client.auth.signOut();
     await initAuth();
   });
 
@@ -128,11 +113,11 @@ function wireAuthUI(sb) {
 
 async function sbListRows(empId) {
   if (!empId) return [];
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return [];
   const dealerFilter = document.getElementById("dealerFilter")?.value;
 
-  let q = sb
+  let q = sb()
     .from("work_logs")
     .select("*")
     .eq("user_id", uid)
@@ -154,9 +139,9 @@ async function sbListRows(empId) {
 
 async function probeEmpHasRows(empId) {
   if (!empId) return false;
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return false;
-  const { count, error } = await sb
+  const { count, error } = await sb()
     .from("work_logs")
     .select("id", { count: "exact", head: true })
     .eq("user_id", uid)
@@ -168,7 +153,7 @@ async function probeEmpHasRows(empId) {
 
 async function sbDeleteProofPhoto(photoPath) {
   if (!photoPath) return;
-  const { error } = await sb.storage.from(PHOTO_BUCKET).remove([photoPath]);
+  const { error } = await sb().storage.from(PHOTO_BUCKET).remove([photoPath]);
   if (error) throw error;
 }
 
@@ -215,7 +200,7 @@ async function saveEditedLog(logId, patch) {
   const file = getSelectedPhotoFile();
   if (file) {
     const uploaded = await uploadProofPhoto({
-      sb,
+      sb: sb(),
       empId,
       logId,
       file,
@@ -226,7 +211,7 @@ async function saveEditedLog(logId, patch) {
     patch.dealer = uploaded?.dealer || patch.dealer || "UNKNOWN";
   }
 
-  const runUpdate = (body) => sb
+  const runUpdate = (body) => sb()
     .from("work_logs")
     .update(body)
     .eq("id", logId)
@@ -247,7 +232,7 @@ async function saveEditedLog(logId, patch) {
         ro_number: patch.ro_number || null,
         photo_path: data?.photo_path || null,
       });
-      await updateWorkLogWithFallback(sb, logId, {
+      await updateWorkLogWithFallback(sb(), logId, {
         dealer: resolvedDealer,
         updated_at: new Date().toISOString(),
       });
@@ -265,11 +250,112 @@ async function saveEditedLog(logId, patch) {
 }
 
 async function sbProofPhotoUrl(photoPath) {
-  return getProofSignedUrl(sb, photoPath);
+  return getSignedPhotoUrl(photoPath);
 }
 
 async function getPhotoUrl(photoPath) {
-  return getProofSignedUrl(sb, photoPath);
+  return getSignedPhotoUrl(photoPath);
+}
+
+async function markEntryQueuedForOcr(entryId) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "queued",
+      ocr_error: null,
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function markEntryProcessingOcr(entryId) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "processing",
+      ocr_error: null,
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function saveOcrResult(entryId, payload) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "done",
+      ocr_text_raw: payload.raw_text || null,
+      ocr_sheet_type: payload.sheet_type || null,
+      ocr_stock_suggestion: payload.stock_suggestion || null,
+      ocr_vin_suggestion: payload.vin_suggestion || null,
+      ocr_vin8_suggestion: payload.vin8_suggestion || null,
+      ocr_work_suggestion: payload.work_suggestion || null,
+      ocr_confidence: payload.confidence ?? null,
+      ocr_processed_at: new Date().toISOString(),
+      ocr_error: null,
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function markOcrFailed(entryId, err) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "failed",
+      ocr_error: String(err?.message || err || "OCR failed").slice(0, 500),
+      ocr_processed_at: new Date().toISOString(),
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function listEntriesNeedingOcr(limit = 25) {
+  const { data, error } = await sb()
+    .from("work_logs")
+    .select("*")
+    .not("photo_path", "is", null)
+    .in("ocr_status", ["queued", "failed", "none"])
+    .order("id", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function listEntriesWithPhotos(limit = 100) {
+  const { data, error } = await sb()
+    .from("work_logs")
+    .select("*")
+    .not("photo_path", "is", null)
+    .order("id", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function applyOcrSuggestion(entryId, patch) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update(patch)
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function getSignedPhotoUrl(photoPath, expiresIn = 1800) {
+  const { data, error } = await sb()
+    .storage
+    .from("proofs")
+    .createSignedUrl(photoPath, expiresIn);
+
+  if (error) throw error;
+  return data?.signedUrl || null;
 }
 
 const LS_EMP = "fr_emp_id";
@@ -316,14 +402,14 @@ async function apiListLogs(empId) {
     empId = getEmpId();
     if (!empId) return [];
   }
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return [];
   return sbListRows(empId);
 }
 
 // CREATE
 async function apiCreateLog(payload, sourceEntry = null) {
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) throw new Error("Sign in required");
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
@@ -369,7 +455,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
   let e1 = null;
   let insertBody = { ...insertRow };
   while (Object.keys(insertBody).length > 0) {
-    ({ data: created, error: e1 } = await sb
+    ({ data: created, error: e1 } = await sb()
       .from("work_logs")
       .insert([insertBody])
       .select("id,photo_path,ro_number,vin8")
@@ -385,10 +471,6 @@ async function apiCreateLog(payload, sourceEntry = null) {
   const createdRow = created ?? null;
   if (!createdRow) throw new Error("Create failed: no row returned");
 
-  if (createdRow.photo_path) {
-    runOCRAndClassify(createdRow).catch((err) => console.error("OCR failed:", err));
-  }
-
   return createdRow;
 }
 
@@ -396,7 +478,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
 async function apiUpdateLog(id, payload) {
   const empId = getEmpId();
   if (!empId) return null;
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return null;
   const dealer = await resolveDealerForLog(payload);
 
@@ -414,7 +496,7 @@ async function apiUpdateLog(id, payload) {
   };
 
   // Update fields first
-  let { data: updated, error: e1 } = await sb
+  let { data: updated, error: e1 } = await sb()
     .from("work_logs")
     .update(updateFields)
     .eq("id", id)
@@ -425,7 +507,7 @@ async function apiUpdateLog(id, payload) {
 
   if (e1 && isDealerColumnMissingError(e1)) {
     const { dealer: _dealer, ...updateWithoutDealer } = updateFields;
-    ({ data: updated, error: e1 } = await sb
+    ({ data: updated, error: e1 } = await sb()
       .from("work_logs")
       .update(updateWithoutDealer)
       .eq("id", id)
@@ -489,7 +571,7 @@ async function onDeleteClicked(btn, idOverride = null) {
   }
 
   try {
-    await softDeleteLog(sb, id);
+    await softDeleteLog(sb(), id);
     LAST_DELETED = { id, at: Date.now() };
 
     const next = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
@@ -499,7 +581,7 @@ async function onDeleteClicked(btn, idOverride = null) {
     showUndoBar({
       text: "Entry deleted.",
       onUndo: async () => {
-        await undoSoftDeleteLog(sb, id);
+        await undoSoftDeleteLog(sb(), id);
         await safeLoadEntries();
       },
       ttlMs: 8000
@@ -519,7 +601,7 @@ async function onUndoDelete() {
   if (!LAST_DELETED) return;
 
   try {
-    await undoSoftDeleteLog(sb, LAST_DELETED.id);
+    await undoSoftDeleteLog(sb(), LAST_DELETED.id);
     LAST_DELETED = null;
 
     if (window.__FR?.safeLoadEntries) await window.__FR.safeLoadEntries();
@@ -545,8 +627,7 @@ function syncStateEntries(entries) {
 function normalizeEntryForApi(entry) {
   const roNumber = entry.ref || entry.ro || entry.ro_number || null;
   const dealer = entry.dealer || "UNKNOWN";
-  // Map your existing entry object into the backend schema.
-  // Edit these mappings to match your real fields.
+  // Map the UI entry object into the active Supabase work_logs schema.
   return {
     work_date: entry.dayKey || entry.date || entry.work_date || (entry.createdAt ? dayKeyFromISO(entry.createdAt) : null), // MUST be "YYYY-MM-DD"
     category: entry.typeText || entry.type || entry.category || "work",
@@ -755,14 +836,14 @@ async function loadEntries() {
     return [];
   }
 
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) {
     console.warn("No UID - skipping loadEntries");
     return [];
   }
   const dealerFilter = document.getElementById("dealerFilter")?.value;
 
-  let query = sb
+  let query = sb()
     .from("work_logs")
     .select("*")
     .eq("user_id", uid)

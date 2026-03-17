@@ -56,13 +56,6 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
     }
   }
 
-  // Run OCR classification in background; do not block photo upload/save flow.
-  runOCRAndClassify({
-    id: logId,
-    ro_number: roNumber || null,
-    photo_path: path,
-  }).catch((ocrErr) => console.error("OCR failed:", ocrErr));
-
   return { path, dealer: resolvedDealer };
 }
 
@@ -70,7 +63,7 @@ async function runOCR(photoPath) {
   if (!photoPath) return "";
   if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
 
-  const signedUrl = await getProofSignedUrl(sb, photoPath);
+  const signedUrl = await getSignedPhotoUrl(photoPath);
   const tesseract = window.Tesseract;
   let ocrText = "";
 

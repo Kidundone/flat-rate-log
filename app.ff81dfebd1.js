@@ -23,7 +23,7 @@ function unmappedClassification() {
 
 async function lookupPatternMappings(patterns) {
   for (const p of (patterns || [])) {
-    const { data } = await window.sb
+    const { data } = await sb()
       .from("pattern_mappings")
       .select("*")
       .eq("pattern_type", p.type)
@@ -181,7 +181,7 @@ const SPECIAL_PREFIX_RULES = Object.freeze([
 let USER_PREFIX_RULES = [];
 
 async function loadUserPrefixRules() {
-  const { data, error } = await sb
+  const { data, error } = await sb()
     .from("dealer_prefix_rules")
     .select("*");
 
@@ -308,30 +308,137 @@ function detectBrand({ ro = "", stock = "", ocrText = "" }) {
   return "Unknown";
 }
 
+function normalizeText(s = "") {
+  return String(s)
+    .replace(/\r/g, "\n")
+    .replace(/[|]/g, "I")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\S\n]+/g, " ")
+    .trim();
+}
+
+function up(s = "") {
+  return String(s || "").toUpperCase().trim();
+}
+
+function last8(vin = "") {
+  const clean = up(vin).replace(/[^A-Z0-9]/g, "");
+  return clean.length >= 8 ? clean.slice(-8) : "";
+}
+
+function detectSheetType(text) {
+  const t = up(text);
+  if (t.includes("NEW - PRE-OWNED GET READY") || t.includes("GET READY")) return "get_ready";
+  if (t.includes("WORKORDER") || t.includes("FLOW MOTORS OF WINSTON-SALEM")) return "ro";
+  return "unknown";
+}
+
+function extractVin(text) {
+  const matches = up(text).match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  return matches[0] || "";
+}
+
+function extractStockFromRo(text) {
+  const patterns = [
+    /STK[:\s#-]*([A-Z0-9]{3,12})/i,
+    /STOCK[:\s#-]*([A-Z0-9]{3,12})/i,
+  ];
+  for (const rx of patterns) {
+    const m = text.match(rx);
+    if (m?.[1]) return up(m[1]);
+  }
+  return "";
+}
+
+function extractStockFromGetReady(text) {
+  const patterns = [
+    /STOCK\s*#\s*([A-Z0-9]{3,12})/i,
+    /MILES\s+([A-Z0-9]{3,12})\s+SALESPERSON/i,
+  ];
+  for (const rx of patterns) {
+    const m = text.match(rx);
+    if (m?.[1]) return up(m[1]);
+  }
+  return "";
+}
+
+function extractVinLast6FromGetReady(text) {
+  const patterns = [
+    /VIN\s*\(LAST\s*6\)\s*([A-Z0-9]{6})/i,
+    /VIN\s+LAST\s*6\s+([A-Z0-9]{6})/i,
+  ];
+  for (const rx of patterns) {
+    const m = text.match(rx);
+    if (m?.[1]) return up(m[1]);
+  }
+  return "";
+}
+
+function parseRoText(text) {
+  const vin = extractVin(text);
+  const stock = extractStockFromRo(text);
+
+  return {
+    sheet_type: "ro",
+    stock_suggestion: stock || null,
+    vin_suggestion: vin || null,
+    vin8_suggestion: vin ? last8(vin) : null,
+    work_suggestion: null,
+    confidence: vin || stock ? 0.9 : 0.15,
+  };
+}
+
+function parseGetReadyText(text) {
+  const stock = extractStockFromGetReady(text);
+  const vinLast6 = extractVinLast6FromGetReady(text);
+
+  return {
+    sheet_type: "get_ready",
+    stock_suggestion: stock || null,
+    vin_suggestion: null,
+    vin8_suggestion: vinLast6 || null,
+    work_suggestion: null,
+    confidence: stock || vinLast6 ? 0.85 : 0.2,
+  };
+}
+
+function parseUnknownText(text) {
+  const vin = extractVin(text);
+  const stock = extractStockFromRo(text) || extractStockFromGetReady(text);
+
+  return {
+    sheet_type: "unknown",
+    stock_suggestion: stock || null,
+    vin_suggestion: vin || null,
+    vin8_suggestion: vin ? last8(vin) : null,
+    work_suggestion: null,
+    confidence: vin || stock ? 0.5 : 0.1,
+  };
+}
+
+async function runOcrOnImage(imageUrlOrBlob) {
+  if (!window.Tesseract) throw new Error("Tesseract not loaded");
+
+  const result = await window.Tesseract.recognize(imageUrlOrBlob, "eng", {
+    logger: () => {}
+  });
+
+  const raw = normalizeText(result?.data?.text || "");
+  const sheetType = detectSheetType(raw);
+
+  if (sheetType === "ro") return { raw_text: raw, ...parseRoText(raw) };
+  if (sheetType === "get_ready") return { raw_text: raw, ...parseGetReadyText(raw) };
+  return { raw_text: raw, ...parseUnknownText(raw) };
+}
+
 async function runOCR(photoPath) {
   if (!photoPath) return "";
   if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
 
-  const signedUrl = await getProofSignedUrl(sb, photoPath);
-  const tesseract = window.Tesseract;
-  let ocrText = "";
-
-  if (tesseract?.recognize) {
-    const result = await tesseract.recognize(signedUrl, "eng");
-    ocrText = result?.data?.text || "";
-  } else if (tesseract?.createWorker) {
-    const created = await tesseract.createWorker("eng");
-    const worker = created?.data || created;
-    try {
-      const result = await worker.recognize(signedUrl);
-      ocrText = result?.data?.text || "";
-    } finally {
-      await worker.terminate();
-    }
-  } else {
-    throw new Error("Tesseract not available");
-  }
-
+  const signedUrl = await getSignedPhotoUrl(photoPath);
+  const ocrResult = await runOcrOnImage(signedUrl);
+  const ocrText = ocrResult?.raw_text || "";
   OCR_TEXT_CACHE.set(photoPath, ocrText);
   return ocrText;
 }
@@ -339,10 +446,11 @@ async function runOCR(photoPath) {
 async function runOCRAndClassify(row) {
   try {
     if (!row?.id || !row?.photo_path) return;
+    await markEntryProcessingOcr(row.id);
 
     let payload = { ...(row || {}) };
     if (!payload.ro_number && !payload.ref && !payload.ro && !payload.stock && !payload.stock_number && !payload.vin8) {
-      const { data: fresh, error } = await sb
+      const { data: fresh, error } = await sb()
         .from("work_logs")
         .select("*")
         .eq("id", row.id)
@@ -354,9 +462,14 @@ async function runOCRAndClassify(row) {
       };
     }
 
+    const signedUrl = await getSignedPhotoUrl(payload.photo_path || null);
+    const ocrResult = await runOcrOnImage(signedUrl);
+    const ocrText = ocrResult?.raw_text || "";
+    OCR_TEXT_CACHE.set(payload.photo_path, ocrText);
+
     const classification = await classifyEntryWithFallback({
       ro: payload.ro_number || null,
-      stock: payload.stock_number || payload.stock || payload.ref || payload.ro_number || null,
+      stock: payload.stock_number || payload.stock || ocrResult?.stock_suggestion || payload.ref || payload.ro_number || null,
       vin: payload.vin8 || null,
       photoPath: payload.photo_path || null,
     });
@@ -372,7 +485,16 @@ async function runOCRAndClassify(row) {
       updatePatch.campus = classification.campus;
     }
 
-    await updateWorkLogWithFallback(sb, row.id, updatePatch);
+    await updateWorkLogWithFallback(sb(), row.id, updatePatch);
+    await saveOcrResult(row.id, {
+      raw_text: ocrResult?.raw_text || "",
+      sheet_type: ocrResult?.sheet_type || null,
+      stock_suggestion: ocrResult?.stock_suggestion || null,
+      vin_suggestion: ocrResult?.vin_suggestion || null,
+      vin8_suggestion: ocrResult?.vin8_suggestion || null,
+      work_suggestion: ocrResult?.work_suggestion || null,
+      confidence: ocrResult?.confidence ?? null,
+    });
 
     console.log("Dealer updated:", dealer);
 
@@ -381,6 +503,13 @@ async function runOCRAndClassify(row) {
       await refreshUI(rows);
     }
   } catch (err) {
+    if (row?.id) {
+      try {
+        await markOcrFailed(row.id, err);
+      } catch (markErr) {
+        console.error("OCR failure state update failed:", markErr);
+      }
+    }
     console.error("OCR failed:", err);
   }
 }
@@ -414,7 +543,7 @@ async function backfillDealersFromPhotos(logs) {
     try {
       const dealer = await resolveDealerForLog(log);
 
-      await updateWorkLogWithFallback(sb, log.id, {
+      await updateWorkLogWithFallback(sb(), log.id, {
         dealer,
         updated_at: new Date().toISOString(),
       });
@@ -436,33 +565,18 @@ window.__FR = window.__FR || {};
 window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
 window.__FR.resolveDealerForLog = resolveDealerForLog;
 window.__FR.loadUserPrefixRules = loadUserPrefixRules;
+window.__FR.runOcrOnImage = runOcrOnImage;
 
-function makeSupabase() {
-  if (!window.supabase?.createClient) {
-    console.error("Supabase UMD not loaded. Check script tag order.");
-    return null;
+function sb() {
+  const cfg = window.__SUPABASE_CONFIG__;
+  if (!cfg?.url || !cfg?.anonKey || !window.supabase) {
+    throw new Error("Supabase config missing");
   }
-
-  const sb = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
-    {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-        storageKey: "fr-auth-token",
-        storage: window.localStorage
-      }
-    }
-  );
-
-  window.sb = sb;
-  return sb;
+  if (!window.__frtSupabase) {
+    window.__frtSupabase = window.supabase.createClient(cfg.url, cfg.anonKey);
+  }
+  return window.__frtSupabase;
 }
-
-const sb = makeSupabase();
-if (!sb) throw new Error("Supabase failed to initialize");
 
 async function setUidFromSession(session) {
   window.CURRENT_UID = session?.user?.id || null;
@@ -471,7 +585,7 @@ async function setUidFromSession(session) {
 
 async function bootAuth() {
   console.log("bootAuth called");
-  const { data, error } = await sb.auth.getSession();
+  const { data, error } = await sb().auth.getSession();
   if (error) console.error("getSession error:", error);
   await setUidFromSession(data?.session || null);
 
@@ -480,7 +594,7 @@ async function bootAuth() {
   if (window.__AUTH_WIRED__) return;
   window.__AUTH_WIRED__ = true;
 
-  sb.auth.onAuthStateChange(async (event, session) => {
+  sb().auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
     window.CURRENT_UID = session?.user?.id || null;
     await initAuth();
@@ -510,7 +624,7 @@ async function initAuth() {
 }
 
 async function signIn(email, password) {
-  const { error } = await sb.auth.signInWithPassword({
+  const { error } = await sb().auth.signInWithPassword({
     email,
     password
   });
@@ -518,7 +632,8 @@ async function signIn(email, password) {
   if (error) return alert(error.message);
 }
 
-function wireAuthUI(sb) {
+function wireAuthUI() {
+  const client = sb();
   const emailEl = document.getElementById("authEmail");
   const passEl  = document.getElementById("authPassword");
 
@@ -535,7 +650,7 @@ function wireAuthUI(sb) {
     const password = passEl.value.trim();
     if (!email || !password) return alert("Email and password required");
 
-    const { error } = await sb.auth.signUp({ email, password });
+    const { error } = await client.auth.signUp({ email, password });
     if (error) return alert(error.message);
 
     alert("Account created. You can now sign in.");
@@ -552,14 +667,14 @@ function wireAuthUI(sb) {
     const email = emailEl.value.trim();
     if (!email) return alert("Enter your email");
 
-    const { error } = await sb.auth.resetPasswordForEmail(email);
+    const { error } = await client.auth.resetPasswordForEmail(email);
     if (error) return alert(error.message);
 
     alert("Password reset email sent.");
   });
 
   outBtn?.addEventListener("click", async () => {
-    await sb.auth.signOut();
+    await client.auth.signOut();
     await initAuth();
   });
 
@@ -567,11 +682,11 @@ function wireAuthUI(sb) {
 
 async function sbListRows(empId) {
   if (!empId) return [];
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return [];
   const dealerFilter = document.getElementById("dealerFilter")?.value;
 
-  let q = sb
+  let q = sb()
     .from("work_logs")
     .select("*")
     .eq("user_id", uid)
@@ -593,9 +708,9 @@ async function sbListRows(empId) {
 
 async function probeEmpHasRows(empId) {
   if (!empId) return false;
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return false;
-  const { count, error } = await sb
+  const { count, error } = await sb()
     .from("work_logs")
     .select("id", { count: "exact", head: true })
     .eq("user_id", uid)
@@ -607,7 +722,7 @@ async function probeEmpHasRows(empId) {
 
 async function sbDeleteProofPhoto(photoPath) {
   if (!photoPath) return;
-  const { error } = await sb.storage.from(PHOTO_BUCKET).remove([photoPath]);
+  const { error } = await sb().storage.from(PHOTO_BUCKET).remove([photoPath]);
   if (error) throw error;
 }
 
@@ -654,7 +769,7 @@ async function saveEditedLog(logId, patch) {
   const file = getSelectedPhotoFile();
   if (file) {
     const uploaded = await uploadProofPhoto({
-      sb,
+      sb: sb(),
       empId,
       logId,
       file,
@@ -665,7 +780,7 @@ async function saveEditedLog(logId, patch) {
     patch.dealer = uploaded?.dealer || patch.dealer || "UNKNOWN";
   }
 
-  const runUpdate = (body) => sb
+  const runUpdate = (body) => sb()
     .from("work_logs")
     .update(body)
     .eq("id", logId)
@@ -686,7 +801,7 @@ async function saveEditedLog(logId, patch) {
         ro_number: patch.ro_number || null,
         photo_path: data?.photo_path || null,
       });
-      await updateWorkLogWithFallback(sb, logId, {
+      await updateWorkLogWithFallback(sb(), logId, {
         dealer: resolvedDealer,
         updated_at: new Date().toISOString(),
       });
@@ -704,11 +819,112 @@ async function saveEditedLog(logId, patch) {
 }
 
 async function sbProofPhotoUrl(photoPath) {
-  return getProofSignedUrl(sb, photoPath);
+  return getSignedPhotoUrl(photoPath);
 }
 
 async function getPhotoUrl(photoPath) {
-  return getProofSignedUrl(sb, photoPath);
+  return getSignedPhotoUrl(photoPath);
+}
+
+async function markEntryQueuedForOcr(entryId) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "queued",
+      ocr_error: null,
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function markEntryProcessingOcr(entryId) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "processing",
+      ocr_error: null,
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function saveOcrResult(entryId, payload) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "done",
+      ocr_text_raw: payload.raw_text || null,
+      ocr_sheet_type: payload.sheet_type || null,
+      ocr_stock_suggestion: payload.stock_suggestion || null,
+      ocr_vin_suggestion: payload.vin_suggestion || null,
+      ocr_vin8_suggestion: payload.vin8_suggestion || null,
+      ocr_work_suggestion: payload.work_suggestion || null,
+      ocr_confidence: payload.confidence ?? null,
+      ocr_processed_at: new Date().toISOString(),
+      ocr_error: null,
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function markOcrFailed(entryId, err) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update({
+      ocr_status: "failed",
+      ocr_error: String(err?.message || err || "OCR failed").slice(0, 500),
+      ocr_processed_at: new Date().toISOString(),
+    })
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function listEntriesNeedingOcr(limit = 25) {
+  const { data, error } = await sb()
+    .from("work_logs")
+    .select("*")
+    .not("photo_path", "is", null)
+    .in("ocr_status", ["queued", "failed", "none"])
+    .order("id", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function listEntriesWithPhotos(limit = 100) {
+  const { data, error } = await sb()
+    .from("work_logs")
+    .select("*")
+    .not("photo_path", "is", null)
+    .order("id", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function applyOcrSuggestion(entryId, patch) {
+  const { error } = await sb()
+    .from("work_logs")
+    .update(patch)
+    .eq("id", entryId);
+
+  if (error) throw error;
+}
+
+async function getSignedPhotoUrl(photoPath, expiresIn = 1800) {
+  const { data, error } = await sb()
+    .storage
+    .from("proofs")
+    .createSignedUrl(photoPath, expiresIn);
+
+  if (error) throw error;
+  return data?.signedUrl || null;
 }
 
 const LS_EMP = "fr_emp_id";
@@ -755,14 +971,14 @@ async function apiListLogs(empId) {
     empId = getEmpId();
     if (!empId) return [];
   }
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return [];
   return sbListRows(empId);
 }
 
 // CREATE
 async function apiCreateLog(payload, sourceEntry = null) {
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) throw new Error("Sign in required");
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
@@ -808,7 +1024,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
   let e1 = null;
   let insertBody = { ...insertRow };
   while (Object.keys(insertBody).length > 0) {
-    ({ data: created, error: e1 } = await sb
+    ({ data: created, error: e1 } = await sb()
       .from("work_logs")
       .insert([insertBody])
       .select("id,photo_path,ro_number,vin8")
@@ -824,10 +1040,6 @@ async function apiCreateLog(payload, sourceEntry = null) {
   const createdRow = created ?? null;
   if (!createdRow) throw new Error("Create failed: no row returned");
 
-  if (createdRow.photo_path) {
-    runOCRAndClassify(createdRow).catch((err) => console.error("OCR failed:", err));
-  }
-
   return createdRow;
 }
 
@@ -835,7 +1047,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
 async function apiUpdateLog(id, payload) {
   const empId = getEmpId();
   if (!empId) return null;
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) return null;
   const dealer = await resolveDealerForLog(payload);
 
@@ -853,7 +1065,7 @@ async function apiUpdateLog(id, payload) {
   };
 
   // Update fields first
-  let { data: updated, error: e1 } = await sb
+  let { data: updated, error: e1 } = await sb()
     .from("work_logs")
     .update(updateFields)
     .eq("id", id)
@@ -864,7 +1076,7 @@ async function apiUpdateLog(id, payload) {
 
   if (e1 && isDealerColumnMissingError(e1)) {
     const { dealer: _dealer, ...updateWithoutDealer } = updateFields;
-    ({ data: updated, error: e1 } = await sb
+    ({ data: updated, error: e1 } = await sb()
       .from("work_logs")
       .update(updateWithoutDealer)
       .eq("id", id)
@@ -928,7 +1140,7 @@ async function onDeleteClicked(btn, idOverride = null) {
   }
 
   try {
-    await softDeleteLog(sb, id);
+    await softDeleteLog(sb(), id);
     LAST_DELETED = { id, at: Date.now() };
 
     const next = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
@@ -938,7 +1150,7 @@ async function onDeleteClicked(btn, idOverride = null) {
     showUndoBar({
       text: "Entry deleted.",
       onUndo: async () => {
-        await undoSoftDeleteLog(sb, id);
+        await undoSoftDeleteLog(sb(), id);
         await safeLoadEntries();
       },
       ttlMs: 8000
@@ -958,7 +1170,7 @@ async function onUndoDelete() {
   if (!LAST_DELETED) return;
 
   try {
-    await undoSoftDeleteLog(sb, LAST_DELETED.id);
+    await undoSoftDeleteLog(sb(), LAST_DELETED.id);
     LAST_DELETED = null;
 
     if (window.__FR?.safeLoadEntries) await window.__FR.safeLoadEntries();
@@ -984,8 +1196,7 @@ function syncStateEntries(entries) {
 function normalizeEntryForApi(entry) {
   const roNumber = entry.ref || entry.ro || entry.ro_number || null;
   const dealer = entry.dealer || "UNKNOWN";
-  // Map your existing entry object into the backend schema.
-  // Edit these mappings to match your real fields.
+  // Map the UI entry object into the active Supabase work_logs schema.
   return {
     work_date: entry.dayKey || entry.date || entry.work_date || (entry.createdAt ? dayKeyFromISO(entry.createdAt) : null), // MUST be "YYYY-MM-DD"
     category: entry.typeText || entry.type || entry.category || "work",
@@ -1194,14 +1405,14 @@ async function loadEntries() {
     return [];
   }
 
-  const uid = await requireUserId(sb);
+  const uid = await requireUserId(sb());
   if (!uid) {
     console.warn("No UID - skipping loadEntries");
     return [];
   }
   const dealerFilter = document.getElementById("dealerFilter")?.value;
 
-  let query = sb
+  let query = sb()
     .from("work_logs")
     .select("*")
     .eq("user_id", uid)
@@ -1932,13 +2143,6 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
     }
   }
 
-  // Run OCR classification in background; do not block photo upload/save flow.
-  runOCRAndClassify({
-    id: logId,
-    ro_number: roNumber || null,
-    photo_path: path,
-  }).catch((ocrErr) => console.error("OCR failed:", ocrErr));
-
   return { path, dealer: resolvedDealer };
 }
 
@@ -1946,7 +2150,7 @@ async function runOCR(photoPath) {
   if (!photoPath) return "";
   if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
 
-  const signedUrl = await getProofSignedUrl(sb, photoPath);
+  const signedUrl = await getSignedPhotoUrl(photoPath);
   const tesseract = window.Tesseract;
   let ocrText = "";
 
@@ -2469,6 +2673,7 @@ function initPhotosUI(){
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
+let ocrBusy = false;
 
 function setEditingEntry(entry) {
   EDITING_ENTRY = entry || null;
@@ -2594,11 +2799,54 @@ function handleClear(ev) {
   setRefType("RO");
 }
 
+function showToast(msg) {
+  console.log(msg);
+  toast(msg);
+}
+
+function buildOcrToast(ocr) {
+  const bits = [];
+  if (ocr.stock_suggestion) bits.push(`STK ${ocr.stock_suggestion}`);
+  if (ocr.vin8_suggestion) bits.push(`VIN ${ocr.vin8_suggestion}`);
+  return bits.length ? `Found ${bits.join(" · ")}` : "Saved. No OCR match found";
+}
+
+async function queueOcrForSavedEntry(entry, refreshEntries) {
+  if (!entry?.id || !entry?.photo_path) return;
+  if (ocrBusy) return;
+
+  ocrBusy = true;
+  try {
+    await markEntryQueuedForOcr(entry.id);
+    showToast("Saved. Reading sheet...");
+
+    await markEntryProcessingOcr(entry.id);
+
+    const signedUrl = await getSignedPhotoUrl(entry.photo_path);
+    if (!signedUrl) throw new Error("Could not open photo for OCR");
+
+    const ocr = await runOcrOnImage(signedUrl);
+    await saveOcrResult(entry.id, ocr);
+
+    showToast(buildOcrToast(ocr));
+    if (typeof refreshEntries === "function") await refreshEntries();
+  } catch (err) {
+    console.error("OCR queue failed", err);
+    try { await markOcrFailed(entry.id, err); } catch {}
+    showToast("Saved, but OCR failed");
+  } finally {
+    ocrBusy = false;
+  }
+}
+window.__FR = window.__FR || {};
+window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
+
 async function saveEntry(entry) {
   const payload = normalizeEntryForApi(entry);
   const photoFile = getSelectedPhotoFile();
   const empId = getEmpId();
-  const uid = empId ? await requireUserId(sb) : null;
+  const client = empId ? sb() : null;
+  const uid = client ? await requireUserId(client) : null;
 
   // SAVE LOG FIRST
   let saved;
@@ -2619,7 +2867,7 @@ async function saveEntry(entry) {
       toast("Uploading photo...");
       try {
         const uploaded = await uploadProofPhoto({
-          sb,
+          sb: client,
           empId,
           logId: saved.id,
           file: photoFile,
@@ -2637,7 +2885,7 @@ async function saveEntry(entry) {
 
   const shouldUpdatePhotoPath = !photoFile && !!photo_path;
   if (shouldUpdatePhotoPath && empId && uid) {
-    const { error } = await sb
+    const { error } = await client
       .from("work_logs")
       .update({ photo_path })
       .eq("id", saved.id)
@@ -2649,13 +2897,15 @@ async function saveEntry(entry) {
   }
 
   setEditingEntry(null);
-
-  // Refresh after photo upload so it shows up immediately
-  await safeLoadEntries();
+  const savedEntryForOcr = {
+    id: saved?.id || null,
+    photo_path: photo_path || saved?.photo_path || null,
+  };
   if (photoStatus === "fail") toast("Saved (photo failed)");
   else if (photoStatus === "ok") toast("Saved + Photo");
   else toast("Saved");
   handleClear();
+  return savedEntryForOcr;
 }
 
 async function handleSave(ev) {
@@ -2722,7 +2972,12 @@ async function handleSave(ev) {
       location: baseEntry.location ?? null
     };
 
-    await saveEntry(entry);
+    const refreshEntries = async () => {
+      await safeLoadEntries();
+    };
+    const savedEntry = await saveEntry(entry);
+    await refreshEntries();
+    queueOcrForSavedEntry(savedEntry, refreshEntries).catch((err) => console.error("OCR queue failed", err));
     setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
@@ -3806,6 +4061,49 @@ async function exportJSON(){
   downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
 }
 
+function wireOcrReprocessButton() {
+  const btn = document.getElementById("processPhotosBtn");
+  const status = document.getElementById("galleryStatus");
+  if (!btn || !status) return;
+  if (btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
+
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    status.textContent = "Looking for saved photos to process...";
+
+    try {
+      const entries = await listEntriesNeedingOcr(30);
+      if (!entries.length) {
+        status.textContent = "No saved photos need OCR.";
+        return;
+      }
+
+      let done = 0;
+      for (const entry of entries) {
+        try {
+          status.textContent = `Processing ${done + 1}/${entries.length}...`;
+          await markEntryProcessingOcr(entry.id);
+          const signedUrl = await getSignedPhotoUrl(entry.photo_path);
+          const ocr = await runOcrOnImage(signedUrl);
+          await saveOcrResult(entry.id, ocr);
+          done += 1;
+        } catch (err) {
+          console.error("Saved photo OCR failed", entry.id, err);
+          await markOcrFailed(entry.id, err);
+        }
+      }
+
+      status.textContent = `Processed ${done} photo(s).`;
+    } catch (err) {
+      console.error(err);
+      status.textContent = "OCR batch failed.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 async function saveFlaggedHours(){
   const fh = document.getElementById("flaggedHours");
   const val = fh ? Number(fh.value || 0) : 0;
@@ -4231,7 +4529,11 @@ async function exportAllCsvAdmin() {
   downloadText(`flat_rate_log_ALL_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
 }
 
-window.BUILD = "20260316-weekend-freeze";
+window.__FR = window.__FR || {};
+window.__FR.wireOcrReprocessButton = wireOcrReprocessButton;
+
+window.BUILD = "20260316-weekend-stable";
+const BUILD_TAG = "weekend-stable";
 const FEATURE_FREEZE = Object.freeze({
   active: true,
   entriesDataPath: "supabase",
@@ -4252,10 +4554,11 @@ console.log("__FR_MARKER_20260316");
 })();
 
 window.__FR = window.__FR || {};
+window.__FR.buildTag = BUILD_TAG;
 window.__FR.featureFreeze = FEATURE_FREEZE;
 window.__FR.activeDataPath = ACTIVE_DATA_PATH;
-window.__FR.sb = window.sb;
-console.log("__FR_READY_20260316", ACTIVE_DATA_PATH, !!window.__FR.sb);
+window.__FR.sb = sb();
+console.log("__FR_READY_20260316", BUILD_TAG, ACTIVE_DATA_PATH, !!window.__FR.sb);
 window.__FR.supabase = window.supabase;
 
 /* -------------------- Boot -------------------- */
@@ -4268,7 +4571,7 @@ async function runOnce() {
   setPhotoUploadTarget?.("");
   initEmpIdBoot?.();
   wireEmpIdReload?.();
-  wireAuthUI(sb);
+  wireAuthUI();
   if (window.__APP_BOOTED__) {
     console.warn("App already booted.");
   } else {
@@ -4466,6 +4769,7 @@ async function runOnce() {
 
     await safeLoadEntries();
     initPhotosUI();
+    wireOcrReprocessButton?.();
     initPayStubUI();
     await renderReview();
   }
