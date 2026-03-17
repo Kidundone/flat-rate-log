@@ -565,7 +565,8 @@ function matchSearch(e, q){
   if (!q) return true;
   const s = q.toLowerCase();
   return [
-    e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes
+    e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes,
+    e.ocr_status, e.ocr_error, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
   ].some(v => String(v||"").toLowerCase().includes(s));
 }
 
@@ -648,4 +649,89 @@ function entryRefLabel(e){
 
 function formatWhen(iso){
   try { return new Date(iso).toLocaleString(); } catch { return iso || ""; }
+}
+
+function normalizeEntryToken(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function entryHasStoredPhoto(entry) {
+  return !!(entry?.photo_path || entry?.photoPath || entry?.photoDataUrl);
+}
+
+function entrySuggestedVinValue(entry) {
+  const vin8 = normalizeEntryToken(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (vin8) return vin8;
+
+  const vin = normalizeEntryToken(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
+  return vin.length >= 8 ? vin.slice(-8) : "";
+}
+
+function getEntryReviewState(entry) {
+  const hasPhoto = entryHasStoredPhoto(entry);
+  const ocrStatus = String(entry?.ocr_status || (hasPhoto ? "none" : "none")).toLowerCase();
+  const currentRef = normalizeEntryToken(entry?.ref || entry?.ro || entry?.ro_number);
+  const currentVin = normalizeEntryToken(entry?.vin8).replace(/[^A-Z0-9]/g, "");
+  const suggestedRef = normalizeEntryToken(entry?.ocr_stock_suggestion);
+  const suggestedVin = entrySuggestedVinValue(entry);
+
+  const refMismatch = !!(suggestedRef && currentRef && suggestedRef !== currentRef);
+  const vinMismatch = !!(suggestedVin && currentVin && suggestedVin !== currentVin);
+  const stockPending = !!(suggestedRef && suggestedRef !== currentRef);
+  const vinPending = !!(suggestedVin && suggestedVin !== currentVin);
+  const suggestionsPending = stockPending || vinPending;
+  const ocrFailed = ocrStatus === "failed";
+  const ocrDone = ocrStatus === "done";
+  const ocrWaiting = hasPhoto && (!ocrStatus || ocrStatus === "none" || ocrStatus === "queued" || ocrStatus === "processing");
+  const needsReview = !!(ocrFailed || suggestionsPending || ocrWaiting);
+
+  let statusLabel = "No photo";
+  if (hasPhoto && ocrFailed) statusLabel = "OCR failed";
+  else if (hasPhoto && ocrDone && (refMismatch || vinMismatch)) statusLabel = "OCR mismatch";
+  else if (hasPhoto && ocrDone && suggestionsPending) statusLabel = "OCR suggestion ready";
+  else if (hasPhoto && ocrDone) statusLabel = "OCR done";
+  else if (hasPhoto && ocrStatus === "processing") statusLabel = "OCR processing";
+  else if (hasPhoto && ocrStatus === "queued") statusLabel = "OCR queued";
+  else if (hasPhoto) statusLabel = "OCR not started";
+
+  const reasons = [];
+  if (ocrFailed && entry?.ocr_error) reasons.push(String(entry.ocr_error));
+  if (refMismatch) reasons.push(`manual ref kept over ${suggestedRef}`);
+  else if (stockPending) reasons.push(`stock suggestion ${suggestedRef}`);
+  if (vinMismatch) reasons.push(`manual VIN kept over ${suggestedVin}`);
+  else if (vinPending) reasons.push(`VIN suggestion ${suggestedVin}`);
+  if (ocrWaiting) reasons.push("photo needs OCR review");
+
+  return {
+    hasPhoto,
+    ocrStatus,
+    statusLabel,
+    statusDetail: reasons.join(" • "),
+    currentRef,
+    currentVin,
+    suggestedRef,
+    suggestedVin,
+    refMismatch,
+    vinMismatch,
+    stockPending,
+    vinPending,
+    suggestionsPending,
+    ocrFailed,
+    ocrDone,
+    ocrWaiting,
+    needsReview,
+  };
+}
+
+function getEntryRecordFacts(entry) {
+  const review = getEntryReviewState(entry);
+  return {
+    dayKey: entry?.dayKey || dayKeyFromISO(entry?.createdAt) || entry?.work_date || "-",
+    vin8: String(entry?.vin8 || "").trim() || "-",
+    photoText: review.hasPhoto ? "attached" : "none",
+    createdText: formatWhen(entry?.createdAt || entry?.created_at || ""),
+    updatedText: formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""),
+    ocrText: review.statusDetail ? `${review.statusLabel} - ${review.statusDetail}` : review.statusLabel,
+    review,
+  };
 }

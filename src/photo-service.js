@@ -22,17 +22,45 @@ async function getProofSignedUrl(sb, photoPath) {
   return data.signedUrl;
 }
 
+async function downscaleImage(fileOrBlob, maxDim = 1600, quality = 0.8) {
+  const bitmap = await createImageBitmap(fileOrBlob);
+  let { width, height } = bitmap;
+
+  if (width > height && width > maxDim) {
+    height = Math.round((height * maxDim) / width);
+    width = maxDim;
+  } else if (height >= width && height > maxDim) {
+    width = Math.round((width * maxDim) / height);
+    height = maxDim;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  const blob = await new Promise((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", quality)
+  );
+
+  if (!blob) throw new Error("Downscale failed");
+  return blob;
+}
+
 async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
   const uid = await requireUserId(sb);
   if (!uid) throw new Error("Sign in required");
 
-  const ext = (file.type === "image/png") ? "png" : "jpg";
+  const uploadBlob = await downscaleImage(file);
+  const ext = "jpg";
   const path = `${uid}/${empId}/${logId}.${ext}`;
 
   const { error } = await sb.storage
     .from("proofs")
-    .upload(path, file, {
-      contentType: file.type || "image/jpeg",
+    .upload(path, uploadBlob, {
+      contentType: "image/jpeg",
       upsert: true,
     });
 
@@ -64,25 +92,8 @@ async function runOCR(photoPath) {
   if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
 
   const signedUrl = await getSignedPhotoUrl(photoPath);
-  const tesseract = window.Tesseract;
-  let ocrText = "";
-
-  if (tesseract?.recognize) {
-    const result = await tesseract.recognize(signedUrl, "eng");
-    ocrText = result?.data?.text || "";
-  } else if (tesseract?.createWorker) {
-    const created = await tesseract.createWorker("eng");
-    const worker = created?.data || created;
-    try {
-      const result = await worker.recognize(signedUrl);
-      ocrText = result?.data?.text || "";
-    } finally {
-      await worker.terminate();
-    }
-  } else {
-    throw new Error("Tesseract not available");
-  }
-
+  const ocrResult = await runOcrOnImage(signedUrl);
+  const ocrText = ocrResult?.raw_text || "";
   OCR_TEXT_CACHE.set(photoPath, ocrText);
   return ocrText;
 }
@@ -193,41 +204,8 @@ async function compressImageFile(file, {
   quality = 0.75,
   mime = "image/jpeg",
 } = {}) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      let { width, height } = img;
-
-      if (width > maxWidth) {
-        height = Math.round(height * (maxWidth / width));
-        width = maxWidth;
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return reject(new Error("Compression failed"));
-          const out = new File([blob], "proof.jpg", { type: mime });
-          resolve(out);
-        },
-        mime,
-        quality
-      );
-
-      URL.revokeObjectURL(url);
-    };
-
-    img.onerror = () => reject(new Error("Image load failed"));
-    img.src = url;
-  });
+  const blob = await downscaleImage(file, maxWidth, quality);
+  return new File([blob], "proof.jpg", { type: mime });
 }
 
 async function compressImageFileToDataUrl(file, maxW = 1200, quality = 0.75) {
@@ -246,77 +224,6 @@ async function compressImageFileToDataUrl(file, maxW = 1200, quality = 0.75) {
   ctx.drawImage(img, 0, 0, w, h);
 
   return canvas.toDataURL("image/jpeg", quality);
-}
-
-async function preprocessDataUrlForOCR(photoDataUrl) {
-  const img = await fileToImageFromDataUrl(photoDataUrl);
-
-  const maxW = 1600;
-  const scale = Math.min(1, maxW / img.width);
-  const w = Math.max(1, Math.round(img.width * scale));
-  const h = Math.max(1, Math.round(img.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, w, h);
-
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const d = imageData.data;
-  const contrast = 1.25;
-  const intercept = 128 * (1 - contrast);
-
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i], g = d[i + 1], b = d[i + 2];
-    let y = 0.299 * r + 0.587 * g + 0.114 * b;
-    y = y * contrast + intercept;
-    y = Math.max(0, Math.min(255, y));
-    d[i] = d[i + 1] = d[i + 2] = y;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return canvas.toDataURL("image/png");
-}
-
-function extractSuggestionsFromText(text) {
-  const t = String(text || "");
-  const roMatch = t.match(/\b(\d{5,8})\b/);
-  const ref = roMatch ? roMatch[1] : "";
-  const vinMatch = t.match(/\b([A-HJ-NPR-Z0-9]{8})\b/);
-  const vin8 = vinMatch ? vinMatch[1] : "";
-  const hoursMatches = t.match(/\b\d{1,2}\.\d\b/g) || [];
-  const hours = hoursMatches
-    .map(x => Number(x))
-    .filter(n => n > 0 && n < 20)
-    .sort((a, b) => b - a)[0];
-  return { ref, vin8, hours: Number.isFinite(hours) ? String(hours) : "" };
-}
-
-function renderSuggestionButtons(s) {
-  const parts = [];
-  const refVal = s.ref;
-  if (refVal) parts.push(`<button type="button" class="btn" id="useSugRO">Use Ref ${refVal}</button>`);
-  if (s.vin8) parts.push(`<button type="button" class="btn" id="useSugVIN">Use VIN ${s.vin8}</button>`);
-  if (s.hours) parts.push(`<button type="button" class="btn" id="useSugHRS">Use Hours ${s.hours}</button>`);
-  if (!parts.length) return `<div class="muted">No clear Ref/VIN/Hours found. Use the text box below.</div>`;
-  return `<div class="row" style="gap:10px; flex-wrap:wrap">${parts.join("")}</div>`;
-}
-
-function wireSuggestionButtons(s) {
-  const refEl = $("ref");
-  const vinEl = $("vin8");
-  const hrsEl = $("hours");
-
-  const bRO = $("useSugRO");
-  if (bRO && refEl) bRO.onclick = () => { refEl.value = s.ref; refEl.dispatchEvent(new Event("input")); };
-
-  const bVIN = $("useSugVIN");
-  if (bVIN && vinEl) bVIN.onclick = () => { vinEl.value = s.vin8; vinEl.dispatchEvent(new Event("input")); };
-
-  const bHRS = $("useSugHRS");
-  if (bHRS && hrsEl) bHRS.onclick = () => { hrsEl.value = s.hours; hrsEl.dispatchEvent(new Event("input")); };
 }
 
 function applyPhotoLoadGuard(img, photo_path) {

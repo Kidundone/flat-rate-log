@@ -325,6 +325,24 @@ function last8(vin = "") {
   return clean.length >= 8 ? clean.slice(-8) : "";
 }
 
+const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
+const OCR_TEMPLATES = Object.freeze({
+  ro: {
+    vin: { x: 900, y: 120, width: 700, height: 120 },
+    stock: { x: 1080, y: 320, width: 420, height: 120 },
+  },
+  get_ready: {
+    stock: { x: 220, y: 150, width: 260, height: 90 },
+    vin6: { x: 540, y: 150, width: 260, height: 90 },
+  },
+});
+const OCR_MIN_IMAGE_WIDTH = 800;
+const OCR_MIN_BRIGHTNESS = 38;
+const OCR_MIN_EDGE_SCORE = 10;
+const OCR_QUALITY_SAMPLE_MAX = 256;
+let OCR_WORKER_PROMISE = null;
+let OCR_WORKER_QUEUE = Promise.resolve();
+
 function detectSheetType(text) {
   const t = up(text);
   if (t.includes("NEW - PRE-OWNED GET READY") || t.includes("GET READY")) return "get_ready";
@@ -333,7 +351,50 @@ function detectSheetType(text) {
 }
 
 function extractVin(text) {
-  const matches = up(text).match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  const upper = up(text);
+  const matches = upper.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  if (matches[0]) return matches[0];
+  const compact = upper.replace(/[^A-HJ-NPR-Z0-9]/g, "");
+  const compactMatches = compact.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  if (compactMatches[0]) return compactMatches[0];
+  return "";
+}
+
+function extractBareStock(text) {
+  const ignore = new Set([
+    "STK",
+    "STOCK",
+    "VIN",
+    "LAST",
+    "MILES",
+    "SALESPERSON",
+    "GET",
+    "READY",
+    "WORKORDER",
+    "FLOW",
+    "MOTORS",
+    "OF",
+    "WINSTON",
+    "SALEM",
+  ]);
+  const tokens = (up(text).match(/[A-Z0-9]{3,12}/g) || [])
+    .filter((token) => !ignore.has(token))
+    .sort((a, b) => {
+      const score = (token) => {
+        let total = 0;
+        if (/[0-9]/.test(token)) total += 4;
+        if (/[A-Z]/.test(token)) total += 2;
+        if (/^[A-Z0-9]+$/.test(token)) total += 1;
+        return total;
+      };
+      return score(b) - score(a);
+    });
+  return tokens[0] || "";
+}
+
+function extractLast6(text) {
+  const compact = up(text).replace(/[^A-Z0-9]/g, "");
+  const matches = compact.match(/[A-Z0-9]{6}/g) || [];
   return matches[0] || "";
 }
 
@@ -346,7 +407,7 @@ function extractStockFromRo(text) {
     const m = text.match(rx);
     if (m?.[1]) return up(m[1]);
   }
-  return "";
+  return extractBareStock(text);
 }
 
 function extractStockFromGetReady(text) {
@@ -358,7 +419,7 @@ function extractStockFromGetReady(text) {
     const m = text.match(rx);
     if (m?.[1]) return up(m[1]);
   }
-  return "";
+  return extractBareStock(text);
 }
 
 function extractVinLast6FromGetReady(text) {
@@ -370,7 +431,7 @@ function extractVinLast6FromGetReady(text) {
     const m = text.match(rx);
     if (m?.[1]) return up(m[1]);
   }
-  return "";
+  return extractLast6(text);
 }
 
 function parseRoText(text) {
@@ -415,18 +476,227 @@ function parseUnknownText(text) {
   };
 }
 
-async function runOcrOnImage(imageUrlOrBlob) {
-  if (!window.Tesseract) throw new Error("Tesseract not loaded");
+async function ensureImageBlob(imageUrlOrBlob) {
+  if (!imageUrlOrBlob) throw new Error("OCR image missing");
+  if (imageUrlOrBlob instanceof Blob) {
+    if (!imageUrlOrBlob.size) throw new Error("OCR image missing");
+    return imageUrlOrBlob;
+  }
+  if (typeof imageUrlOrBlob === "string") {
+    try {
+      const res = await fetch(imageUrlOrBlob);
+      if (!res.ok) throw new Error("OCR image missing");
+      const blob = await res.blob();
+      if (!blob?.size) throw new Error("OCR image missing");
+      return blob;
+    } catch (err) {
+      throw new Error("OCR image missing");
+    }
+  }
+  throw new Error("Unsupported OCR image source");
+}
 
-  const result = await window.Tesseract.recognize(imageUrlOrBlob, "eng", {
-    logger: () => {}
+async function assertUsableOcrImage(imageBlob) {
+  if (!(imageBlob instanceof Blob) || !imageBlob.size) {
+    throw new Error("OCR image missing");
+  }
+
+  const bitmap = await createImageBitmap(imageBlob);
+  try {
+    if (bitmap.width < OCR_MIN_IMAGE_WIDTH) {
+      throw new Error("Image too small");
+    }
+
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, OCR_QUALITY_SAMPLE_MAX / longest);
+    const sampleWidth = Math.max(32, Math.round(bitmap.width * scale));
+    const sampleHeight = Math.max(32, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = sampleWidth;
+    canvas.height = sampleHeight;
+
+    const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    if (!ctx) throw new Error("Image analysis unavailable");
+    ctx.drawImage(bitmap, 0, 0, sampleWidth, sampleHeight);
+
+    const imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
+    const px = imageData.data;
+    const luma = new Float32Array(sampleWidth * sampleHeight);
+    let brightnessSum = 0;
+
+    for (let i = 0, p = 0; i < px.length; i += 4, p += 1) {
+      const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      luma[p] = y;
+      brightnessSum += y;
+    }
+
+    const brightness = brightnessSum / luma.length;
+    if (brightness < OCR_MIN_BRIGHTNESS) {
+      throw new Error("Image too dark");
+    }
+
+    let edgeSum = 0;
+    let edgeCount = 0;
+    for (let y = 0; y < sampleHeight - 1; y += 1) {
+      for (let x = 0; x < sampleWidth - 1; x += 1) {
+        const idx = y * sampleWidth + x;
+        edgeSum += Math.abs(luma[idx] - luma[idx + 1]);
+        edgeSum += Math.abs(luma[idx] - luma[idx + sampleWidth]);
+        edgeCount += 2;
+      }
+    }
+
+    const edgeScore = edgeCount ? edgeSum / edgeCount : 0;
+    if (edgeScore < OCR_MIN_EDGE_SCORE) {
+      throw new Error("Image too blurry");
+    }
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+function resolveCropRegion(region, width, height) {
+  const scale = (value, total) => {
+    if (!Number.isFinite(Number(value))) return 0;
+    const n = Number(value);
+    return n > 0 && n <= 1 ? Math.round(n * total) : Math.round(n);
+  };
+
+  const x = Math.max(0, Math.min(width - 1, scale(region?.x, width)));
+  const y = Math.max(0, Math.min(height - 1, scale(region?.y, height)));
+  const w = Math.max(1, Math.min(width - x, scale(region?.width, width)));
+  const h = Math.max(1, Math.min(height - y, scale(region?.height, height)));
+
+  return { x, y, width: w, height: h };
+}
+
+async function cropBlobToRegion(fileOrBlob, region) {
+  const bitmap = await createImageBitmap(fileOrBlob);
+  try {
+    const rect = resolveCropRegion(region, bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Crop canvas unavailable");
+
+    ctx.drawImage(
+      bitmap,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      0,
+      0,
+      rect.width,
+      rect.height
+    );
+
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.85)
+    );
+    if (!blob) throw new Error("Crop blob failed");
+    return blob;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+async function getOcrWorker() {
+  if (!window.Tesseract?.createWorker) {
+    throw new Error("Tesseract worker unavailable");
+  }
+  if (!OCR_WORKER_PROMISE) {
+    OCR_WORKER_PROMISE = window.Tesseract.createWorker("eng");
+  }
+  return OCR_WORKER_PROMISE;
+}
+
+function enqueueOcrWorkerJob(job) {
+  const next = OCR_WORKER_QUEUE
+    .catch(() => {})
+    .then(job);
+  OCR_WORKER_QUEUE = next.catch(() => {});
+  return next;
+}
+
+async function recognizeCrop(imageBlob, region) {
+  const crop = await cropBlobToRegion(imageBlob, region);
+  const result = await enqueueOcrWorkerJob(async () => {
+    const worker = await getOcrWorker();
+    return worker.recognize(crop);
   });
+  return normalizeText(result?.data?.text || "");
+}
 
-  const raw = normalizeText(result?.data?.text || "");
-  const sheetType = detectSheetType(raw);
+function combineOcrText(parts) {
+  return normalizeText((parts || []).filter(Boolean).join("\n"));
+}
 
-  if (sheetType === "ro") return { raw_text: raw, ...parseRoText(raw) };
-  if (sheetType === "get_ready") return { raw_text: raw, ...parseGetReadyText(raw) };
+async function runRoFieldOcr(imageBlob, headerText = "") {
+  const vinText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.vin);
+  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
+  const combined = combineOcrText([headerText, `VIN ${vinText}`, `STK ${stockText}`]);
+  const vin = extractVin(vinText) || extractVin(combined);
+  const stock = extractStockFromRo(stockText) || extractStockFromRo(combined);
+
+  return {
+    raw_text: combined,
+    sheet_type: "ro",
+    stock_suggestion: stock || null,
+    vin_suggestion: vin || null,
+    vin8_suggestion: vin ? last8(vin) : null,
+    work_suggestion: null,
+    confidence: vin || stock ? 0.9 : 0.15,
+  };
+}
+
+async function runGetReadyFieldOcr(imageBlob, headerText = "") {
+  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.get_ready.stock);
+  const vinLast6Text = await recognizeCrop(imageBlob, OCR_TEMPLATES.get_ready.vin6);
+  const combined = combineOcrText([headerText, `STOCK ${stockText}`, `VIN LAST 6 ${vinLast6Text}`]);
+  const stock = extractStockFromGetReady(stockText) || extractStockFromGetReady(combined);
+  const vinLast6 = extractVinLast6FromGetReady(vinLast6Text) || extractVinLast6FromGetReady(combined);
+
+  return {
+    raw_text: combined,
+    sheet_type: "get_ready",
+    stock_suggestion: stock || null,
+    vin_suggestion: null,
+    vin8_suggestion: vinLast6 || null,
+    work_suggestion: null,
+    confidence: stock || vinLast6 ? 0.85 : 0.2,
+  };
+}
+
+async function runOcrOnImage(imageUrlOrBlob) {
+  const imageBlob = await ensureImageBlob(imageUrlOrBlob);
+  await assertUsableOcrImage(imageBlob);
+  const headerText = await recognizeCrop(imageBlob, OCR_HEADER_REGION);
+  const sheetType = detectSheetType(headerText);
+
+  if (sheetType === "ro") return await runRoFieldOcr(imageBlob, headerText);
+  if (sheetType === "get_ready") return await runGetReadyFieldOcr(imageBlob, headerText);
+
+  const roCandidate = await runRoFieldOcr(imageBlob, headerText);
+  if (roCandidate.stock_suggestion || roCandidate.vin_suggestion) {
+    return {
+      ...roCandidate,
+      sheet_type: "unknown",
+      confidence: Math.max(Number(roCandidate.confidence || 0), 0.5),
+    };
+  }
+
+  const getReadyCandidate = await runGetReadyFieldOcr(imageBlob, headerText);
+  if (getReadyCandidate.stock_suggestion || getReadyCandidate.vin8_suggestion) {
+    return {
+      ...getReadyCandidate,
+      sheet_type: "unknown",
+      confidence: Math.max(Number(getReadyCandidate.confidence || 0), 0.5),
+    };
+  }
+
+  const raw = combineOcrText([headerText, roCandidate.raw_text, getReadyCandidate.raw_text]);
   return { raw_text: raw, ...parseUnknownText(raw) };
 }
 

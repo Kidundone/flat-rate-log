@@ -327,6 +327,24 @@ function last8(vin = "") {
   return clean.length >= 8 ? clean.slice(-8) : "";
 }
 
+const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
+const OCR_TEMPLATES = Object.freeze({
+  ro: {
+    vin: { x: 900, y: 120, width: 700, height: 120 },
+    stock: { x: 1080, y: 320, width: 420, height: 120 },
+  },
+  get_ready: {
+    stock: { x: 220, y: 150, width: 260, height: 90 },
+    vin6: { x: 540, y: 150, width: 260, height: 90 },
+  },
+});
+const OCR_MIN_IMAGE_WIDTH = 800;
+const OCR_MIN_BRIGHTNESS = 38;
+const OCR_MIN_EDGE_SCORE = 10;
+const OCR_QUALITY_SAMPLE_MAX = 256;
+let OCR_WORKER_PROMISE = null;
+let OCR_WORKER_QUEUE = Promise.resolve();
+
 function detectSheetType(text) {
   const t = up(text);
   if (t.includes("NEW - PRE-OWNED GET READY") || t.includes("GET READY")) return "get_ready";
@@ -335,7 +353,50 @@ function detectSheetType(text) {
 }
 
 function extractVin(text) {
-  const matches = up(text).match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  const upper = up(text);
+  const matches = upper.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  if (matches[0]) return matches[0];
+  const compact = upper.replace(/[^A-HJ-NPR-Z0-9]/g, "");
+  const compactMatches = compact.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+  if (compactMatches[0]) return compactMatches[0];
+  return "";
+}
+
+function extractBareStock(text) {
+  const ignore = new Set([
+    "STK",
+    "STOCK",
+    "VIN",
+    "LAST",
+    "MILES",
+    "SALESPERSON",
+    "GET",
+    "READY",
+    "WORKORDER",
+    "FLOW",
+    "MOTORS",
+    "OF",
+    "WINSTON",
+    "SALEM",
+  ]);
+  const tokens = (up(text).match(/[A-Z0-9]{3,12}/g) || [])
+    .filter((token) => !ignore.has(token))
+    .sort((a, b) => {
+      const score = (token) => {
+        let total = 0;
+        if (/[0-9]/.test(token)) total += 4;
+        if (/[A-Z]/.test(token)) total += 2;
+        if (/^[A-Z0-9]+$/.test(token)) total += 1;
+        return total;
+      };
+      return score(b) - score(a);
+    });
+  return tokens[0] || "";
+}
+
+function extractLast6(text) {
+  const compact = up(text).replace(/[^A-Z0-9]/g, "");
+  const matches = compact.match(/[A-Z0-9]{6}/g) || [];
   return matches[0] || "";
 }
 
@@ -348,7 +409,7 @@ function extractStockFromRo(text) {
     const m = text.match(rx);
     if (m?.[1]) return up(m[1]);
   }
-  return "";
+  return extractBareStock(text);
 }
 
 function extractStockFromGetReady(text) {
@@ -360,7 +421,7 @@ function extractStockFromGetReady(text) {
     const m = text.match(rx);
     if (m?.[1]) return up(m[1]);
   }
-  return "";
+  return extractBareStock(text);
 }
 
 function extractVinLast6FromGetReady(text) {
@@ -372,7 +433,7 @@ function extractVinLast6FromGetReady(text) {
     const m = text.match(rx);
     if (m?.[1]) return up(m[1]);
   }
-  return "";
+  return extractLast6(text);
 }
 
 function parseRoText(text) {
@@ -417,18 +478,227 @@ function parseUnknownText(text) {
   };
 }
 
-async function runOcrOnImage(imageUrlOrBlob) {
-  if (!window.Tesseract) throw new Error("Tesseract not loaded");
+async function ensureImageBlob(imageUrlOrBlob) {
+  if (!imageUrlOrBlob) throw new Error("OCR image missing");
+  if (imageUrlOrBlob instanceof Blob) {
+    if (!imageUrlOrBlob.size) throw new Error("OCR image missing");
+    return imageUrlOrBlob;
+  }
+  if (typeof imageUrlOrBlob === "string") {
+    try {
+      const res = await fetch(imageUrlOrBlob);
+      if (!res.ok) throw new Error("OCR image missing");
+      const blob = await res.blob();
+      if (!blob?.size) throw new Error("OCR image missing");
+      return blob;
+    } catch (err) {
+      throw new Error("OCR image missing");
+    }
+  }
+  throw new Error("Unsupported OCR image source");
+}
 
-  const result = await window.Tesseract.recognize(imageUrlOrBlob, "eng", {
-    logger: () => {}
+async function assertUsableOcrImage(imageBlob) {
+  if (!(imageBlob instanceof Blob) || !imageBlob.size) {
+    throw new Error("OCR image missing");
+  }
+
+  const bitmap = await createImageBitmap(imageBlob);
+  try {
+    if (bitmap.width < OCR_MIN_IMAGE_WIDTH) {
+      throw new Error("Image too small");
+    }
+
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, OCR_QUALITY_SAMPLE_MAX / longest);
+    const sampleWidth = Math.max(32, Math.round(bitmap.width * scale));
+    const sampleHeight = Math.max(32, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = sampleWidth;
+    canvas.height = sampleHeight;
+
+    const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    if (!ctx) throw new Error("Image analysis unavailable");
+    ctx.drawImage(bitmap, 0, 0, sampleWidth, sampleHeight);
+
+    const imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
+    const px = imageData.data;
+    const luma = new Float32Array(sampleWidth * sampleHeight);
+    let brightnessSum = 0;
+
+    for (let i = 0, p = 0; i < px.length; i += 4, p += 1) {
+      const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      luma[p] = y;
+      brightnessSum += y;
+    }
+
+    const brightness = brightnessSum / luma.length;
+    if (brightness < OCR_MIN_BRIGHTNESS) {
+      throw new Error("Image too dark");
+    }
+
+    let edgeSum = 0;
+    let edgeCount = 0;
+    for (let y = 0; y < sampleHeight - 1; y += 1) {
+      for (let x = 0; x < sampleWidth - 1; x += 1) {
+        const idx = y * sampleWidth + x;
+        edgeSum += Math.abs(luma[idx] - luma[idx + 1]);
+        edgeSum += Math.abs(luma[idx] - luma[idx + sampleWidth]);
+        edgeCount += 2;
+      }
+    }
+
+    const edgeScore = edgeCount ? edgeSum / edgeCount : 0;
+    if (edgeScore < OCR_MIN_EDGE_SCORE) {
+      throw new Error("Image too blurry");
+    }
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+function resolveCropRegion(region, width, height) {
+  const scale = (value, total) => {
+    if (!Number.isFinite(Number(value))) return 0;
+    const n = Number(value);
+    return n > 0 && n <= 1 ? Math.round(n * total) : Math.round(n);
+  };
+
+  const x = Math.max(0, Math.min(width - 1, scale(region?.x, width)));
+  const y = Math.max(0, Math.min(height - 1, scale(region?.y, height)));
+  const w = Math.max(1, Math.min(width - x, scale(region?.width, width)));
+  const h = Math.max(1, Math.min(height - y, scale(region?.height, height)));
+
+  return { x, y, width: w, height: h };
+}
+
+async function cropBlobToRegion(fileOrBlob, region) {
+  const bitmap = await createImageBitmap(fileOrBlob);
+  try {
+    const rect = resolveCropRegion(region, bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Crop canvas unavailable");
+
+    ctx.drawImage(
+      bitmap,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+      0,
+      0,
+      rect.width,
+      rect.height
+    );
+
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.85)
+    );
+    if (!blob) throw new Error("Crop blob failed");
+    return blob;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+async function getOcrWorker() {
+  if (!window.Tesseract?.createWorker) {
+    throw new Error("Tesseract worker unavailable");
+  }
+  if (!OCR_WORKER_PROMISE) {
+    OCR_WORKER_PROMISE = window.Tesseract.createWorker("eng");
+  }
+  return OCR_WORKER_PROMISE;
+}
+
+function enqueueOcrWorkerJob(job) {
+  const next = OCR_WORKER_QUEUE
+    .catch(() => {})
+    .then(job);
+  OCR_WORKER_QUEUE = next.catch(() => {});
+  return next;
+}
+
+async function recognizeCrop(imageBlob, region) {
+  const crop = await cropBlobToRegion(imageBlob, region);
+  const result = await enqueueOcrWorkerJob(async () => {
+    const worker = await getOcrWorker();
+    return worker.recognize(crop);
   });
+  return normalizeText(result?.data?.text || "");
+}
 
-  const raw = normalizeText(result?.data?.text || "");
-  const sheetType = detectSheetType(raw);
+function combineOcrText(parts) {
+  return normalizeText((parts || []).filter(Boolean).join("\n"));
+}
 
-  if (sheetType === "ro") return { raw_text: raw, ...parseRoText(raw) };
-  if (sheetType === "get_ready") return { raw_text: raw, ...parseGetReadyText(raw) };
+async function runRoFieldOcr(imageBlob, headerText = "") {
+  const vinText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.vin);
+  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
+  const combined = combineOcrText([headerText, `VIN ${vinText}`, `STK ${stockText}`]);
+  const vin = extractVin(vinText) || extractVin(combined);
+  const stock = extractStockFromRo(stockText) || extractStockFromRo(combined);
+
+  return {
+    raw_text: combined,
+    sheet_type: "ro",
+    stock_suggestion: stock || null,
+    vin_suggestion: vin || null,
+    vin8_suggestion: vin ? last8(vin) : null,
+    work_suggestion: null,
+    confidence: vin || stock ? 0.9 : 0.15,
+  };
+}
+
+async function runGetReadyFieldOcr(imageBlob, headerText = "") {
+  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.get_ready.stock);
+  const vinLast6Text = await recognizeCrop(imageBlob, OCR_TEMPLATES.get_ready.vin6);
+  const combined = combineOcrText([headerText, `STOCK ${stockText}`, `VIN LAST 6 ${vinLast6Text}`]);
+  const stock = extractStockFromGetReady(stockText) || extractStockFromGetReady(combined);
+  const vinLast6 = extractVinLast6FromGetReady(vinLast6Text) || extractVinLast6FromGetReady(combined);
+
+  return {
+    raw_text: combined,
+    sheet_type: "get_ready",
+    stock_suggestion: stock || null,
+    vin_suggestion: null,
+    vin8_suggestion: vinLast6 || null,
+    work_suggestion: null,
+    confidence: stock || vinLast6 ? 0.85 : 0.2,
+  };
+}
+
+async function runOcrOnImage(imageUrlOrBlob) {
+  const imageBlob = await ensureImageBlob(imageUrlOrBlob);
+  await assertUsableOcrImage(imageBlob);
+  const headerText = await recognizeCrop(imageBlob, OCR_HEADER_REGION);
+  const sheetType = detectSheetType(headerText);
+
+  if (sheetType === "ro") return await runRoFieldOcr(imageBlob, headerText);
+  if (sheetType === "get_ready") return await runGetReadyFieldOcr(imageBlob, headerText);
+
+  const roCandidate = await runRoFieldOcr(imageBlob, headerText);
+  if (roCandidate.stock_suggestion || roCandidate.vin_suggestion) {
+    return {
+      ...roCandidate,
+      sheet_type: "unknown",
+      confidence: Math.max(Number(roCandidate.confidence || 0), 0.5),
+    };
+  }
+
+  const getReadyCandidate = await runGetReadyFieldOcr(imageBlob, headerText);
+  if (getReadyCandidate.stock_suggestion || getReadyCandidate.vin8_suggestion) {
+    return {
+      ...getReadyCandidate,
+      sheet_type: "unknown",
+      confidence: Math.max(Number(getReadyCandidate.confidence || 0), 0.5),
+    };
+  }
+
+  const raw = combineOcrText([headerText, roCandidate.raw_text, getReadyCandidate.raw_text]);
   return { raw_text: raw, ...parseUnknownText(raw) };
 }
 
@@ -1211,14 +1481,33 @@ function normalizeEntryForApi(entry) {
   };
 }
 
+function normalizeOcrToken(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function inferRefTypeFromLog(log) {
+  const explicit = normalizeOcrToken(log?.refType || log?.ref_type);
+  if (explicit === "STOCK") return "STOCK";
+
+  const currentRef = normalizeOcrToken(log?.ro_number || log?.ref || log?.ro);
+  const stockSuggestion = normalizeOcrToken(log?.ocr_stock_suggestion);
+  if (stockSuggestion && currentRef && stockSuggestion === currentRef) return "STOCK";
+
+  return "RO";
+}
+
 function normalizeSupabaseLog(r) {
+  const refType = inferRefTypeFromLog(r);
   const entry = {
     id: r.id,
     work_date: r.work_date,
     created_at: r.created_at,
     updated_at: r.updated_at,
+    createdAt: r.created_at ?? null,
+    updatedAt: r.updated_at ?? null,
 
     // UI expects these names (based on your form)
+    refType,
     ref: r.ro_number ?? "",
     ro_number: r.ro_number ?? "",
     dealer: r.dealer ?? null,
@@ -1242,6 +1531,16 @@ function normalizeSupabaseLog(r) {
     location: r.location ?? "",
     vin8: r.vin8 ?? "",
     photo_path: r.photo_path ?? null,
+    ocr_status: r.ocr_status ?? "none",
+    ocr_error: r.ocr_error ?? null,
+    ocr_text_raw: r.ocr_text_raw ?? null,
+    ocr_sheet_type: r.ocr_sheet_type ?? null,
+    ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
+    ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
+    ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
+    ocr_work_suggestion: r.ocr_work_suggestion ?? null,
+    ocr_confidence: r.ocr_confidence ?? null,
+    ocr_processed_at: r.ocr_processed_at ?? null,
 
     owner_key: r.owner_key ?? null,
     employee_number: r.employee_number ?? null,
@@ -1254,19 +1553,23 @@ function normalizeSupabaseLog(r) {
 function mapServerLogToEntry(r) {
   const createdAt = r.created_at || new Date().toISOString();
   const dayKey = r.work_date; // already YYYY-MM-DD
-  const hours = Number(r.flat_hours || 0);
+  const hours = Number(r.flat_hours ?? r.hours ?? 0);
   const rate = 15; // or your default
+  const ref = r.ro_number || r.ref || r.ro || "";
+  const refType = inferRefTypeFromLog(r);
 
   return {
     id: r.id, // do NOT generate uuid() or local ID
     empId: getEmpId(),
     createdAt,
+    updatedAt: r.updated_at || r.updatedAt || createdAt,
     createdAtMs: Date.parse(createdAt) || Date.now(),
     dayKey,
     weekStartKey: dateKey(startOfWeekLocal(new Date(dayKey))),
-    refType: "RO",
-    ref: r.ro_number || "",
-    ro: r.ro_number || "",
+    refType,
+    ref,
+    ro: ref,
+    ro_number: ref,
     dealer: r.dealer || "UNKNOWN",
     brand: r.brand || null,
     store: r.store || r.store_code || null,
@@ -1284,6 +1587,16 @@ function mapServerLogToEntry(r) {
     photoDataUrl: null,
     photo_path: r.photo_path || null,
     location: r.location || null,
+    ocr_status: r.ocr_status ?? "none",
+    ocr_error: r.ocr_error ?? null,
+    ocr_text_raw: r.ocr_text_raw ?? null,
+    ocr_sheet_type: r.ocr_sheet_type ?? null,
+    ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
+    ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
+    ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
+    ocr_work_suggestion: r.ocr_work_suggestion ?? null,
+    ocr_confidence: r.ocr_confidence ?? null,
+    ocr_processed_at: r.ocr_processed_at ?? null,
   };
 }
 
@@ -2000,7 +2313,8 @@ function matchSearch(e, q){
   if (!q) return true;
   const s = q.toLowerCase();
   return [
-    e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes
+    e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes,
+    e.ocr_status, e.ocr_error, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
   ].some(v => String(v||"").toLowerCase().includes(s));
 }
 
@@ -2085,6 +2399,91 @@ function formatWhen(iso){
   try { return new Date(iso).toLocaleString(); } catch { return iso || ""; }
 }
 
+function normalizeEntryToken(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function entryHasStoredPhoto(entry) {
+  return !!(entry?.photo_path || entry?.photoPath || entry?.photoDataUrl);
+}
+
+function entrySuggestedVinValue(entry) {
+  const vin8 = normalizeEntryToken(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (vin8) return vin8;
+
+  const vin = normalizeEntryToken(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
+  return vin.length >= 8 ? vin.slice(-8) : "";
+}
+
+function getEntryReviewState(entry) {
+  const hasPhoto = entryHasStoredPhoto(entry);
+  const ocrStatus = String(entry?.ocr_status || (hasPhoto ? "none" : "none")).toLowerCase();
+  const currentRef = normalizeEntryToken(entry?.ref || entry?.ro || entry?.ro_number);
+  const currentVin = normalizeEntryToken(entry?.vin8).replace(/[^A-Z0-9]/g, "");
+  const suggestedRef = normalizeEntryToken(entry?.ocr_stock_suggestion);
+  const suggestedVin = entrySuggestedVinValue(entry);
+
+  const refMismatch = !!(suggestedRef && currentRef && suggestedRef !== currentRef);
+  const vinMismatch = !!(suggestedVin && currentVin && suggestedVin !== currentVin);
+  const stockPending = !!(suggestedRef && suggestedRef !== currentRef);
+  const vinPending = !!(suggestedVin && suggestedVin !== currentVin);
+  const suggestionsPending = stockPending || vinPending;
+  const ocrFailed = ocrStatus === "failed";
+  const ocrDone = ocrStatus === "done";
+  const ocrWaiting = hasPhoto && (!ocrStatus || ocrStatus === "none" || ocrStatus === "queued" || ocrStatus === "processing");
+  const needsReview = !!(ocrFailed || suggestionsPending || ocrWaiting);
+
+  let statusLabel = "No photo";
+  if (hasPhoto && ocrFailed) statusLabel = "OCR failed";
+  else if (hasPhoto && ocrDone && (refMismatch || vinMismatch)) statusLabel = "OCR mismatch";
+  else if (hasPhoto && ocrDone && suggestionsPending) statusLabel = "OCR suggestion ready";
+  else if (hasPhoto && ocrDone) statusLabel = "OCR done";
+  else if (hasPhoto && ocrStatus === "processing") statusLabel = "OCR processing";
+  else if (hasPhoto && ocrStatus === "queued") statusLabel = "OCR queued";
+  else if (hasPhoto) statusLabel = "OCR not started";
+
+  const reasons = [];
+  if (ocrFailed && entry?.ocr_error) reasons.push(String(entry.ocr_error));
+  if (refMismatch) reasons.push(`manual ref kept over ${suggestedRef}`);
+  else if (stockPending) reasons.push(`stock suggestion ${suggestedRef}`);
+  if (vinMismatch) reasons.push(`manual VIN kept over ${suggestedVin}`);
+  else if (vinPending) reasons.push(`VIN suggestion ${suggestedVin}`);
+  if (ocrWaiting) reasons.push("photo needs OCR review");
+
+  return {
+    hasPhoto,
+    ocrStatus,
+    statusLabel,
+    statusDetail: reasons.join(" • "),
+    currentRef,
+    currentVin,
+    suggestedRef,
+    suggestedVin,
+    refMismatch,
+    vinMismatch,
+    stockPending,
+    vinPending,
+    suggestionsPending,
+    ocrFailed,
+    ocrDone,
+    ocrWaiting,
+    needsReview,
+  };
+}
+
+function getEntryRecordFacts(entry) {
+  const review = getEntryReviewState(entry);
+  return {
+    dayKey: entry?.dayKey || dayKeyFromISO(entry?.createdAt) || entry?.work_date || "-",
+    vin8: String(entry?.vin8 || "").trim() || "-",
+    photoText: review.hasPhoto ? "attached" : "none",
+    createdText: formatWhen(entry?.createdAt || entry?.created_at || ""),
+    updatedText: formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""),
+    ocrText: review.statusDetail ? `${review.statusLabel} - ${review.statusDetail}` : review.statusLabel,
+    review,
+  };
+}
+
 const PHOTO_BUCKET = "proofs"; // private
 
 function setPhotoUploadTarget(path) {
@@ -2109,17 +2508,45 @@ async function getProofSignedUrl(sb, photoPath) {
   return data.signedUrl;
 }
 
+async function downscaleImage(fileOrBlob, maxDim = 1600, quality = 0.8) {
+  const bitmap = await createImageBitmap(fileOrBlob);
+  let { width, height } = bitmap;
+
+  if (width > height && width > maxDim) {
+    height = Math.round((height * maxDim) / width);
+    width = maxDim;
+  } else if (height >= width && height > maxDim) {
+    width = Math.round((width * maxDim) / height);
+    height = maxDim;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  const blob = await new Promise((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", quality)
+  );
+
+  if (!blob) throw new Error("Downscale failed");
+  return blob;
+}
+
 async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
   const uid = await requireUserId(sb);
   if (!uid) throw new Error("Sign in required");
 
-  const ext = (file.type === "image/png") ? "png" : "jpg";
+  const uploadBlob = await downscaleImage(file);
+  const ext = "jpg";
   const path = `${uid}/${empId}/${logId}.${ext}`;
 
   const { error } = await sb.storage
     .from("proofs")
-    .upload(path, file, {
-      contentType: file.type || "image/jpeg",
+    .upload(path, uploadBlob, {
+      contentType: "image/jpeg",
       upsert: true,
     });
 
@@ -2151,25 +2578,8 @@ async function runOCR(photoPath) {
   if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
 
   const signedUrl = await getSignedPhotoUrl(photoPath);
-  const tesseract = window.Tesseract;
-  let ocrText = "";
-
-  if (tesseract?.recognize) {
-    const result = await tesseract.recognize(signedUrl, "eng");
-    ocrText = result?.data?.text || "";
-  } else if (tesseract?.createWorker) {
-    const created = await tesseract.createWorker("eng");
-    const worker = created?.data || created;
-    try {
-      const result = await worker.recognize(signedUrl);
-      ocrText = result?.data?.text || "";
-    } finally {
-      await worker.terminate();
-    }
-  } else {
-    throw new Error("Tesseract not available");
-  }
-
+  const ocrResult = await runOcrOnImage(signedUrl);
+  const ocrText = ocrResult?.raw_text || "";
   OCR_TEXT_CACHE.set(photoPath, ocrText);
   return ocrText;
 }
@@ -2280,41 +2690,8 @@ async function compressImageFile(file, {
   quality = 0.75,
   mime = "image/jpeg",
 } = {}) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      let { width, height } = img;
-
-      if (width > maxWidth) {
-        height = Math.round(height * (maxWidth / width));
-        width = maxWidth;
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return reject(new Error("Compression failed"));
-          const out = new File([blob], "proof.jpg", { type: mime });
-          resolve(out);
-        },
-        mime,
-        quality
-      );
-
-      URL.revokeObjectURL(url);
-    };
-
-    img.onerror = () => reject(new Error("Image load failed"));
-    img.src = url;
-  });
+  const blob = await downscaleImage(file, maxWidth, quality);
+  return new File([blob], "proof.jpg", { type: mime });
 }
 
 async function compressImageFileToDataUrl(file, maxW = 1200, quality = 0.75) {
@@ -2333,77 +2710,6 @@ async function compressImageFileToDataUrl(file, maxW = 1200, quality = 0.75) {
   ctx.drawImage(img, 0, 0, w, h);
 
   return canvas.toDataURL("image/jpeg", quality);
-}
-
-async function preprocessDataUrlForOCR(photoDataUrl) {
-  const img = await fileToImageFromDataUrl(photoDataUrl);
-
-  const maxW = 1600;
-  const scale = Math.min(1, maxW / img.width);
-  const w = Math.max(1, Math.round(img.width * scale));
-  const h = Math.max(1, Math.round(img.height * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0, w, h);
-
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const d = imageData.data;
-  const contrast = 1.25;
-  const intercept = 128 * (1 - contrast);
-
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i], g = d[i + 1], b = d[i + 2];
-    let y = 0.299 * r + 0.587 * g + 0.114 * b;
-    y = y * contrast + intercept;
-    y = Math.max(0, Math.min(255, y));
-    d[i] = d[i + 1] = d[i + 2] = y;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  return canvas.toDataURL("image/png");
-}
-
-function extractSuggestionsFromText(text) {
-  const t = String(text || "");
-  const roMatch = t.match(/\b(\d{5,8})\b/);
-  const ref = roMatch ? roMatch[1] : "";
-  const vinMatch = t.match(/\b([A-HJ-NPR-Z0-9]{8})\b/);
-  const vin8 = vinMatch ? vinMatch[1] : "";
-  const hoursMatches = t.match(/\b\d{1,2}\.\d\b/g) || [];
-  const hours = hoursMatches
-    .map(x => Number(x))
-    .filter(n => n > 0 && n < 20)
-    .sort((a, b) => b - a)[0];
-  return { ref, vin8, hours: Number.isFinite(hours) ? String(hours) : "" };
-}
-
-function renderSuggestionButtons(s) {
-  const parts = [];
-  const refVal = s.ref;
-  if (refVal) parts.push(`<button type="button" class="btn" id="useSugRO">Use Ref ${refVal}</button>`);
-  if (s.vin8) parts.push(`<button type="button" class="btn" id="useSugVIN">Use VIN ${s.vin8}</button>`);
-  if (s.hours) parts.push(`<button type="button" class="btn" id="useSugHRS">Use Hours ${s.hours}</button>`);
-  if (!parts.length) return `<div class="muted">No clear Ref/VIN/Hours found. Use the text box below.</div>`;
-  return `<div class="row" style="gap:10px; flex-wrap:wrap">${parts.join("")}</div>`;
-}
-
-function wireSuggestionButtons(s) {
-  const refEl = $("ref");
-  const vinEl = $("vin8");
-  const hrsEl = $("hours");
-
-  const bRO = $("useSugRO");
-  if (bRO && refEl) bRO.onclick = () => { refEl.value = s.ref; refEl.dispatchEvent(new Event("input")); };
-
-  const bVIN = $("useSugVIN");
-  if (bVIN && vinEl) bVIN.onclick = () => { vinEl.value = s.vin8; vinEl.dispatchEvent(new Event("input")); };
-
-  const bHRS = $("useSugHRS");
-  if (bHRS && hrsEl) bHRS.onclick = () => { hrsEl.value = s.hours; hrsEl.dispatchEvent(new Event("input")); };
 }
 
 function applyPhotoLoadGuard(img, photo_path) {
@@ -2797,6 +3103,12 @@ function handleClear(ev) {
   clearPickedPhoto();
   if (empInputEl) empInputEl.value = getEmpId();
   setRefType("RO");
+  const detailsPanel = document.getElementById("detailsPanel");
+  const detailsBtn = document.getElementById("toggleDetailsBtn");
+  if (detailsPanel) detailsPanel.style.display = "none";
+  if (detailsBtn) detailsBtn.textContent = "Add Details";
+  const saveBtn = document.getElementById("saveBtn");
+  if (saveBtn) saveBtn.disabled = true;
 }
 
 function showToast(msg) {
@@ -2838,6 +3150,76 @@ async function queueOcrForSavedEntry(entry, refreshEntries) {
     ocrBusy = false;
   }
 }
+
+function normalizeSuggestionValue(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getOcrVinApplyValue(entry) {
+  const vin8 = normalizeSuggestionValue(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (vin8) return vin8;
+
+  const vin = normalizeSuggestionValue(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
+  return vin.length >= 8 ? vin.slice(-8) : "";
+}
+
+function getOcrSuggestionActions(entry) {
+  const actions = [];
+  const stock = normalizeSuggestionValue(entry?.ocr_stock_suggestion);
+  const currentRef = normalizeSuggestionValue(entry?.ref || entry?.ro);
+  if (stock && stock !== currentRef) {
+    actions.push({
+      kind: "stock",
+      label: `Apply STK ${stock}`,
+      appliedLabel: `Applied STK ${stock}`,
+      patch: {
+        ro_number: stock,
+      },
+    });
+  }
+
+  const vin = getOcrVinApplyValue(entry);
+  const currentVin = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
+  if (vin && vin !== currentVin) {
+    actions.push({
+      kind: "vin",
+      label: `Apply VIN ${vin}`,
+      appliedLabel: `Applied VIN ${vin}`,
+      patch: {
+        vin8: vin,
+      },
+    });
+  }
+
+  return actions;
+}
+
+async function applyEntryOcrSuggestion(entry, action) {
+  if (!entry?.id || !action?.patch) return;
+
+  await applyOcrSuggestion(entry.id, {
+    ...action.patch,
+    updated_at: nowISO(),
+  });
+  showToast(action.appliedLabel || "Suggestion applied");
+  await safeLoadEntries();
+
+  if (String(EDITING_ID ?? "") !== String(entry.id ?? "")) return;
+
+  const updated = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+    .find((row) => String(row?.id ?? "") === String(entry.id ?? ""));
+  if (updated) startEditEntry(updated);
+}
+
+function buildEntryMetaHtml(entry) {
+  const facts = getEntryRecordFacts(entry);
+  return `
+    <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
+    <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
+    <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
+  `;
+}
+
 window.__FR = window.__FR || {};
 window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
 
@@ -2939,7 +3321,6 @@ async function handleSave(ev) {
     const rateVal = num(rateEl?.value) || 15;
     const notes = (notesEl?.value || "").trim();
 
-    if (!ref) { toast("Ref required"); return; }
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
@@ -3053,7 +3434,7 @@ async function renderHistory(){
           <div class="itemTop">
             <div>
               <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-              <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+              ${buildEntryMetaHtml(e)}
               ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
             </div>
             <div class="right">
@@ -3079,7 +3460,7 @@ async function renderHistory(){
       <div class="itemTop">
         <div>
           <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-          <div class="small">Day: <span class="mono">${escapeHtml(e.dayKey||dayKeyFromISO(e.createdAt)||"-")}</span> • VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+          ${buildEntryMetaHtml(e)}
         </div>
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
@@ -3449,8 +3830,8 @@ function rangeSubLabel(mode){
 
 function toCSV(entries, includeEmp = false){
   const header = includeEmp
-    ? ["empId","createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"]
-    : ["createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
+    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
+    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
 
   const escape = (v) => {
     const s = String(v ?? "");
@@ -3461,8 +3842,8 @@ function toCSV(entries, includeEmp = false){
   const rows = (entries || []).map(e => {
     const hasPhoto = e.photo_path || e.photoDataUrl ? "yes" : "no";
     const row = includeEmp
-      ? [e.empId, e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto]
-      : [e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto];
+      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
+      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
     return row.map(escape).join(",");
   });
 
@@ -3551,17 +3932,29 @@ function renderList(entries, mode){
   const buildEntry = (e) => {
     const row = document.createElement("div");
     row.className = "item";
-    const ts = new Date(e.createdAt).toLocaleString();
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
+    const typeLabel = escapeHtml(e.type || e.typeText || "-");
     const entryId = escapeHtml(String(e.id ?? ""));
+    const ocrActions = getOcrSuggestionActions(e);
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
+    const ocrSuggestionBlock = ocrActions.length
+      ? `
+        <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
+          <div class="small" style="margin-bottom:8px;color:rgba(191,219,254,.95);">OCR suggestions</div>
+          <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${ocrActions.map((action) => `<button class="btn primary" type="button" data-ocr-action="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
+          </div>
+        </div>
+      `
+      : "";
     row.innerHTML = `
       <div class="itemTop">
         <div>
@@ -3570,10 +3963,11 @@ function renderList(entries, mode){
               <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} />
               Select
             </label>
-            <span class="mono">${refDisplay}</span> <span class="muted">(${escapeHtml(e.type)})</span>
+            <span class="mono">${refDisplay}</span> <span class="muted">(${typeLabel})</span>
           </div>
-          <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8 || "-")}</span> • ${ts}</div>
+          ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
+          ${ocrSuggestionBlock}
           <div style="margin-top:8px;">${actionButtons}</div>
         </div>
         <div class="right">
@@ -3593,6 +3987,23 @@ function renderList(entries, mode){
     if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhoto(e));
+    }
+    const ocrBtns = Array.from(row.querySelectorAll("button[data-ocr-action]"));
+    for (const btn of ocrBtns) {
+      btn.addEventListener("click", async () => {
+        const kind = btn.getAttribute("data-ocr-action") || "";
+        const action = ocrActions.find((item) => item.kind === kind);
+        if (!action) return;
+
+        ocrBtns.forEach((el) => { el.disabled = true; });
+        try {
+          await applyEntryOcrSuggestion(e, action);
+        } catch (err) {
+          console.error("Apply OCR suggestion failed", e?.id, kind, err);
+          showToast("Could not apply OCR suggestion");
+          ocrBtns.forEach((el) => { el.disabled = false; });
+        }
+      });
     }
     return row;
   };
@@ -4073,16 +4484,18 @@ function wireOcrReprocessButton() {
     status.textContent = "Looking for saved photos to process...";
 
     try {
-      const entries = await listEntriesNeedingOcr(30);
+      const entries = await listEntriesNeedingOcr(10);
       if (!entries.length) {
         status.textContent = "No saved photos need OCR.";
         return;
       }
 
       let done = 0;
+      let failed = 0;
+      let processed = 0;
       for (const entry of entries) {
         try {
-          status.textContent = `Processing ${done + 1}/${entries.length}...`;
+          status.textContent = `Processing ${processed + 1}/${entries.length}... done ${done}, failed ${failed}`;
           await markEntryProcessingOcr(entry.id);
           const signedUrl = await getSignedPhotoUrl(entry.photo_path);
           const ocr = await runOcrOnImage(signedUrl);
@@ -4091,10 +4504,16 @@ function wireOcrReprocessButton() {
         } catch (err) {
           console.error("Saved photo OCR failed", entry.id, err);
           await markOcrFailed(entry.id, err);
+          failed += 1;
+        } finally {
+          processed += 1;
+          status.textContent = `Processed ${processed}/${entries.length}... done ${done}, failed ${failed}`;
         }
       }
 
-      status.textContent = `Processed ${done} photo(s).`;
+      status.textContent = failed
+        ? `Batch complete: ${done} processed, ${failed} failed.`
+        : `Batch complete: ${done} photo(s).`;
     } catch (err) {
       console.error(err);
       status.textContent = "OCR batch failed.";
@@ -4236,6 +4655,7 @@ function renderPayStubComparison() {
   if (ctx.error) {
     summaryEl.textContent = ctx.error;
     detailsEl.textContent = "";
+    renderMissingWorkReview();
     return;
   }
 
@@ -4244,6 +4664,7 @@ function renderPayStubComparison() {
     `Paid: ${formatHours(ctx.actual.hours)} hrs • ${formatMoney(ctx.actual.pay)} | ` +
     `Expected: ${formatHours(ctx.expected.hours)} hrs • ${formatMoney(ctx.expected.pay)} | ` +
     `Missing (expected-actual): ${signedHoursLabel(ctx.comparison.missingHours)} hrs • ${signedMoneyLabel(ctx.comparison.missingPay)}`;
+  renderMissingWorkReview();
 }
 
 function drawAuditLines(doc, rows, left, startY) {
@@ -4426,11 +4847,166 @@ async function wipeAllData(){
   else clearPhotoGallery();
 }
 
+function reviewFocusMatches(entry, focus) {
+  const review = getEntryReviewState(entry);
+  switch (focus) {
+    case "with-photo":
+      return review.hasPhoto;
+    case "ocr-pending":
+      return review.ocrWaiting;
+    case "ocr-suggestions":
+      return review.suggestionsPending && !review.ocrFailed;
+    case "ocr-failed":
+      return review.ocrFailed;
+    case "ocr-mismatch":
+      return review.refMismatch || review.vinMismatch;
+    case "needs-review":
+      return review.needsReview;
+    case "all":
+    default:
+      return true;
+  }
+}
+
+function buildReviewEntryRow(entry) {
+  const facts = getEntryRecordFacts(entry);
+  const review = facts.review;
+  const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
+  const applyActions = typeof getOcrSuggestionActions === "function" ? getOcrSuggestionActions(entry) : [];
+  const row = document.createElement("div");
+  row.className = "item";
+  row.innerHTML = `
+    <div class="itemTop">
+      <div>
+        <div class="mono">${escapeHtml(refLabel)}: ${escapeHtml(entry.ref || entry.ro || "-")} <span class="muted">(${escapeHtml(entry.type || entry.typeText || "")})</span></div>
+        <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
+        <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
+        <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
+        ${entry.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(entry.notes)}</div>` : ""}
+        ${applyActions.length ? `
+          <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
+            <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${applyActions.map((action) => `<button class="btn primary" type="button" data-review-ocr="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
+            </div>
+          </div>
+        ` : ""}
+      </div>
+      <div class="right">
+        <div class="mono">${String(entry.hours)} hrs @ ${formatMoney(entry.rate)}</div>
+        <div style="margin-top:6px;font-size:16px;">${formatMoney(entry.earnings)}</div>
+        <div class="small" style="margin-top:8px;">${escapeHtml(review.statusLabel)}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+          ${review.hasPhoto ? `<button class="btn" type="button" data-review-photo="${escapeHtml(String(entry.id ?? ""))}">View Photo</button>` : ""}
+          <button class="btn danger" data-del="${entry.id}">Delete</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (review.hasPhoto) {
+    const photoBtn = row.querySelector("button[data-review-photo]");
+    photoBtn?.addEventListener("click", () => openPhotoViewer(entry));
+  }
+
+  const ocrBtns = Array.from(row.querySelectorAll("button[data-review-ocr]"));
+  for (const btn of ocrBtns) {
+    btn.addEventListener("click", async () => {
+      const kind = btn.getAttribute("data-review-ocr") || "";
+      const action = applyActions.find((item) => item.kind === kind);
+      if (!action || typeof applyEntryOcrSuggestion !== "function") return;
+
+      ocrBtns.forEach((el) => { el.disabled = true; });
+      try {
+        await applyEntryOcrSuggestion(entry, action);
+        await renderReview();
+        renderPayStubComparison();
+      } catch (err) {
+        console.error("Review OCR apply failed", entry?.id, kind, err);
+        ocrBtns.forEach((el) => { el.disabled = false; });
+      }
+    });
+  }
+
+  return row;
+}
+
+function scoreMissingWorkCandidate(entry) {
+  const review = getEntryReviewState(entry);
+  let score = 0;
+  if (review.hasPhoto) score += 30;
+  if (entry.notes) score += 8;
+  if (review.suggestionsPending) score += 6;
+  if (review.ocrFailed) score += 4;
+  score += Math.floor((Date.parse(entry.updatedAt || entry.createdAt || "") || 0) / 86400000);
+  return score;
+}
+
+function getMissingWorkCandidates(ctx) {
+  const missingHours = Number(ctx?.comparison?.missingHours || 0);
+  const missingPay = Number(ctx?.comparison?.missingPay || 0);
+  if (missingHours <= 0 && missingPay <= 0) return [];
+
+  const remaining = {
+    hours: missingHours,
+    pay: missingPay,
+  };
+
+  const sorted = (ctx?.entries || []).slice().sort((a, b) => scoreMissingWorkCandidate(b) - scoreMissingWorkCandidate(a));
+  const picks = [];
+
+  for (const entry of sorted) {
+    if (remaining.hours <= 0 && remaining.pay <= 0) break;
+    const hours = Number(entry?.hours || 0);
+    const pay = Number(entry?.earnings || 0);
+    picks.push(entry);
+    remaining.hours = round1(remaining.hours - hours);
+    remaining.pay = round2(remaining.pay - pay);
+  }
+
+  return picks;
+}
+
+function renderMissingWorkReview() {
+  const summaryEl = document.getElementById("missingWorkSummary");
+  const listEl = document.getElementById("missingWorkList");
+  if (!summaryEl || !listEl) return;
+
+  const ctx = getPayStubAuditContext();
+  listEl.innerHTML = "";
+
+  if (ctx.error) {
+    summaryEl.textContent = "";
+    return;
+  }
+
+  const missingHours = Number(ctx.comparison?.missingHours || 0);
+  const missingPay = Number(ctx.comparison?.missingPay || 0);
+  if (missingHours <= 0 && missingPay <= 0) {
+    summaryEl.textContent = `Logged ${ctx.entries.length} entries for the selected pay week. Paid totals currently cover the logged totals.`;
+    return;
+  }
+
+  summaryEl.textContent =
+    `Potential missing work based on logged entries for ${ctx.weekStartKey}${ctx.weekEnd ? ` -> ${ctx.weekEnd}` : ""}. This is a heuristic because the pay stub only contains totals.`;
+
+  const picks = getMissingWorkCandidates(ctx);
+  if (!picks.length) {
+    listEl.innerHTML = `<div class="muted">No logged entries are available to explain the shortfall yet.</div>`;
+    return;
+  }
+
+  for (const entry of picks) {
+    listEl.appendChild(buildReviewEntryRow(entry));
+  }
+}
+
 async function renderReview(){
   const empId = getEmpId();
   if (!empId) { setStatusMsg("Enter Employee # to review work."); return; }
 
   const range = document.getElementById("reviewRange")?.value || "week";
+  const focus = document.getElementById("reviewFocus")?.value || "needs-review";
   const group = document.getElementById("reviewGroup")?.value || "day";
   const q = (document.getElementById("reviewSearch")?.value || "").trim().toLowerCase();
 
@@ -4448,11 +5024,24 @@ async function renderReview(){
     slice = all.filter(e => inMonth(e.dayKey || dayKeyFromISO(e.createdAt), ms));
   }
 
+  slice = slice.filter((entry) => reviewFocusMatches(entry, focus));
   if (q) slice = slice.filter(e => matchSearch(e, q));
 
   const totals = computeTotals(slice);
+  const reviewCounts = slice.reduce((acc, entry) => {
+    const review = getEntryReviewState(entry);
+    if (review.needsReview) acc.needsReview += 1;
+    if (review.ocrFailed) acc.failed += 1;
+    if (review.suggestionsPending) acc.suggestions += 1;
+    if (review.refMismatch || review.vinMismatch) acc.mismatches += 1;
+    return acc;
+  }, { needsReview: 0, failed: 0, suggestions: 0, mismatches: 0 });
   const meta = document.getElementById("reviewMeta");
-  if (meta) meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
+  if (meta) {
+    meta.textContent =
+      `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)} • ` +
+      `${reviewCounts.needsReview} need review • ${reviewCounts.failed} OCR failed • ${reviewCounts.suggestions} suggestion ready • ${reviewCounts.mismatches} mismatch`;
+  }
 
   const list = document.getElementById("reviewList");
   if (!list) return;
@@ -4474,25 +5063,7 @@ async function renderReview(){
       list.appendChild(head);
 
       for (const e of g.entries) {
-        const row = document.createElement("div");
-        row.className = "item";
-        row.innerHTML = `
-          <div class="itemTop">
-            <div>
-              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-              <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
-              ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-            </div>
-            <div class="right">
-              <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-              <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
-              <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
-                <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${e.id}">Delete</button>
-              </div>
-            </div>
-          </div>`;
-        list.appendChild(row);
+        list.appendChild(buildReviewEntryRow(e));
       }
     }
     return;
@@ -4500,24 +5071,7 @@ async function renderReview(){
 
   // no group
   for (const e of slice.slice(0, 200)) {
-    const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `
-      <div class="itemTop">
-        <div>
-          <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-          <div class="small">${escapeHtml(e.dayKey||dayKeyFromISO(e.createdAt)||"-")} • VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
-        </div>
-        <div class="right">
-          <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-          <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
-          <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
-            <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${e.id}">Delete</button>
-          </div>
-        </div>
-      </div>`;
-    list.appendChild(row);
+    list.appendChild(buildReviewEntryRow(e));
   }
 }
 
@@ -4671,22 +5225,21 @@ async function runOnce() {
 
     function updateSaveEnabled() {
       const empOk  = !!getEmpId();
-      const refOk  = !!(document.getElementById("ref")?.value || "").trim();
       const typeOk = !!(document.getElementById("typeText")?.value || "").trim();
       const hrsOk  = num(document.getElementById("hours")?.value) > 0;
       const btn = document.getElementById("saveBtn");
-      if (btn) btn.disabled = !(empOk && refOk && typeOk && hrsOk);
+      if (btn) btn.disabled = !(empOk && typeOk && hrsOk);
     }
 
     const detailsBtn = document.getElementById("toggleDetailsBtn");
     const detailsPanel = document.getElementById("detailsPanel");
     if (detailsBtn && detailsPanel) {
       detailsPanel.style.display = "none";
-      detailsBtn.textContent = "More details";
+      detailsBtn.textContent = "Add Details";
       detailsBtn.addEventListener("click", () => {
         const isOpen = detailsPanel.style.display !== "none";
         detailsPanel.style.display = isOpen ? "none" : "block";
-        detailsBtn.textContent = isOpen ? "More details" : "Less";
+        detailsBtn.textContent = isOpen ? "Add Details" : "Less";
       });
     }
 
@@ -4697,7 +5250,7 @@ async function runOnce() {
     });
     updateSaveEnabled();
 
-    ["ref", "typeText", "hours"].forEach((id) => {
+    ["typeText", "hours", "ref"].forEach((id) => {
       document.getElementById(id)?.addEventListener("keydown", (e) => {
         if (e.key !== "Enter") return;
         e.preventDefault();
@@ -4747,6 +5300,7 @@ async function runOnce() {
     document.getElementById("wipeAllBtn")?.addEventListener("click", wipeAllData);
     document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
     document.getElementById("reviewRange")?.addEventListener("change", renderReview);
+    document.getElementById("reviewFocus")?.addEventListener("change", renderReview);
     document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
     document.getElementById("reviewSearch")?.addEventListener("input", () => {
       clearTimeout(window.__REVIEW_T__);

@@ -137,22 +137,21 @@ async function runOnce() {
 
     function updateSaveEnabled() {
       const empOk  = !!getEmpId();
-      const refOk  = !!(document.getElementById("ref")?.value || "").trim();
       const typeOk = !!(document.getElementById("typeText")?.value || "").trim();
       const hrsOk  = num(document.getElementById("hours")?.value) > 0;
       const btn = document.getElementById("saveBtn");
-      if (btn) btn.disabled = !(empOk && refOk && typeOk && hrsOk);
+      if (btn) btn.disabled = !(empOk && typeOk && hrsOk);
     }
 
     const detailsBtn = document.getElementById("toggleDetailsBtn");
     const detailsPanel = document.getElementById("detailsPanel");
     if (detailsBtn && detailsPanel) {
       detailsPanel.style.display = "none";
-      detailsBtn.textContent = "More details";
+      detailsBtn.textContent = "Add Details";
       detailsBtn.addEventListener("click", () => {
         const isOpen = detailsPanel.style.display !== "none";
         detailsPanel.style.display = isOpen ? "none" : "block";
-        detailsBtn.textContent = isOpen ? "More details" : "Less";
+        detailsBtn.textContent = isOpen ? "Add Details" : "Less";
       });
     }
 
@@ -163,7 +162,7 @@ async function runOnce() {
     });
     updateSaveEnabled();
 
-    ["ref", "typeText", "hours"].forEach((id) => {
+    ["typeText", "hours", "ref"].forEach((id) => {
       document.getElementById(id)?.addEventListener("keydown", (e) => {
         if (e.key !== "Enter") return;
         e.preventDefault();
@@ -213,6 +212,7 @@ async function runOnce() {
     document.getElementById("wipeAllBtn")?.addEventListener("click", wipeAllData);
     document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
     document.getElementById("reviewRange")?.addEventListener("change", renderReview);
+    document.getElementById("reviewFocus")?.addEventListener("change", renderReview);
     document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
     document.getElementById("reviewSearch")?.addEventListener("input", () => {
       clearTimeout(window.__REVIEW_T__);

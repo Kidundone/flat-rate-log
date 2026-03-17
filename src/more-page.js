@@ -180,16 +180,18 @@ function wireOcrReprocessButton() {
     status.textContent = "Looking for saved photos to process...";
 
     try {
-      const entries = await listEntriesNeedingOcr(30);
+      const entries = await listEntriesNeedingOcr(10);
       if (!entries.length) {
         status.textContent = "No saved photos need OCR.";
         return;
       }
 
       let done = 0;
+      let failed = 0;
+      let processed = 0;
       for (const entry of entries) {
         try {
-          status.textContent = `Processing ${done + 1}/${entries.length}...`;
+          status.textContent = `Processing ${processed + 1}/${entries.length}... done ${done}, failed ${failed}`;
           await markEntryProcessingOcr(entry.id);
           const signedUrl = await getSignedPhotoUrl(entry.photo_path);
           const ocr = await runOcrOnImage(signedUrl);
@@ -198,10 +200,16 @@ function wireOcrReprocessButton() {
         } catch (err) {
           console.error("Saved photo OCR failed", entry.id, err);
           await markOcrFailed(entry.id, err);
+          failed += 1;
+        } finally {
+          processed += 1;
+          status.textContent = `Processed ${processed}/${entries.length}... done ${done}, failed ${failed}`;
         }
       }
 
-      status.textContent = `Processed ${done} photo(s).`;
+      status.textContent = failed
+        ? `Batch complete: ${done} processed, ${failed} failed.`
+        : `Batch complete: ${done} photo(s).`;
     } catch (err) {
       console.error(err);
       status.textContent = "OCR batch failed.";
@@ -343,6 +351,7 @@ function renderPayStubComparison() {
   if (ctx.error) {
     summaryEl.textContent = ctx.error;
     detailsEl.textContent = "";
+    renderMissingWorkReview();
     return;
   }
 
@@ -351,6 +360,7 @@ function renderPayStubComparison() {
     `Paid: ${formatHours(ctx.actual.hours)} hrs • ${formatMoney(ctx.actual.pay)} | ` +
     `Expected: ${formatHours(ctx.expected.hours)} hrs • ${formatMoney(ctx.expected.pay)} | ` +
     `Missing (expected-actual): ${signedHoursLabel(ctx.comparison.missingHours)} hrs • ${signedMoneyLabel(ctx.comparison.missingPay)}`;
+  renderMissingWorkReview();
 }
 
 function drawAuditLines(doc, rows, left, startY) {
@@ -533,11 +543,166 @@ async function wipeAllData(){
   else clearPhotoGallery();
 }
 
+function reviewFocusMatches(entry, focus) {
+  const review = getEntryReviewState(entry);
+  switch (focus) {
+    case "with-photo":
+      return review.hasPhoto;
+    case "ocr-pending":
+      return review.ocrWaiting;
+    case "ocr-suggestions":
+      return review.suggestionsPending && !review.ocrFailed;
+    case "ocr-failed":
+      return review.ocrFailed;
+    case "ocr-mismatch":
+      return review.refMismatch || review.vinMismatch;
+    case "needs-review":
+      return review.needsReview;
+    case "all":
+    default:
+      return true;
+  }
+}
+
+function buildReviewEntryRow(entry) {
+  const facts = getEntryRecordFacts(entry);
+  const review = facts.review;
+  const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
+  const applyActions = typeof getOcrSuggestionActions === "function" ? getOcrSuggestionActions(entry) : [];
+  const row = document.createElement("div");
+  row.className = "item";
+  row.innerHTML = `
+    <div class="itemTop">
+      <div>
+        <div class="mono">${escapeHtml(refLabel)}: ${escapeHtml(entry.ref || entry.ro || "-")} <span class="muted">(${escapeHtml(entry.type || entry.typeText || "")})</span></div>
+        <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
+        <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
+        <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
+        ${entry.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(entry.notes)}</div>` : ""}
+        ${applyActions.length ? `
+          <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
+            <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${applyActions.map((action) => `<button class="btn primary" type="button" data-review-ocr="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
+            </div>
+          </div>
+        ` : ""}
+      </div>
+      <div class="right">
+        <div class="mono">${String(entry.hours)} hrs @ ${formatMoney(entry.rate)}</div>
+        <div style="margin-top:6px;font-size:16px;">${formatMoney(entry.earnings)}</div>
+        <div class="small" style="margin-top:8px;">${escapeHtml(review.statusLabel)}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+          ${review.hasPhoto ? `<button class="btn" type="button" data-review-photo="${escapeHtml(String(entry.id ?? ""))}">View Photo</button>` : ""}
+          <button class="btn danger" data-del="${entry.id}">Delete</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (review.hasPhoto) {
+    const photoBtn = row.querySelector("button[data-review-photo]");
+    photoBtn?.addEventListener("click", () => openPhotoViewer(entry));
+  }
+
+  const ocrBtns = Array.from(row.querySelectorAll("button[data-review-ocr]"));
+  for (const btn of ocrBtns) {
+    btn.addEventListener("click", async () => {
+      const kind = btn.getAttribute("data-review-ocr") || "";
+      const action = applyActions.find((item) => item.kind === kind);
+      if (!action || typeof applyEntryOcrSuggestion !== "function") return;
+
+      ocrBtns.forEach((el) => { el.disabled = true; });
+      try {
+        await applyEntryOcrSuggestion(entry, action);
+        await renderReview();
+        renderPayStubComparison();
+      } catch (err) {
+        console.error("Review OCR apply failed", entry?.id, kind, err);
+        ocrBtns.forEach((el) => { el.disabled = false; });
+      }
+    });
+  }
+
+  return row;
+}
+
+function scoreMissingWorkCandidate(entry) {
+  const review = getEntryReviewState(entry);
+  let score = 0;
+  if (review.hasPhoto) score += 30;
+  if (entry.notes) score += 8;
+  if (review.suggestionsPending) score += 6;
+  if (review.ocrFailed) score += 4;
+  score += Math.floor((Date.parse(entry.updatedAt || entry.createdAt || "") || 0) / 86400000);
+  return score;
+}
+
+function getMissingWorkCandidates(ctx) {
+  const missingHours = Number(ctx?.comparison?.missingHours || 0);
+  const missingPay = Number(ctx?.comparison?.missingPay || 0);
+  if (missingHours <= 0 && missingPay <= 0) return [];
+
+  const remaining = {
+    hours: missingHours,
+    pay: missingPay,
+  };
+
+  const sorted = (ctx?.entries || []).slice().sort((a, b) => scoreMissingWorkCandidate(b) - scoreMissingWorkCandidate(a));
+  const picks = [];
+
+  for (const entry of sorted) {
+    if (remaining.hours <= 0 && remaining.pay <= 0) break;
+    const hours = Number(entry?.hours || 0);
+    const pay = Number(entry?.earnings || 0);
+    picks.push(entry);
+    remaining.hours = round1(remaining.hours - hours);
+    remaining.pay = round2(remaining.pay - pay);
+  }
+
+  return picks;
+}
+
+function renderMissingWorkReview() {
+  const summaryEl = document.getElementById("missingWorkSummary");
+  const listEl = document.getElementById("missingWorkList");
+  if (!summaryEl || !listEl) return;
+
+  const ctx = getPayStubAuditContext();
+  listEl.innerHTML = "";
+
+  if (ctx.error) {
+    summaryEl.textContent = "";
+    return;
+  }
+
+  const missingHours = Number(ctx.comparison?.missingHours || 0);
+  const missingPay = Number(ctx.comparison?.missingPay || 0);
+  if (missingHours <= 0 && missingPay <= 0) {
+    summaryEl.textContent = `Logged ${ctx.entries.length} entries for the selected pay week. Paid totals currently cover the logged totals.`;
+    return;
+  }
+
+  summaryEl.textContent =
+    `Potential missing work based on logged entries for ${ctx.weekStartKey}${ctx.weekEnd ? ` -> ${ctx.weekEnd}` : ""}. This is a heuristic because the pay stub only contains totals.`;
+
+  const picks = getMissingWorkCandidates(ctx);
+  if (!picks.length) {
+    listEl.innerHTML = `<div class="muted">No logged entries are available to explain the shortfall yet.</div>`;
+    return;
+  }
+
+  for (const entry of picks) {
+    listEl.appendChild(buildReviewEntryRow(entry));
+  }
+}
+
 async function renderReview(){
   const empId = getEmpId();
   if (!empId) { setStatusMsg("Enter Employee # to review work."); return; }
 
   const range = document.getElementById("reviewRange")?.value || "week";
+  const focus = document.getElementById("reviewFocus")?.value || "needs-review";
   const group = document.getElementById("reviewGroup")?.value || "day";
   const q = (document.getElementById("reviewSearch")?.value || "").trim().toLowerCase();
 
@@ -555,11 +720,24 @@ async function renderReview(){
     slice = all.filter(e => inMonth(e.dayKey || dayKeyFromISO(e.createdAt), ms));
   }
 
+  slice = slice.filter((entry) => reviewFocusMatches(entry, focus));
   if (q) slice = slice.filter(e => matchSearch(e, q));
 
   const totals = computeTotals(slice);
+  const reviewCounts = slice.reduce((acc, entry) => {
+    const review = getEntryReviewState(entry);
+    if (review.needsReview) acc.needsReview += 1;
+    if (review.ocrFailed) acc.failed += 1;
+    if (review.suggestionsPending) acc.suggestions += 1;
+    if (review.refMismatch || review.vinMismatch) acc.mismatches += 1;
+    return acc;
+  }, { needsReview: 0, failed: 0, suggestions: 0, mismatches: 0 });
   const meta = document.getElementById("reviewMeta");
-  if (meta) meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
+  if (meta) {
+    meta.textContent =
+      `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)} • ` +
+      `${reviewCounts.needsReview} need review • ${reviewCounts.failed} OCR failed • ${reviewCounts.suggestions} suggestion ready • ${reviewCounts.mismatches} mismatch`;
+  }
 
   const list = document.getElementById("reviewList");
   if (!list) return;
@@ -581,25 +759,7 @@ async function renderReview(){
       list.appendChild(head);
 
       for (const e of g.entries) {
-        const row = document.createElement("div");
-        row.className = "item";
-        row.innerHTML = `
-          <div class="itemTop">
-            <div>
-              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-              <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
-              ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-            </div>
-            <div class="right">
-              <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-              <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
-              <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
-                <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${e.id}">Delete</button>
-              </div>
-            </div>
-          </div>`;
-        list.appendChild(row);
+        list.appendChild(buildReviewEntryRow(e));
       }
     }
     return;
@@ -607,24 +767,7 @@ async function renderReview(){
 
   // no group
   for (const e of slice.slice(0, 200)) {
-    const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `
-      <div class="itemTop">
-        <div>
-          <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-          <div class="small">${escapeHtml(e.dayKey||dayKeyFromISO(e.createdAt)||"-")} • VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
-        </div>
-        <div class="right">
-          <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-          <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
-          <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
-            <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${e.id}">Delete</button>
-          </div>
-        </div>
-      </div>`;
-    list.appendChild(row);
+    list.appendChild(buildReviewEntryRow(e));
   }
 }
 

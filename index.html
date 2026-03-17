@@ -99,46 +99,15 @@
         <div class="fr26Hint">Required. Entries are stored under this number on this device.</div>
       </section>
 
-      <!-- Rapid Log -->
+      <!-- Quick Entry -->
       <section class="fr26Group">
         <div class="fr26TopRow">
           <div>
-            <div class="fr26GroupHeader" style="margin:0;">Rapid Log</div>
-            <div class="fr26Sub">Fast entry. Expand only when you need VIN/photo/notes.</div>
+            <div class="fr26GroupHeader" style="margin:0;">Quick Entry</div>
+            <div class="fr26Sub">Default flow: hours, work done, photo, save. Add RO, VIN, and notes later if you need them.</div>
           </div>
-          <button id="toggleDetailsBtn" class="fr26Chip" type="button">More</button>
+          <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
         </div>
-
-        <div class="fr26Row">
-          <label class="fr26Label" for="ref">RO / Stock #</label>
-          <input
-            id="ref"
-            name="ref"
-            placeholder="e.g. 123456 or AB12C"
-            inputmode="text"
-            autocomplete="off"
-            autocapitalize="characters"
-            spellcheck="false"
-            required
-            class="fr26Input"
-          />
-        </div>
-
-        <div class="fr26Row">
-          <label class="fr26Label" for="typeText">Job Type</label>
-          <input
-            name="typeText"
-            id="typeText"
-            list="typeList"
-            placeholder="Sold + FPF"
-            inputmode="text"
-            autocomplete="off"
-            required
-            class="fr26Input"
-          />
-          <datalist id="typeList"></datalist>
-        </div>
-        <div class="fr26Hint">Just type it. New types auto-save and show up next time.</div>
 
         <div class="fr26Row">
           <label class="fr26Label" for="hours">Hours</label>
@@ -154,12 +123,47 @@
             class="fr26Input"
           />
         </div>
+
+        <div class="fr26Row">
+          <label class="fr26Label" for="typeText">Work Done</label>
+          <input
+            name="typeText"
+            id="typeText"
+            list="typeList"
+            placeholder="Describe the work"
+            inputmode="text"
+            autocomplete="off"
+            required
+            class="fr26Input"
+          />
+          <datalist id="typeList"></datalist>
+        </div>
+        <div class="fr26Hint">Just type it. New work types auto-save and show up next time.</div>
+
+        <div class="fr26Row">
+          <label class="fr26Label">Proof Photo</label>
+          <button id="btnPickPhoto" class="btn" type="button">Pick Photo</button>
+          <input id="photoPicker" type="file" style="display:none">
+
+          <button id="btnTakePhoto" class="btn" type="button">Take Photo</button>
+          <input id="photoCamera" type="file" style="display:none">
+
+          <button id="btnPickFile" class="btn" type="button">Pick File</button>
+          <input id="photoFile" type="file" style="display:none">
+
+          <div id="photoPickedLabel">No photo</div>
+        </div>
+        <div id="photoUploadTarget" class="fr26Hint mono" style="margin-top:6px;">
+          Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
+        </div>
+        <div class="fr26Hint">Photo is optional, but it makes missing-work review defensible later.</div>
       </section>
 
       <!-- Details panel (keeps same id) -->
       <section id="detailsPanel" class="fr26Details" style="display:none;">
         <div class="fr26Group">
           <div class="fr26GroupHeader">Details</div>
+          <div class="fr26Sub">Optional fields. Manual values always win over OCR suggestions until you tap Apply.</div>
 
           <div class="fr26TopRow" style="margin-top:6px;">
             <div class="fr26Sub">Reference type</div>
@@ -167,6 +171,20 @@
               <button id="refTypeRO" type="button" class="segBtn active">RO</button>
               <button id="refTypeSTK" type="button" class="segBtn">Stock</button>
             </div>
+          </div>
+
+          <div class="fr26Row">
+            <label class="fr26Label" for="ref">RO / Stock #</label>
+            <input
+              id="ref"
+              name="ref"
+              placeholder="Fill this now or later"
+              inputmode="text"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              class="fr26Input"
+            />
           </div>
 
           <div class="fr26Row">
@@ -188,24 +206,6 @@
             <label class="fr26Label" for="rateInput">Rate ($)</label>
             <input id="rateInput" name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" class="fr26Input" />
           </div>
-
-          <div class="fr26Row">
-            <label class="fr26Label">Proof Photo</label>
-            <button id="btnPickPhoto" class="btn" type="button">Pick Photo</button>
-            <input id="photoPicker" type="file" style="display:none">
-
-            <button id="btnTakePhoto" class="btn" type="button">Take Photo</button>
-            <input id="photoCamera" type="file" style="display:none">
-
-            <button id="btnPickFile" class="btn" type="button">Pick File</button>
-            <input id="photoFile" type="file" style="display:none">
-
-            <div id="photoPickedLabel">No photo</div>
-          </div>
-          <div id="photoUploadTarget" class="fr26Hint mono" style="margin-top:6px;">
-            Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
-          </div>
-          <div class="fr26Hint">Tip: 1 photo per RO is enough.</div>
 
           <div class="fr26Row fr26RowMultiline">
             <label class="fr26Label" for="notesBox">Notes</label>
@@ -328,6 +328,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js" defer></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.ff81dfebd1.js" defer></script>
+<script src="/flat-rate-log/app.59bf0b8dfa.js" defer></script>
 </body>
 </html>

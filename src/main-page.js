@@ -125,6 +125,12 @@ function handleClear(ev) {
   clearPickedPhoto();
   if (empInputEl) empInputEl.value = getEmpId();
   setRefType("RO");
+  const detailsPanel = document.getElementById("detailsPanel");
+  const detailsBtn = document.getElementById("toggleDetailsBtn");
+  if (detailsPanel) detailsPanel.style.display = "none";
+  if (detailsBtn) detailsBtn.textContent = "Add Details";
+  const saveBtn = document.getElementById("saveBtn");
+  if (saveBtn) saveBtn.disabled = true;
 }
 
 function showToast(msg) {
@@ -166,6 +172,76 @@ async function queueOcrForSavedEntry(entry, refreshEntries) {
     ocrBusy = false;
   }
 }
+
+function normalizeSuggestionValue(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getOcrVinApplyValue(entry) {
+  const vin8 = normalizeSuggestionValue(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (vin8) return vin8;
+
+  const vin = normalizeSuggestionValue(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
+  return vin.length >= 8 ? vin.slice(-8) : "";
+}
+
+function getOcrSuggestionActions(entry) {
+  const actions = [];
+  const stock = normalizeSuggestionValue(entry?.ocr_stock_suggestion);
+  const currentRef = normalizeSuggestionValue(entry?.ref || entry?.ro);
+  if (stock && stock !== currentRef) {
+    actions.push({
+      kind: "stock",
+      label: `Apply STK ${stock}`,
+      appliedLabel: `Applied STK ${stock}`,
+      patch: {
+        ro_number: stock,
+      },
+    });
+  }
+
+  const vin = getOcrVinApplyValue(entry);
+  const currentVin = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
+  if (vin && vin !== currentVin) {
+    actions.push({
+      kind: "vin",
+      label: `Apply VIN ${vin}`,
+      appliedLabel: `Applied VIN ${vin}`,
+      patch: {
+        vin8: vin,
+      },
+    });
+  }
+
+  return actions;
+}
+
+async function applyEntryOcrSuggestion(entry, action) {
+  if (!entry?.id || !action?.patch) return;
+
+  await applyOcrSuggestion(entry.id, {
+    ...action.patch,
+    updated_at: nowISO(),
+  });
+  showToast(action.appliedLabel || "Suggestion applied");
+  await safeLoadEntries();
+
+  if (String(EDITING_ID ?? "") !== String(entry.id ?? "")) return;
+
+  const updated = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+    .find((row) => String(row?.id ?? "") === String(entry.id ?? ""));
+  if (updated) startEditEntry(updated);
+}
+
+function buildEntryMetaHtml(entry) {
+  const facts = getEntryRecordFacts(entry);
+  return `
+    <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
+    <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
+    <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
+  `;
+}
+
 window.__FR = window.__FR || {};
 window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
 
@@ -267,7 +343,6 @@ async function handleSave(ev) {
     const rateVal = num(rateEl?.value) || 15;
     const notes = (notesEl?.value || "").trim();
 
-    if (!ref) { toast("Ref required"); return; }
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
@@ -381,7 +456,7 @@ async function renderHistory(){
           <div class="itemTop">
             <div>
               <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-              <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+              ${buildEntryMetaHtml(e)}
               ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
             </div>
             <div class="right">
@@ -407,7 +482,7 @@ async function renderHistory(){
       <div class="itemTop">
         <div>
           <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
-          <div class="small">Day: <span class="mono">${escapeHtml(e.dayKey||dayKeyFromISO(e.createdAt)||"-")}</span> • VIN8: <span class="mono">${escapeHtml(e.vin8||"-")}</span> • ${formatWhen(e.createdAt)}</div>
+          ${buildEntryMetaHtml(e)}
         </div>
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
@@ -777,8 +852,8 @@ function rangeSubLabel(mode){
 
 function toCSV(entries, includeEmp = false){
   const header = includeEmp
-    ? ["empId","createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"]
-    : ["createdAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto"];
+    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
+    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
 
   const escape = (v) => {
     const s = String(v ?? "");
@@ -789,8 +864,8 @@ function toCSV(entries, includeEmp = false){
   const rows = (entries || []).map(e => {
     const hasPhoto = e.photo_path || e.photoDataUrl ? "yes" : "no";
     const row = includeEmp
-      ? [e.empId, e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto]
-      : [e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto];
+      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
+      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
     return row.map(escape).join(",");
   });
 
@@ -879,17 +954,29 @@ function renderList(entries, mode){
   const buildEntry = (e) => {
     const row = document.createElement("div");
     row.className = "item";
-    const ts = new Date(e.createdAt).toLocaleString();
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
     const refVal = escapeHtml(e.ref || e.ro || "-");
     const refDisplay = `${refLabel}: ${refVal}`;
+    const typeLabel = escapeHtml(e.type || e.typeText || "-");
     const entryId = escapeHtml(String(e.id ?? ""));
+    const ocrActions = getOcrSuggestionActions(e);
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
+    const ocrSuggestionBlock = ocrActions.length
+      ? `
+        <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
+          <div class="small" style="margin-bottom:8px;color:rgba(191,219,254,.95);">OCR suggestions</div>
+          <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${ocrActions.map((action) => `<button class="btn primary" type="button" data-ocr-action="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
+          </div>
+        </div>
+      `
+      : "";
     row.innerHTML = `
       <div class="itemTop">
         <div>
@@ -898,10 +985,11 @@ function renderList(entries, mode){
               <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} />
               Select
             </label>
-            <span class="mono">${refDisplay}</span> <span class="muted">(${escapeHtml(e.type)})</span>
+            <span class="mono">${refDisplay}</span> <span class="muted">(${typeLabel})</span>
           </div>
-          <div class="small">VIN8: <span class="mono">${escapeHtml(e.vin8 || "-")}</span> • ${ts}</div>
+          ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
+          ${ocrSuggestionBlock}
           <div style="margin-top:8px;">${actionButtons}</div>
         </div>
         <div class="right">
@@ -921,6 +1009,23 @@ function renderList(entries, mode){
     if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhoto(e));
+    }
+    const ocrBtns = Array.from(row.querySelectorAll("button[data-ocr-action]"));
+    for (const btn of ocrBtns) {
+      btn.addEventListener("click", async () => {
+        const kind = btn.getAttribute("data-ocr-action") || "";
+        const action = ocrActions.find((item) => item.kind === kind);
+        if (!action) return;
+
+        ocrBtns.forEach((el) => { el.disabled = true; });
+        try {
+          await applyEntryOcrSuggestion(e, action);
+        } catch (err) {
+          console.error("Apply OCR suggestion failed", e?.id, kind, err);
+          showToast("Could not apply OCR suggestion");
+          ocrBtns.forEach((el) => { el.disabled = false; });
+        }
+      });
     }
     return row;
   };

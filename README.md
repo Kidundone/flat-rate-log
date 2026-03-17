@@ -1,65 +1,129 @@
 # Flat Rate Log
 
-Flat Rate Log tracks flat-rate jobs, hours, pay, and proof with a single-browser frontend and a live Supabase data path.
+Flat Rate Log tracks flat-rate jobs, proof photos, OCR suggestions, review queues, and pay-stub comparison from a single-browser frontend backed by Supabase.
 
 ## Current Status
 
 - Build tag: `weekend-stable`
-- Feature status: frozen for stabilization
 - Active entry data path: `supabase`
-- Source of truth: Supabase `work_logs` plus Supabase Storage for proof photos
+- Active table: `work_logs`
+- Proof photo bucket: `proofs`
+- Feature mode: stabilization and hardening
 
-The old local-only entry path is no longer the active runtime path for this weekend pass.
+## Runtime Rules
 
-## Runtime Layout
+- Manual values always win.
+- OCR can suggest, but it never overwrites `ro_number` or `vin8` by itself.
+- OCR enrichment writes to `ocr_*` fields in `work_logs`.
+- A user must tap `Apply STK ...` or `Apply VIN ...` before OCR suggestions become live entry data.
+
+## Quick Entry
+
+The default main-page flow is intentionally small:
+
+1. Enter hours
+2. Enter work done
+3. Attach a proof photo if you have one
+4. Save
+
+RO/Stock, VIN, rate, and notes live behind the optional details panel so entry does not feel like paperwork.
+
+## Review Flow
+
+The More page is the cleanup and comparison surface:
+
+- `Needs Review`
+  Filters entries by proof presence, OCR waiting state, OCR failure, unapplied suggestions, and OCR mismatch.
+- `Apply suggestion`
+  One-tap controls let the user apply OCR stock/VIN suggestions only when they choose.
+- `Pay Stub Entry`
+  Compares paid totals against expected totals from logged entries.
+- `Missing Work`
+  Shows likely candidate entries for a shortfall. This is a heuristic because pay stubs only expose aggregate totals.
+
+## Source Layout
 
 The app is split into source modules under `src/`:
 
 - `src/classification-service.js`
-  Classifies jobs, prefixes, and work types.
+  OCR parsing, image quality gating, targeted region OCR, worker-backed Tesseract flow, and dealer classification helpers.
 - `src/data-service.js`
-  Owns Supabase auth, row reads/writes, payroll data, and shared data normalization.
+  Supabase auth, `work_logs` reads/writes, OCR persistence helpers, payroll persistence, and row normalization.
 - `src/utils.js`
-  Shared DOM helpers, date/math helpers, store helpers, formatting, and small cross-page utilities.
+  Shared date/math helpers, formatting, search/filter helpers, review-state helpers, and small cross-page utilities.
 - `src/photo-service.js`
-  Handles photo picking, compression, OCR helpers, uploads, and photo modal behavior.
+  Photo picking, downscaling, uploads, signed URL helpers, gallery rendering, and photo viewer behavior.
 - `src/main-page.js`
-  Main logging page behavior, save flow, filters, totals, entry list rendering, and export actions tied to the main page.
+  Quick Entry save flow, OCR suggestion apply controls, main entry list rendering, history, and exports.
 - `src/more-page.js`
-  More page behavior, payroll/settings/admin-style screens, and related event wiring.
+  Needs-review queue, pay-stub comparison, missing-work candidate view, exports, and More-page actions.
 - `src/boot.js`
-  Build metadata, freeze flags, boot sequencing, page wiring, and startup registration.
+  Build metadata, startup sequencing, page wiring, and page-specific event binding.
 
 ## Build Flow
 
-Do not edit the hashed bundle directly.
+Do not edit generated bundles directly.
 
 1. Edit files in `src/`
 2. Run `node build.mjs`
 3. `build.mjs` concatenates `src/*.js` into generated `app.src.js`
 4. The same build writes a versioned `app.<hash>.js`
-5. `index.html` and `more.html` are updated to the newest hashed bundle
+5. `index.html` and `more.html` are updated to the newest bundle
 6. Older hashed bundles are removed automatically
 
-Current generated artifacts:
+Generated artifacts:
 
 - `app.src.js`
-  Generated, readable source bundle for inspection
+  Readable generated source bundle
 - `app.<hash>.js`
-  Generated deployable bundle referenced by the HTML entry points
+  Deployable bundle referenced by the HTML entry points
 
-## Data Notes
+## Supabase Fields
 
-- Supabase is the active data path for auth and work log storage.
-- Employee number still scopes the visible work log set inside the signed-in user account.
-- Proof photos are stored in Supabase Storage.
-- Exports remain available from the UI for CSV and JSON.
+Primary `work_logs` fields used by the app:
 
-## Stability Notes
+- `id`
+- `user_id`
+- `employee_number`
+- `work_date`
+- `category`
+- `ro_number`
+- `description`
+- `flat_hours`
+- `cash_amount`
+- `location`
+- `vin8`
+- `photo_path`
+- `dealer`
+- `brand`
+- `store_code`
+- `campus`
+- `created_at`
+- `updated_at`
 
-- This pass is for cleanup and hardening, not feature expansion.
-- `boot.js` actively clears old service workers and caches during startup so stale client assets do not survive the module split.
-- The removed local backend directory was not part of the active runtime path.
+OCR and review fields:
+
+- `ocr_status`
+- `ocr_error`
+- `ocr_text_raw`
+- `ocr_sheet_type`
+- `ocr_stock_suggestion`
+- `ocr_vin_suggestion`
+- `ocr_vin8_suggestion`
+- `ocr_work_suggestion`
+- `ocr_confidence`
+- `ocr_processed_at`
+
+## Demo Flow
+
+Use this repeatable story:
+
+1. Quick entry: hours + work done + optional photo
+2. Save the entry
+3. OCR enriches the saved photo in the background
+4. Review totals on the main page
+5. Compare the pay stub on the More page
+6. Open the missing-work candidates and show the proof-backed entries
 
 ## Local Run
 
