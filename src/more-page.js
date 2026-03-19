@@ -577,7 +577,10 @@ function buildReviewEntryRow(entry) {
   const facts = getEntryRecordFacts(entry);
   const review = facts.review;
   const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
-  const applyActions = typeof getOcrSuggestionActions === "function" ? getOcrSuggestionActions(entry) : [];
+  const suggestionStrip = typeof buildOcrSuggestionStripHtml === "function"
+    ? buildOcrSuggestionStripHtml(entry, "data-review-ocr")
+    : { actions: [], html: "" };
+  const applyActions = suggestionStrip.actions;
   const row = document.createElement("div");
   row.className = "item";
   row.innerHTML = `
@@ -588,14 +591,7 @@ function buildReviewEntryRow(entry) {
         <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
         <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
         ${entry.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(entry.notes)}</div>` : ""}
-        ${applyActions.length ? `
-          <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
-            <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              ${applyActions.map((action) => `<button class="btn primary" type="button" data-review-ocr="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
-            </div>
-          </div>
-        ` : ""}
+        ${suggestionStrip.html}
       </div>
       <div class="right">
         <div class="mono">${String(entry.hours)} hrs @ ${formatMoney(entry.rate)}</div>

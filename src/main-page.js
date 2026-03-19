@@ -186,6 +186,21 @@ function normalizeSuggestionValue(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+function getDetectedSheetLabel(entry) {
+  const sheetType = String(entry?.ocr_sheet_type || "").trim().toLowerCase();
+  if (sheetType === "ro") return "RO sheet";
+  if (sheetType === "get_ready") return "Get Ready sheet";
+  if (sheetType) return `${sheetType.replace(/_/g, " ")} sheet`;
+  return "OCR";
+}
+
+function getValidDetectedStock(entry) {
+  const stock = normalizeSuggestionValue(entry?.ocr_stock_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (stock.length < 4 || stock.length > 8) return "";
+  if (!/[0-9]/.test(stock)) return "";
+  return stock;
+}
+
 function getOcrVinApplyValue(entry) {
   const vin8 = normalizeSuggestionValue(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
   if (vin8) return vin8;
@@ -194,35 +209,94 @@ function getOcrVinApplyValue(entry) {
   return vin.length >= 8 ? vin.slice(-8) : "";
 }
 
-function getOcrSuggestionActions(entry) {
-  const actions = [];
-  const stock = normalizeSuggestionValue(entry?.ocr_stock_suggestion);
+function getValidDetectedVin8(entry) {
+  const vin = getOcrVinApplyValue(entry);
+  if (vin.length < 6 || vin.length > 8) return "";
+  return vin;
+}
+
+function getOcrDetectedFields(entry) {
+  const stock = getValidDetectedStock(entry);
+  const vin8 = getValidDetectedVin8(entry);
   const currentRef = normalizeSuggestionValue(entry?.ref || entry?.ro);
-  if (stock && stock !== currentRef) {
+  const currentVin = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
+  const patch = {};
+
+  if (stock && stock !== currentRef) patch.ro_number = stock;
+  if (vin8 && vin8 !== currentVin) patch.vin8 = vin8;
+
+  return {
+    stock,
+    vin8,
+    sheetLabel: getDetectedSheetLabel(entry),
+    patch,
+  };
+}
+
+function getOcrSuggestionActions(entry) {
+  const detected = getOcrDetectedFields(entry);
+  const actions = [];
+
+  if (detected.patch.ro_number || detected.patch.vin8) {
+    actions.push({
+      kind: "all",
+      label: "Apply detected fields",
+      appliedLabel: "Applied detected fields",
+      patch: {
+        ...detected.patch,
+      },
+      primary: true,
+    });
+  }
+
+  if (detected.patch.ro_number) {
     actions.push({
       kind: "stock",
-      label: `Apply STK ${stock}`,
-      appliedLabel: `Applied STK ${stock}`,
+      label: "Apply STK",
+      appliedLabel: `Applied STK ${detected.stock}`,
       patch: {
-        ro_number: stock,
+        ro_number: detected.stock,
       },
     });
   }
 
-  const vin = getOcrVinApplyValue(entry);
-  const currentVin = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
-  if (vin && vin !== currentVin) {
+  if (detected.patch.vin8) {
     actions.push({
       kind: "vin",
-      label: `Apply VIN ${vin}`,
-      appliedLabel: `Applied VIN ${vin}`,
+      label: "Apply VIN",
+      appliedLabel: `Applied VIN ${detected.vin8}`,
       patch: {
-        vin8: vin,
+        vin8: detected.vin8,
       },
     });
   }
 
   return actions;
+}
+
+function buildOcrSuggestionStripHtml(entry, actionAttrName = "data-ocr-action") {
+  const detected = getOcrDetectedFields(entry);
+  const actions = getOcrSuggestionActions(entry);
+  if (!actions.length) return { actions, html: "" };
+
+  const primaryAction = actions.find((action) => action.primary);
+  const secondaryActions = actions.filter((action) => !action.primary);
+
+  const html = `
+    <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
+      <div class="small" style="margin-bottom:8px;color:rgba(191,219,254,.95);">Detected fields</div>
+      <div class="small">Detected STK: <span class="mono">${escapeHtml(detected.stock || "blank")}</span></div>
+      <div class="small">Detected VIN8: <span class="mono">${escapeHtml(detected.vin8 || "blank")}</span></div>
+      <div class="small" style="margin-bottom:8px;">Detected from ${escapeHtml(detected.sheetLabel)}</div>
+      <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${primaryAction ? `<button class="btn primary" type="button" ${actionAttrName}="${escapeHtml(primaryAction.kind)}">${escapeHtml(primaryAction.label)}</button>` : ""}
+        ${secondaryActions.map((action) => `<button class="btn" type="button" ${actionAttrName}="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
+      </div>
+    </div>
+  `;
+
+  return { actions, html };
 }
 
 async function applyEntryOcrSuggestion(entry, action) {
@@ -968,24 +1042,13 @@ function renderList(entries, mode){
     const refDisplay = `${refLabel}: ${refVal}`;
     const typeLabel = escapeHtml(e.type || e.typeText || "-");
     const entryId = escapeHtml(String(e.id ?? ""));
-    const ocrActions = getOcrSuggestionActions(e);
+    const { actions: ocrActions, html: ocrSuggestionBlock } = buildOcrSuggestionStripHtml(e);
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
-    const ocrSuggestionBlock = ocrActions.length
-      ? `
-        <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
-          <div class="small" style="margin-bottom:8px;color:rgba(191,219,254,.95);">OCR suggestions</div>
-          <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            ${ocrActions.map((action) => `<button class="btn primary" type="button" data-ocr-action="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
-          </div>
-        </div>
-      `
-      : "";
     row.innerHTML = `
       <div class="itemTop">
         <div>

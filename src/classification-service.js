@@ -392,6 +392,43 @@ function extractBareStock(text) {
   return tokens[0] || "";
 }
 
+function cleanAlnumToken(value) {
+  return up(value).replace(/[^A-Z0-9]/g, "");
+}
+
+function isLikelyRoStockValue(value) {
+  const token = cleanAlnumToken(value);
+  if (token.length < 4 || token.length > 8) return false;
+  if (!/[0-9]/.test(token)) return false;
+  if (/^[A-Z]+$/.test(token)) return false;
+  if (/(WORK|FLOW|MOTOR|SALEM|READY|VIN|MILES|SALE)/.test(token)) return false;
+  return true;
+}
+
+function extractLabeledToken(text, patterns, validator) {
+  for (const rx of patterns) {
+    const match = text.match(rx);
+    const token = cleanAlnumToken(match?.[1] || "");
+    if (token && (!validator || validator(token))) {
+      return token;
+    }
+  }
+  return "";
+}
+
+function extractRoStockCandidate(text) {
+  const labeled = extractLabeledToken(text, [
+    /STK[:\s#-]*([A-Z0-9]{3,12})/i,
+    /STOCK[:\s#-]*([A-Z0-9]{3,12})/i,
+  ], isLikelyRoStockValue);
+  if (labeled) return { value: labeled, source: "labeled" };
+
+  const bare = cleanAlnumToken(extractBareStock(text));
+  if (isLikelyRoStockValue(bare)) return { value: bare, source: "fallback" };
+
+  return { value: "", source: "none" };
+}
+
 function extractLast6(text) {
   const compact = up(text).replace(/[^A-Z0-9]/g, "");
   const matches = compact.match(/[A-Z0-9]{6}/g) || [];
@@ -399,15 +436,7 @@ function extractLast6(text) {
 }
 
 function extractStockFromRo(text) {
-  const patterns = [
-    /STK[:\s#-]*([A-Z0-9]{3,12})/i,
-    /STOCK[:\s#-]*([A-Z0-9]{3,12})/i,
-  ];
-  for (const rx of patterns) {
-    const m = text.match(rx);
-    if (m?.[1]) return up(m[1]);
-  }
-  return extractBareStock(text);
+  return extractRoStockCandidate(text).value;
 }
 
 function extractStockFromGetReady(text) {
@@ -436,7 +465,17 @@ function extractVinLast6FromGetReady(text) {
 
 function parseRoText(text) {
   const vin = extractVin(text);
-  const stock = extractStockFromRo(text);
+  const stockCandidate = extractRoStockCandidate(text);
+  const stock = stockCandidate.value;
+  const hasVin = !!vin;
+  const hasStock = !!stock;
+  let confidence = 0.15;
+
+  if (hasVin && stockCandidate.source === "labeled") confidence = 0.97;
+  else if (hasVin && hasStock) confidence = 0.92;
+  else if (hasVin) confidence = 0.9;
+  else if (stockCandidate.source === "labeled") confidence = 0.84;
+  else if (hasStock) confidence = 0.58;
 
   return {
     sheet_type: "ro",
@@ -444,7 +483,7 @@ function parseRoText(text) {
     vin_suggestion: vin || null,
     vin8_suggestion: vin ? last8(vin) : null,
     work_suggestion: null,
-    confidence: vin || stock ? 0.9 : 0.15,
+    confidence,
   };
 }
 
@@ -652,7 +691,21 @@ async function runRoFieldOcr(imageBlob, headerText = "") {
   const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
   const combined = combineOcrText([headerText, `VIN ${vinText}`, `STK ${stockText}`]);
   const vin = extractVin(vinText) || extractVin(combined);
-  const stock = extractStockFromRo(stockText) || extractStockFromRo(combined);
+  const stockCandidate = (() => {
+    const direct = extractRoStockCandidate(stockText);
+    if (direct.value) return direct;
+    return extractRoStockCandidate(combined);
+  })();
+  const stock = stockCandidate.value;
+  const hasVin = !!vin;
+  const hasStock = !!stock;
+  let confidence = 0.15;
+
+  if (hasVin && stockCandidate.source === "labeled") confidence = 0.97;
+  else if (hasVin && hasStock) confidence = 0.92;
+  else if (hasVin) confidence = 0.9;
+  else if (stockCandidate.source === "labeled") confidence = 0.84;
+  else if (hasStock) confidence = 0.58;
 
   return {
     raw_text: combined,
@@ -661,7 +714,7 @@ async function runRoFieldOcr(imageBlob, headerText = "") {
     vin_suggestion: vin || null,
     vin8_suggestion: vin ? last8(vin) : null,
     work_suggestion: null,
-    confidence: vin || stock ? 0.9 : 0.15,
+    confidence,
   };
 }
 
