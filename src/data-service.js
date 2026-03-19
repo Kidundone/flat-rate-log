@@ -282,23 +282,21 @@ async function markEntryProcessingOcr(entryId) {
 }
 
 async function saveOcrResult(entryId, payload) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "done",
-      ocr_text_raw: payload.raw_text || null,
-      ocr_sheet_type: payload.sheet_type || null,
-      ocr_stock_suggestion: payload.stock_suggestion || null,
-      ocr_vin_suggestion: payload.vin_suggestion || null,
-      ocr_vin8_suggestion: payload.vin8_suggestion || null,
-      ocr_work_suggestion: payload.work_suggestion || null,
-      ocr_confidence: payload.confidence ?? null,
-      ocr_processed_at: new Date().toISOString(),
-      ocr_error: null,
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
+  const body = {
+    ocr_status: payload.ocr_status || (payload.quality_warning ? "needs_review" : "done"),
+    ocr_text_raw: payload.raw_text || null,
+    ocr_sheet_type: payload.sheet_type || null,
+    ocr_stock_suggestion: payload.stock_suggestion || null,
+    ocr_vin_suggestion: payload.vin_suggestion || null,
+    ocr_vin8_suggestion: payload.vin8_suggestion || null,
+    ocr_work_suggestion: payload.work_suggestion || null,
+    ocr_confidence: payload.confidence ?? null,
+    ocr_quality_warning: payload.quality_warning || null,
+    ocr_processed_at: new Date().toISOString(),
+    ocr_error: null,
+  };
+  const saved = await updateWorkLogWithFallback(sb(), entryId, body);
+  if (!saved) throw new Error("OCR result save failed");
 }
 
 async function markOcrFailed(entryId, err) {
@@ -694,6 +692,7 @@ function normalizeSupabaseLog(r) {
     photo_path: r.photo_path ?? null,
     ocr_status: r.ocr_status ?? "none",
     ocr_error: r.ocr_error ?? null,
+    ocr_quality_warning: r.ocr_quality_warning ?? null,
     ocr_text_raw: r.ocr_text_raw ?? null,
     ocr_sheet_type: r.ocr_sheet_type ?? null,
     ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
@@ -750,6 +749,7 @@ function mapServerLogToEntry(r) {
     location: r.location || null,
     ocr_status: r.ocr_status ?? "none",
     ocr_error: r.ocr_error ?? null,
+    ocr_quality_warning: r.ocr_quality_warning ?? null,
     ocr_text_raw: r.ocr_text_raw ?? null,
     ocr_sheet_type: r.ocr_sheet_type ?? null,
     ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,

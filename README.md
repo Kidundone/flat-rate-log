@@ -16,6 +16,7 @@ Flat Rate Log tracks flat-rate jobs, proof photos, OCR suggestions, review queue
 - OCR can suggest, but it never overwrites `ro_number` or `vin8` by itself.
 - OCR enrichment writes to `ocr_*` fields in `work_logs`.
 - A user must tap `Apply STK ...` or `Apply VIN ...` before OCR suggestions become live entry data.
+- Weak but partially readable images can land in `needs_review` instead of `failed`.
 
 ## Quick Entry
 
@@ -105,6 +106,7 @@ OCR and review fields:
 
 - `ocr_status`
 - `ocr_error`
+- `ocr_quality_warning`
 - `ocr_text_raw`
 - `ocr_sheet_type`
 - `ocr_stock_suggestion`

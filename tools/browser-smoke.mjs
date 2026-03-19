@@ -131,6 +131,7 @@ async function smokeMorePage() {
       hasProcessPhotosBtn: !!document.getElementById('processPhotosBtn'),
       hasLoadPhotosBtn: !!document.getElementById('loadPhotosBtn'),
       hasGalleryStatus: !!document.getElementById('galleryStatus'),
+      hasTesseract: !!window.Tesseract,
       hasReviewFocus: !!document.getElementById('reviewFocus'),
       hasMissingWorkSummary: !!document.getElementById('missingWorkSummary'),
       hasMissingWorkList: !!document.getElementById('missingWorkList')

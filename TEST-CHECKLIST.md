@@ -19,6 +19,7 @@
 
 - Saving an entry with a photo queues OCR
 - OCR does not overwrite manual `ro_number` or `vin8`
+- Weak but readable images save as `needs_review` instead of `failed`
 - Visible apply buttons appear when OCR finds stock or VIN suggestions
 - `Apply STK ...` updates the live entry value
 - `Apply VIN ...` updates the live entry value

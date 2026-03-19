@@ -338,7 +338,7 @@ const OCR_TEMPLATES = Object.freeze({
 });
 const OCR_MIN_IMAGE_WIDTH = 800;
 const OCR_MIN_BRIGHTNESS = 38;
-const OCR_MIN_EDGE_SCORE = 10;
+const OCR_MIN_EDGE_SCORE = 6;
 const OCR_QUALITY_SAMPLE_MAX = 256;
 let OCR_WORKER_PROMISE = null;
 let OCR_WORKER_QUEUE = Promise.resolve();
@@ -496,17 +496,13 @@ async function ensureImageBlob(imageUrlOrBlob) {
   throw new Error("Unsupported OCR image source");
 }
 
-async function assertUsableOcrImage(imageBlob) {
+async function assessImageQuality(imageBlob) {
   if (!(imageBlob instanceof Blob) || !imageBlob.size) {
     throw new Error("OCR image missing");
   }
 
   const bitmap = await createImageBitmap(imageBlob);
   try {
-    if (bitmap.width < OCR_MIN_IMAGE_WIDTH) {
-      throw new Error("Image too small");
-    }
-
     const longest = Math.max(bitmap.width, bitmap.height);
     const scale = Math.min(1, OCR_QUALITY_SAMPLE_MAX / longest);
     const sampleWidth = Math.max(32, Math.round(bitmap.width * scale));
@@ -531,9 +527,6 @@ async function assertUsableOcrImage(imageBlob) {
     }
 
     const brightness = brightnessSum / luma.length;
-    if (brightness < OCR_MIN_BRIGHTNESS) {
-      throw new Error("Image too dark");
-    }
 
     let edgeSum = 0;
     let edgeCount = 0;
@@ -547,12 +540,33 @@ async function assertUsableOcrImage(imageBlob) {
     }
 
     const edgeScore = edgeCount ? edgeSum / edgeCount : 0;
-    if (edgeScore < OCR_MIN_EDGE_SCORE) {
-      throw new Error("Image too blurry");
-    }
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      brightness,
+      edgeScore,
+      tooSmall: bitmap.width < OCR_MIN_IMAGE_WIDTH,
+      tooDark: brightness < OCR_MIN_BRIGHTNESS,
+      tooBlurry: edgeScore < OCR_MIN_EDGE_SCORE,
+    };
   } finally {
     bitmap.close?.();
   }
+}
+
+function finalizeOcrResult(result, quality) {
+  const foundSomething = !!(
+    result?.stock_suggestion
+    || result?.vin_suggestion
+    || result?.vin8_suggestion
+  );
+
+  return {
+    ...result,
+    quality,
+    quality_warning: quality?.tooBlurry ? "low_confidence_image" : null,
+    ocr_status: quality?.tooBlurry && foundSomething ? "needs_review" : "done",
+  };
 }
 
 function resolveCropRegion(region, width, height) {
@@ -671,33 +685,46 @@ async function runGetReadyFieldOcr(imageBlob, headerText = "") {
 
 async function runOcrOnImage(imageUrlOrBlob) {
   const imageBlob = await ensureImageBlob(imageUrlOrBlob);
-  await assertUsableOcrImage(imageBlob);
+  const quality = await assessImageQuality(imageBlob);
+  if (quality.tooSmall) {
+    throw new Error("Image too small");
+  }
+  if (quality.tooDark) {
+    throw new Error("Image too dark");
+  }
+  if (quality.tooBlurry) {
+    console.warn("Low-confidence image, trying OCR anyway", quality);
+  }
   const headerText = await recognizeCrop(imageBlob, OCR_HEADER_REGION);
   const sheetType = detectSheetType(headerText);
 
-  if (sheetType === "ro") return await runRoFieldOcr(imageBlob, headerText);
-  if (sheetType === "get_ready") return await runGetReadyFieldOcr(imageBlob, headerText);
+  if (sheetType === "ro") {
+    return finalizeOcrResult(await runRoFieldOcr(imageBlob, headerText), quality);
+  }
+  if (sheetType === "get_ready") {
+    return finalizeOcrResult(await runGetReadyFieldOcr(imageBlob, headerText), quality);
+  }
 
   const roCandidate = await runRoFieldOcr(imageBlob, headerText);
   if (roCandidate.stock_suggestion || roCandidate.vin_suggestion) {
-    return {
+    return finalizeOcrResult({
       ...roCandidate,
       sheet_type: "unknown",
       confidence: Math.max(Number(roCandidate.confidence || 0), 0.5),
-    };
+    }, quality);
   }
 
   const getReadyCandidate = await runGetReadyFieldOcr(imageBlob, headerText);
   if (getReadyCandidate.stock_suggestion || getReadyCandidate.vin8_suggestion) {
-    return {
+    return finalizeOcrResult({
       ...getReadyCandidate,
       sheet_type: "unknown",
       confidence: Math.max(Number(getReadyCandidate.confidence || 0), 0.5),
-    };
+    }, quality);
   }
 
   const raw = combineOcrText([headerText, roCandidate.raw_text, getReadyCandidate.raw_text]);
-  return { raw_text: raw, ...parseUnknownText(raw) };
+  return finalizeOcrResult({ raw_text: raw, ...parseUnknownText(raw) }, quality);
 }
 
 async function runOCR(photoPath) {
@@ -734,6 +761,11 @@ async function runOCRAndClassify(row) {
     const ocrResult = await runOcrOnImage(signedUrl);
     const ocrText = ocrResult?.raw_text || "";
     OCR_TEXT_CACHE.set(payload.photo_path, ocrText);
+    const foundSomething = !!(
+      ocrResult?.stock_suggestion
+      || ocrResult?.vin_suggestion
+      || ocrResult?.vin8_suggestion
+    );
 
     const classification = await classifyEntryWithFallback({
       ro: payload.ro_number || null,
@@ -754,15 +786,24 @@ async function runOCRAndClassify(row) {
     }
 
     await updateWorkLogWithFallback(sb(), row.id, updatePatch);
-    await saveOcrResult(row.id, {
-      raw_text: ocrResult?.raw_text || "",
-      sheet_type: ocrResult?.sheet_type || null,
-      stock_suggestion: ocrResult?.stock_suggestion || null,
-      vin_suggestion: ocrResult?.vin_suggestion || null,
-      vin8_suggestion: ocrResult?.vin8_suggestion || null,
-      work_suggestion: ocrResult?.work_suggestion || null,
-      confidence: ocrResult?.confidence ?? null,
-    });
+    if (foundSomething) {
+      await saveOcrResult(row.id, {
+        raw_text: ocrResult?.raw_text || "",
+        sheet_type: ocrResult?.sheet_type || null,
+        stock_suggestion: ocrResult?.stock_suggestion || null,
+        vin_suggestion: ocrResult?.vin_suggestion || null,
+        vin8_suggestion: ocrResult?.vin8_suggestion || null,
+        work_suggestion: ocrResult?.work_suggestion || null,
+        confidence: ocrResult?.confidence ?? null,
+        quality_warning: ocrResult?.quality_warning || null,
+        ocr_status: ocrResult?.ocr_status || null,
+      });
+    } else {
+      await markOcrFailed(
+        row.id,
+        ocrResult?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
+      );
+    }
 
     console.log("Dealer updated:", dealer);
 
@@ -833,4 +874,5 @@ window.__FR = window.__FR || {};
 window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
 window.__FR.resolveDealerForLog = resolveDealerForLog;
 window.__FR.loadUserPrefixRules = loadUserPrefixRules;
+window.__FR.assessImageQuality = assessImageQuality;
 window.__FR.runOcrOnImage = runOcrOnImage;

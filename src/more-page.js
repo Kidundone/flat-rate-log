@@ -195,8 +195,17 @@ function wireOcrReprocessButton() {
           await markEntryProcessingOcr(entry.id);
           const signedUrl = await getSignedPhotoUrl(entry.photo_path);
           const ocr = await runOcrOnImage(signedUrl);
-          await saveOcrResult(entry.id, ocr);
-          done += 1;
+          const foundSomething = !!(ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
+          if (foundSomething) {
+            await saveOcrResult(entry.id, ocr);
+            done += 1;
+          } else {
+            await markOcrFailed(
+              entry.id,
+              ocr?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
+            );
+            failed += 1;
+          }
         } catch (err) {
           console.error("Saved photo OCR failed", entry.id, err);
           await markOcrFailed(entry.id, err);

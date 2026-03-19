@@ -142,6 +142,7 @@ function buildOcrToast(ocr) {
   const bits = [];
   if (ocr.stock_suggestion) bits.push(`STK ${ocr.stock_suggestion}`);
   if (ocr.vin8_suggestion) bits.push(`VIN ${ocr.vin8_suggestion}`);
+  if (ocr.ocr_status === "needs_review") bits.push("needs review");
   return bits.length ? `Found ${bits.join(" · ")}` : "Saved. No OCR match found";
 }
 
@@ -160,9 +161,17 @@ async function queueOcrForSavedEntry(entry, refreshEntries) {
     if (!signedUrl) throw new Error("Could not open photo for OCR");
 
     const ocr = await runOcrOnImage(signedUrl);
-    await saveOcrResult(entry.id, ocr);
-
-    showToast(buildOcrToast(ocr));
+    const foundSomething = !!(ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
+    if (foundSomething) {
+      await saveOcrResult(entry.id, ocr);
+      showToast(buildOcrToast(ocr));
+    } else {
+      await markOcrFailed(
+        entry.id,
+        ocr?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
+      );
+      showToast(ocr?.quality_warning ? "Saved. OCR needs a clearer image" : "Saved. No OCR match found");
+    }
     if (typeof refreshEntries === "function") await refreshEntries();
   } catch (err) {
     console.error("OCR queue failed", err);
@@ -852,8 +861,8 @@ function rangeSubLabel(mode){
 
 function toCSV(entries, includeEmp = false){
   const header = includeEmp
-    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
-    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
+    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
+    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
 
   const escape = (v) => {
     const s = String(v ?? "");
@@ -864,8 +873,8 @@ function toCSV(entries, includeEmp = false){
   const rows = (entries || []).map(e => {
     const hasPhoto = e.photo_path || e.photoDataUrl ? "yes" : "no";
     const row = includeEmp
-      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
-      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
+      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
+      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
     return row.map(escape).join(",");
   });
 

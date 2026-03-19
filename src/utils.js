@@ -566,7 +566,7 @@ function matchSearch(e, q){
   const s = q.toLowerCase();
   return [
     e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes,
-    e.ocr_status, e.ocr_error, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
+    e.ocr_status, e.ocr_error, e.ocr_quality_warning, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
   ].some(v => String(v||"").toLowerCase().includes(s));
 }
 
@@ -682,11 +682,13 @@ function getEntryReviewState(entry) {
   const suggestionsPending = stockPending || vinPending;
   const ocrFailed = ocrStatus === "failed";
   const ocrDone = ocrStatus === "done";
+  const ocrNeedsReview = ocrStatus === "needs_review";
   const ocrWaiting = hasPhoto && (!ocrStatus || ocrStatus === "none" || ocrStatus === "queued" || ocrStatus === "processing");
-  const needsReview = !!(ocrFailed || suggestionsPending || ocrWaiting);
+  const needsReview = !!(ocrFailed || ocrNeedsReview || suggestionsPending || ocrWaiting);
 
   let statusLabel = "No photo";
   if (hasPhoto && ocrFailed) statusLabel = "OCR failed";
+  else if (hasPhoto && ocrNeedsReview) statusLabel = "OCR needs review";
   else if (hasPhoto && ocrDone && (refMismatch || vinMismatch)) statusLabel = "OCR mismatch";
   else if (hasPhoto && ocrDone && suggestionsPending) statusLabel = "OCR suggestion ready";
   else if (hasPhoto && ocrDone) statusLabel = "OCR done";
@@ -695,6 +697,7 @@ function getEntryReviewState(entry) {
   else if (hasPhoto) statusLabel = "OCR not started";
 
   const reasons = [];
+  if (entry?.ocr_quality_warning) reasons.push(String(entry.ocr_quality_warning).replace(/_/g, " "));
   if (ocrFailed && entry?.ocr_error) reasons.push(String(entry.ocr_error));
   if (refMismatch) reasons.push(`manual ref kept over ${suggestedRef}`);
   else if (stockPending) reasons.push(`stock suggestion ${suggestedRef}`);
@@ -718,6 +721,7 @@ function getEntryReviewState(entry) {
     suggestionsPending,
     ocrFailed,
     ocrDone,
+    ocrNeedsReview,
     ocrWaiting,
     needsReview,
   };

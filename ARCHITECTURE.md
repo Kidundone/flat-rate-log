@@ -67,6 +67,7 @@ The app no longer treats the old local-only entry path as the live weekend path.
 5. OCR stores suggestions only in `ocr_*` fields.
 6. The UI exposes visible apply buttons for stock and VIN suggestions.
 7. Manual values remain authoritative until the user taps an apply button.
+8. Weak but usable OCR results persist as `needs_review` instead of hard failure.
 
 ## OCR Pipeline
 
@@ -83,6 +84,7 @@ OCR result persistence fields:
 
 - `ocr_status`
 - `ocr_error`
+- `ocr_quality_warning`
 - `ocr_text_raw`
 - `ocr_sheet_type`
 - `ocr_stock_suggestion`
