@@ -327,14 +327,15 @@ function last8(vin = "") {
   return clean.length >= 8 ? clean.slice(-8) : "";
 }
 
-const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
+const OCR_HEADER_REGION = Object.freeze({ x: 0.34, y: 0.23, width: 0.58, height: 0.16 });
 const OCR_TEMPLATES = Object.freeze({
   ro: {
-    // Tuned to the Flow Motors RO layout: RO box near the header, VIN on the
-    // vehicle info row, and STK on the lower reference row.
-    ro_number: { x: 0.41, y: 0.08, width: 0.16, height: 0.06 },
-    vin: { x: 0.30, y: 0.20, width: 0.50, height: 0.06 },
-    stock: { x: 0.39, y: 0.28, width: 0.24, height: 0.06 },
+    // Tuned to the Flow Motors workorder reprint photo framing used in proof
+    // shots: workorder number in the upper-center block, VIN in the vehicle
+    // info row, and STK/TAG in the row just below.
+    ro_number: { x: 0.39, y: 0.27, width: 0.20, height: 0.09 },
+    vin: { x: 0.36, y: 0.37, width: 0.33, height: 0.06 },
+    stock: { x: 0.38, y: 0.42, width: 0.33, height: 0.06 },
   },
   get_ready: {
     stock: { x: 0.22, y: 0.15, width: 0.26, height: 0.09 },
@@ -366,8 +367,15 @@ function extractVin(text) {
 }
 
 function parseRoNumber(text) {
-  const match = String(text || "").match(/\b(\d{5,8})\b/);
-  return match ? match[1] : "";
+  const raw = String(text || "").toUpperCase();
+  const labeled = raw.match(/(?:RO|R\.O\.|WORK\s*ORDER|WORKORDER)[:\s#-]*([0-9]{5,8})\b/);
+  if (labeled?.[1]) return labeled[1];
+
+  const stacked = raw.match(/\b([0-9]{5,8})\b[\s\S]{0,32}(?:WORK\s*ORDER|WORKORDER|R\.O\.)/);
+  if (stacked?.[1]) return stacked[1];
+
+  const match = raw.match(/\b(\d{5,8})\b/);
+  return match?.[1] || "";
 }
 
 function parseVin(text) {
@@ -376,7 +384,7 @@ function parseVin(text) {
 }
 
 function parseStock(text) {
-  const match = String(text || "").toUpperCase().match(/\bSTK[:\s#-]*([A-Z0-9]{4,10})\b/);
+  const match = String(text || "").toUpperCase().match(/\b(?:STK|STOCK|TAG)[:\s#-]*([A-Z0-9]{4,10})\b/);
   return match ? match[1] : "";
 }
 
@@ -440,6 +448,7 @@ function extractRoStockCandidate(text) {
   const labeled = extractLabeledToken(text, [
     /STK[:\s#-]*([A-Z0-9]{3,12})/i,
     /STOCK[:\s#-]*([A-Z0-9]{3,12})/i,
+    /TAG[:\s#-]*([A-Z0-9]{3,12})/i,
   ], isLikelyRoStockValue);
   if (labeled) return { value: labeled, source: "labeled" };
 
@@ -715,9 +724,10 @@ async function runRoFieldOcr(imageBlob, headerText = "") {
   const vinText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.vin);
   const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
   const combined = combineOcrText([headerText, roText, vinText, stockText]);
-  const roNumber = parseRoNumber(roText);
+  const roNumber = parseRoNumber(roText) || parseRoNumber(combined);
   const vin = parseVin(vinText) || parseVin(combined);
   const stock = parseStock(stockText)
+    || parseStock(combined)
     || extractRoStockCandidate(stockText).value
     || extractRoStockCandidate(combined).value;
   const hasVin = !!vin;
