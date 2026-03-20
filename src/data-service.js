@@ -286,6 +286,7 @@ async function saveOcrResult(entryId, payload) {
     ocr_status: payload.ocr_status || (payload.quality_warning ? "needs_review" : "done"),
     ocr_text_raw: payload.raw_text || null,
     ocr_sheet_type: payload.sheet_type || null,
+    ocr_ro_suggestion: payload.ro_suggestion || null,
     ocr_stock_suggestion: payload.stock_suggestion || null,
     ocr_vin_suggestion: payload.vin_suggestion || null,
     ocr_vin8_suggestion: payload.vin8_suggestion || null,
@@ -338,12 +339,8 @@ async function listEntriesWithPhotos(limit = 100) {
 }
 
 async function applyOcrSuggestion(entryId, patch) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update(patch)
-    .eq("id", entryId);
-
-  if (error) throw error;
+  const saved = await updateWorkLogWithFallback(sb(), entryId, patch);
+  if (!saved) throw new Error("OCR suggestion apply failed");
 }
 
 async function getSignedPhotoUrl(photoPath, expiresIn = 1800) {
@@ -414,7 +411,8 @@ async function apiCreateLog(payload, sourceEntry = null) {
 
   const classification = await classifyEntryUniversal({
     ro: payload.ro_number || null,
-    stock: sourceEntry?.ref || null,
+    stock: sourceEntry?.stock || sourceEntry?.ref || null,
+    vin: payload.vin8 || sourceEntry?.vin || sourceEntry?.vin8 || null,
   });
 
   payload.brand = classification.brand;
@@ -456,7 +454,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
     ({ data: created, error: e1 } = await sb()
       .from("work_logs")
       .insert([insertBody])
-      .select("id,photo_path,ro_number,vin8")
+      .select("id,photo_path,ro_number,stock,vin,vin8")
       .maybeSingle());
     if (!e1) break;
 
@@ -623,7 +621,7 @@ function syncStateEntries(entries) {
 }
 
 function normalizeEntryForApi(entry) {
-  const roNumber = entry.ref || entry.ro || entry.ro_number || null;
+  const roNumber = entry.ro || entry.ro_number || entry.ref || null;
   const dealer = entry.dealer || "UNKNOWN";
   // Map the UI entry object into the active Supabase work_logs schema.
   return {
@@ -650,7 +648,9 @@ function inferRefTypeFromLog(log) {
 
   const currentRef = normalizeOcrToken(log?.ro_number || log?.ref || log?.ro);
   const stockSuggestion = normalizeOcrToken(log?.ocr_stock_suggestion);
+  const liveStock = normalizeOcrToken(log?.stock);
   if (stockSuggestion && currentRef && stockSuggestion === currentRef) return "STOCK";
+  if (!currentRef && liveStock) return "STOCK";
 
   return "RO";
 }
@@ -667,8 +667,10 @@ function normalizeSupabaseLog(r) {
 
     // UI expects these names (based on your form)
     refType,
-    ref: r.ro_number ?? "",
+    ref: r.ro_number ?? r.stock ?? "",
     ro_number: r.ro_number ?? "",
+    ro: r.ro_number ?? "",
+    stock: r.stock ?? "",
     dealer: r.dealer ?? null,
     brand: r.brand ?? "Unmapped",
     store: r.store ?? null,
@@ -688,6 +690,7 @@ function normalizeSupabaseLog(r) {
     cash_amount: Number(r.cash_amount ?? 0),
 
     location: r.location ?? "",
+    vin: r.vin ?? "",
     vin8: r.vin8 ?? "",
     photo_path: r.photo_path ?? null,
     ocr_status: r.ocr_status ?? "none",
@@ -695,6 +698,7 @@ function normalizeSupabaseLog(r) {
     ocr_quality_warning: r.ocr_quality_warning ?? null,
     ocr_text_raw: r.ocr_text_raw ?? null,
     ocr_sheet_type: r.ocr_sheet_type ?? null,
+    ocr_ro_suggestion: r.ocr_ro_suggestion ?? null,
     ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
     ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
     ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
@@ -715,7 +719,7 @@ function mapServerLogToEntry(r) {
   const dayKey = r.work_date; // already YYYY-MM-DD
   const hours = Number(r.flat_hours ?? r.hours ?? 0);
   const rate = 15; // or your default
-  const ref = r.ro_number || r.ref || r.ro || "";
+  const ref = r.ro_number || r.stock || r.ref || r.ro || "";
   const refType = inferRefTypeFromLog(r);
 
   return {
@@ -728,14 +732,16 @@ function mapServerLogToEntry(r) {
     weekStartKey: dateKey(startOfWeekLocal(new Date(dayKey))),
     refType,
     ref,
-    ro: ref,
-    ro_number: ref,
+    ro: r.ro_number || "",
+    ro_number: r.ro_number || "",
+    stock: r.stock || "",
     dealer: r.dealer || "UNKNOWN",
     brand: r.brand || null,
     store: r.store || r.store_code || null,
     store_code: r.store_code || r.store || null,
     campus: r.campus || null,
     classMatched: r.classMatched || null,
+    vin: r.vin || "",
     vin8: r.vin8 || "",
     type: r.category || "work",
     typeText: r.category || "work",
@@ -752,6 +758,7 @@ function mapServerLogToEntry(r) {
     ocr_quality_warning: r.ocr_quality_warning ?? null,
     ocr_text_raw: r.ocr_text_raw ?? null,
     ocr_sheet_type: r.ocr_sheet_type ?? null,
+    ocr_ro_suggestion: r.ocr_ro_suggestion ?? null,
     ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
     ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
     ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,

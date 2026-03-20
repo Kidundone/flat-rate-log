@@ -87,6 +87,7 @@ OCR result persistence fields:
 - `ocr_quality_warning`
 - `ocr_text_raw`
 - `ocr_sheet_type`
+- `ocr_ro_suggestion`
 - `ocr_stock_suggestion`
 - `ocr_vin_suggestion`
 - `ocr_vin8_suggestion`

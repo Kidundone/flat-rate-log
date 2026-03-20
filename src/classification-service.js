@@ -328,12 +328,15 @@ function last8(vin = "") {
 const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
 const OCR_TEMPLATES = Object.freeze({
   ro: {
-    vin: { x: 900, y: 120, width: 700, height: 120 },
-    stock: { x: 1080, y: 320, width: 420, height: 120 },
+    // Tuned to the Flow Motors RO layout: RO box near the header, VIN on the
+    // vehicle info row, and STK on the lower reference row.
+    ro_number: { x: 0.41, y: 0.08, width: 0.16, height: 0.06 },
+    vin: { x: 0.30, y: 0.20, width: 0.50, height: 0.06 },
+    stock: { x: 0.39, y: 0.28, width: 0.24, height: 0.06 },
   },
   get_ready: {
-    stock: { x: 220, y: 150, width: 260, height: 90 },
-    vin6: { x: 540, y: 150, width: 260, height: 90 },
+    stock: { x: 0.22, y: 0.15, width: 0.26, height: 0.09 },
+    vin6: { x: 0.54, y: 0.15, width: 0.26, height: 0.09 },
   },
 });
 const OCR_MIN_IMAGE_WIDTH = 800;
@@ -358,6 +361,21 @@ function extractVin(text) {
   const compactMatches = compact.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
   if (compactMatches[0]) return compactMatches[0];
   return "";
+}
+
+function parseRoNumber(text) {
+  const match = String(text || "").match(/\b(\d{5,8})\b/);
+  return match ? match[1] : "";
+}
+
+function parseVin(text) {
+  const match = String(text || "").toUpperCase().match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
+  return match ? match[1] : "";
+}
+
+function parseStock(text) {
+  const match = String(text || "").toUpperCase().match(/\bSTK[:\s#-]*([A-Z0-9]{4,10})\b/);
+  return match ? match[1] : "";
 }
 
 function extractBareStock(text) {
@@ -464,21 +482,24 @@ function extractVinLast6FromGetReady(text) {
 }
 
 function parseRoText(text) {
-  const vin = extractVin(text);
-  const stockCandidate = extractRoStockCandidate(text);
-  const stock = stockCandidate.value;
+  const roNumber = parseRoNumber(text);
+  const vin = parseVin(text);
+  const stock = parseStock(text);
+  const hasRo = !!roNumber;
   const hasVin = !!vin;
   const hasStock = !!stock;
   let confidence = 0.15;
 
-  if (hasVin && stockCandidate.source === "labeled") confidence = 0.97;
-  else if (hasVin && hasStock) confidence = 0.92;
+  if (hasRo && hasVin && hasStock) confidence = 0.98;
+  else if (hasRo && hasVin) confidence = 0.95;
+  else if (hasRo && hasStock) confidence = 0.9;
   else if (hasVin) confidence = 0.9;
-  else if (stockCandidate.source === "labeled") confidence = 0.84;
-  else if (hasStock) confidence = 0.58;
+  else if (hasRo) confidence = 0.84;
+  else if (hasStock) confidence = 0.72;
 
   return {
     sheet_type: "ro",
+    ro_suggestion: roNumber || null,
     stock_suggestion: stock || null,
     vin_suggestion: vin || null,
     vin8_suggestion: vin ? last8(vin) : null,
@@ -595,7 +616,8 @@ async function assessImageQuality(imageBlob) {
 
 function finalizeOcrResult(result, quality) {
   const foundSomething = !!(
-    result?.stock_suggestion
+    result?.ro_suggestion
+    || result?.stock_suggestion
     || result?.vin_suggestion
     || result?.vin8_suggestion
   );
@@ -687,29 +709,31 @@ function combineOcrText(parts) {
 }
 
 async function runRoFieldOcr(imageBlob, headerText = "") {
+  const roText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.ro_number);
   const vinText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.vin);
   const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
-  const combined = combineOcrText([headerText, `VIN ${vinText}`, `STK ${stockText}`]);
-  const vin = extractVin(vinText) || extractVin(combined);
-  const stockCandidate = (() => {
-    const direct = extractRoStockCandidate(stockText);
-    if (direct.value) return direct;
-    return extractRoStockCandidate(combined);
-  })();
-  const stock = stockCandidate.value;
+  const combined = combineOcrText([headerText, roText, vinText, stockText]);
+  const roNumber = parseRoNumber(roText);
+  const vin = parseVin(vinText) || parseVin(combined);
+  const stock = parseStock(stockText)
+    || extractRoStockCandidate(stockText).value
+    || extractRoStockCandidate(combined).value;
   const hasVin = !!vin;
+  const hasRo = !!roNumber;
   const hasStock = !!stock;
   let confidence = 0.15;
 
-  if (hasVin && stockCandidate.source === "labeled") confidence = 0.97;
-  else if (hasVin && hasStock) confidence = 0.92;
+  if (hasRo && hasVin && hasStock) confidence = 0.98;
+  else if (hasRo && hasVin) confidence = 0.95;
+  else if (hasRo && hasStock) confidence = 0.9;
   else if (hasVin) confidence = 0.9;
-  else if (stockCandidate.source === "labeled") confidence = 0.84;
-  else if (hasStock) confidence = 0.58;
+  else if (hasRo) confidence = 0.84;
+  else if (hasStock) confidence = 0.72;
 
   return {
     raw_text: combined,
     sheet_type: "ro",
+    ro_suggestion: roNumber || null,
     stock_suggestion: stock || null,
     vin_suggestion: vin || null,
     vin8_suggestion: vin ? last8(vin) : null,
@@ -815,15 +839,16 @@ async function runOCRAndClassify(row) {
     const ocrText = ocrResult?.raw_text || "";
     OCR_TEXT_CACHE.set(payload.photo_path, ocrText);
     const foundSomething = !!(
-      ocrResult?.stock_suggestion
+      ocrResult?.ro_suggestion
+      || ocrResult?.stock_suggestion
       || ocrResult?.vin_suggestion
       || ocrResult?.vin8_suggestion
     );
 
     const classification = await classifyEntryWithFallback({
-      ro: payload.ro_number || null,
-      stock: payload.stock_number || payload.stock || ocrResult?.stock_suggestion || payload.ref || payload.ro_number || null,
-      vin: payload.vin8 || null,
+      ro: payload.ro_number || ocrResult?.ro_suggestion || null,
+      stock: payload.stock_number || payload.stock || ocrResult?.stock_suggestion || null,
+      vin: payload.vin || payload.vin8 || ocrResult?.vin_suggestion || null,
       photoPath: payload.photo_path || null,
     });
     const dealer = classification.brand !== "Unmapped" ? classification.brand : "UNKNOWN";
@@ -843,6 +868,7 @@ async function runOCRAndClassify(row) {
       await saveOcrResult(row.id, {
         raw_text: ocrResult?.raw_text || "",
         sheet_type: ocrResult?.sheet_type || null,
+        ro_suggestion: ocrResult?.ro_suggestion || null,
         stock_suggestion: ocrResult?.stock_suggestion || null,
         vin_suggestion: ocrResult?.vin_suggestion || null,
         vin8_suggestion: ocrResult?.vin8_suggestion || null,
@@ -880,7 +906,7 @@ async function resolveDealerForLog(log) {
   const classification = await classifyEntryWithFallback({
     ro: log?.ro_number || log?.ref || log?.ro || "",
     stock: log?.stock_number || log?.stock || "",
-    vin: log?.vin8 || "",
+    vin: log?.vin || log?.vin8 || "",
     photoPath: log?.photo_path || null,
   });
 

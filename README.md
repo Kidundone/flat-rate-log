@@ -89,10 +89,12 @@ Primary `work_logs` fields used by the app:
 - `work_date`
 - `category`
 - `ro_number`
+- `stock`
 - `description`
 - `flat_hours`
 - `cash_amount`
 - `location`
+- `vin`
 - `vin8`
 - `photo_path`
 - `dealer`
@@ -109,6 +111,7 @@ OCR and review fields:
 - `ocr_quality_warning`
 - `ocr_text_raw`
 - `ocr_sheet_type`
+- `ocr_ro_suggestion`
 - `ocr_stock_suggestion`
 - `ocr_vin_suggestion`
 - `ocr_vin8_suggestion`

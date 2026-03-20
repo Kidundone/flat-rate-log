@@ -195,7 +195,7 @@ function wireOcrReprocessButton() {
           await markEntryProcessingOcr(entry.id);
           const signedUrl = await getSignedPhotoUrl(entry.photo_path);
           const ocr = await runOcrOnImage(signedUrl);
-          const foundSomething = !!(ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
+          const foundSomething = !!(ocr?.ro_suggestion || ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
           if (foundSomething) {
             await saveOcrResult(entry.id, ocr);
             done += 1;
@@ -564,7 +564,7 @@ function reviewFocusMatches(entry, focus) {
     case "ocr-failed":
       return review.ocrFailed;
     case "ocr-mismatch":
-      return review.refMismatch || review.vinMismatch;
+      return review.roMismatch || review.stockMismatch || review.vinMismatch;
     case "needs-review":
       return review.needsReview;
     case "all":
@@ -734,7 +734,7 @@ async function renderReview(){
     if (review.needsReview) acc.needsReview += 1;
     if (review.ocrFailed) acc.failed += 1;
     if (review.suggestionsPending) acc.suggestions += 1;
-    if (review.refMismatch || review.vinMismatch) acc.mismatches += 1;
+    if (review.roMismatch || review.stockMismatch || review.vinMismatch) acc.mismatches += 1;
     return acc;
   }, { needsReview: 0, failed: 0, suggestions: 0, mismatches: 0 });
   const meta = document.getElementById("reviewMeta");

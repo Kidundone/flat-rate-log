@@ -261,7 +261,8 @@ function applySearch(entries, q){
   if (!s) return entries;
   return entries.filter(e => {
     const hay = [
-      e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes
+      e.ref, e.ro, e.ro_number, e.stock, e.vin, e.vin8, e.type, e.typeText, e.notes,
+      e.ocr_ro_suggestion, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
     ].map(x => String(x || "").toLowerCase()).join(" ");
     return hay.includes(s);
   });
@@ -565,8 +566,8 @@ function matchSearch(e, q){
   if (!q) return true;
   const s = q.toLowerCase();
   return [
-    e.ref, e.ro, e.vin8, e.type, e.typeText, e.notes,
-    e.ocr_status, e.ocr_error, e.ocr_quality_warning, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
+    e.ref, e.ro, e.ro_number, e.stock, e.vin, e.vin8, e.type, e.typeText, e.notes,
+    e.ocr_status, e.ocr_error, e.ocr_quality_warning, e.ocr_ro_suggestion, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
   ].some(v => String(v||"").toLowerCase().includes(s));
 }
 
@@ -670,16 +671,28 @@ function entrySuggestedVinValue(entry) {
 function getEntryReviewState(entry) {
   const hasPhoto = entryHasStoredPhoto(entry);
   const ocrStatus = String(entry?.ocr_status || (hasPhoto ? "none" : "none")).toLowerCase();
-  const currentRef = normalizeEntryToken(entry?.ref || entry?.ro || entry?.ro_number);
+  const currentRo = normalizeEntryToken(entry?.ro_number || entry?.ro || (entry?.refType === "RO" ? entry?.ref : ""));
+  const currentStock = normalizeEntryToken(entry?.stock || (entry?.refType === "STOCK" ? entry?.ref : ""));
+  const currentVinFull = normalizeEntryToken(entry?.vin).replace(/[^A-Z0-9]/g, "");
   const currentVin = normalizeEntryToken(entry?.vin8).replace(/[^A-Z0-9]/g, "");
-  const suggestedRef = normalizeEntryToken(entry?.ocr_stock_suggestion);
+  const suggestedRo = normalizeEntryToken(entry?.ocr_ro_suggestion);
+  const suggestedStock = normalizeEntryToken(entry?.ocr_stock_suggestion);
+  const suggestedVinFull = normalizeEntryToken(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
   const suggestedVin = entrySuggestedVinValue(entry);
 
-  const refMismatch = !!(suggestedRef && currentRef && suggestedRef !== currentRef);
-  const vinMismatch = !!(suggestedVin && currentVin && suggestedVin !== currentVin);
-  const stockPending = !!(suggestedRef && suggestedRef !== currentRef);
-  const vinPending = !!(suggestedVin && suggestedVin !== currentVin);
-  const suggestionsPending = stockPending || vinPending;
+  const roMismatch = !!(suggestedRo && currentRo && suggestedRo !== currentRo);
+  const stockMismatch = !!(suggestedStock && currentStock && suggestedStock !== currentStock);
+  const vinMismatch = !!(
+    (suggestedVinFull && currentVinFull && suggestedVinFull !== currentVinFull)
+    || (suggestedVin && currentVin && suggestedVin !== currentVin)
+  );
+  const roPending = !!(suggestedRo && suggestedRo !== currentRo);
+  const stockPending = !!(suggestedStock && suggestedStock !== currentStock);
+  const vinPending = !!(
+    (suggestedVinFull && suggestedVinFull !== currentVinFull)
+    || (suggestedVin && suggestedVin !== currentVin)
+  );
+  const suggestionsPending = roPending || stockPending || vinPending;
   const ocrFailed = ocrStatus === "failed";
   const ocrDone = ocrStatus === "done";
   const ocrNeedsReview = ocrStatus === "needs_review";
@@ -689,7 +702,7 @@ function getEntryReviewState(entry) {
   let statusLabel = "No photo";
   if (hasPhoto && ocrFailed) statusLabel = "OCR failed";
   else if (hasPhoto && ocrNeedsReview) statusLabel = "OCR needs review";
-  else if (hasPhoto && ocrDone && (refMismatch || vinMismatch)) statusLabel = "OCR mismatch";
+  else if (hasPhoto && ocrDone && (roMismatch || stockMismatch || vinMismatch)) statusLabel = "OCR mismatch";
   else if (hasPhoto && ocrDone && suggestionsPending) statusLabel = "OCR suggestion ready";
   else if (hasPhoto && ocrDone) statusLabel = "OCR done";
   else if (hasPhoto && ocrStatus === "processing") statusLabel = "OCR processing";
@@ -699,8 +712,10 @@ function getEntryReviewState(entry) {
   const reasons = [];
   if (entry?.ocr_quality_warning) reasons.push(String(entry.ocr_quality_warning).replace(/_/g, " "));
   if (ocrFailed && entry?.ocr_error) reasons.push(String(entry.ocr_error));
-  if (refMismatch) reasons.push(`manual ref kept over ${suggestedRef}`);
-  else if (stockPending) reasons.push(`stock suggestion ${suggestedRef}`);
+  if (roMismatch) reasons.push(`manual RO kept over ${suggestedRo}`);
+  else if (roPending) reasons.push(`RO suggestion ${suggestedRo}`);
+  if (stockMismatch) reasons.push(`manual STK kept over ${suggestedStock}`);
+  else if (stockPending) reasons.push(`stock suggestion ${suggestedStock}`);
   if (vinMismatch) reasons.push(`manual VIN kept over ${suggestedVin}`);
   else if (vinPending) reasons.push(`VIN suggestion ${suggestedVin}`);
   if (ocrWaiting) reasons.push("photo needs OCR review");
@@ -712,10 +727,13 @@ function getEntryReviewState(entry) {
     statusDetail: reasons.join(" • "),
     currentRef,
     currentVin,
-    suggestedRef,
+    suggestedRo,
+    suggestedStock,
     suggestedVin,
-    refMismatch,
+    roMismatch,
+    stockMismatch,
     vinMismatch,
+    roPending,
     stockPending,
     vinPending,
     suggestionsPending,

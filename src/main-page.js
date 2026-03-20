@@ -140,8 +140,10 @@ function showToast(msg) {
 
 function buildOcrToast(ocr) {
   const bits = [];
+  if (ocr.ro_suggestion) bits.push(`RO ${ocr.ro_suggestion}`);
   if (ocr.stock_suggestion) bits.push(`STK ${ocr.stock_suggestion}`);
-  if (ocr.vin8_suggestion) bits.push(`VIN ${ocr.vin8_suggestion}`);
+  if (ocr.vin_suggestion) bits.push(`VIN ${last8(ocr.vin_suggestion) || ocr.vin_suggestion}`);
+  else if (ocr.vin8_suggestion) bits.push(`VIN ${ocr.vin8_suggestion}`);
   if (ocr.ocr_status === "needs_review") bits.push("needs review");
   return bits.length ? `Found ${bits.join(" · ")}` : "Saved. No OCR match found";
 }
@@ -161,7 +163,7 @@ async function queueOcrForSavedEntry(entry, refreshEntries) {
     if (!signedUrl) throw new Error("Could not open photo for OCR");
 
     const ocr = await runOcrOnImage(signedUrl);
-    const foundSomething = !!(ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
+    const foundSomething = !!(ocr?.ro_suggestion || ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
     if (foundSomething) {
       await saveOcrResult(entry.id, ocr);
       showToast(buildOcrToast(ocr));
@@ -196,37 +198,52 @@ function getDetectedSheetLabel(entry) {
 
 function getValidDetectedStock(entry) {
   const stock = normalizeSuggestionValue(entry?.ocr_stock_suggestion).replace(/[^A-Z0-9]/g, "");
-  if (stock.length < 4 || stock.length > 8) return "";
+  if (stock.length < 4 || stock.length > 10) return "";
   if (!/[0-9]/.test(stock)) return "";
   return stock;
 }
 
-function getOcrVinApplyValue(entry) {
-  const vin8 = normalizeSuggestionValue(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
-  if (vin8) return vin8;
-
-  const vin = normalizeSuggestionValue(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
-  return vin.length >= 8 ? vin.slice(-8) : "";
+function getValidDetectedRoNumber(entry) {
+  const ro = normalizeSuggestionValue(entry?.ocr_ro_suggestion).replace(/\D/g, "");
+  if (ro.length < 5 || ro.length > 8) return "";
+  return ro;
 }
 
-function getValidDetectedVin8(entry) {
-  const vin = getOcrVinApplyValue(entry);
-  if (vin.length < 6 || vin.length > 8) return "";
+function getValidDetectedVin(entry) {
+  const vin = normalizeSuggestionValue(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return "";
   return vin;
 }
 
+function getValidDetectedVin8(entry) {
+  const vin = getValidDetectedVin(entry);
+  if (vin) return last8(vin);
+
+  const vin8 = normalizeSuggestionValue(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
+  if (vin8.length < 6 || vin8.length > 8) return "";
+  return vin8;
+}
+
 function getOcrDetectedFields(entry) {
+  const roNumber = getValidDetectedRoNumber(entry);
   const stock = getValidDetectedStock(entry);
+  const vin = getValidDetectedVin(entry);
   const vin8 = getValidDetectedVin8(entry);
-  const currentRef = normalizeSuggestionValue(entry?.ref || entry?.ro);
-  const currentVin = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
+  const currentRo = normalizeSuggestionValue(entry?.ro_number || entry?.ro || (entry?.refType === "RO" ? entry?.ref : "")).replace(/\D/g, "");
+  const currentStock = normalizeSuggestionValue(entry?.stock || (entry?.refType === "STOCK" ? entry?.ref : "")).replace(/[^A-Z0-9]/g, "");
+  const currentVin = normalizeSuggestionValue(entry?.vin).replace(/[^A-Z0-9]/g, "");
+  const currentVin8 = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
   const patch = {};
 
-  if (stock && stock !== currentRef) patch.ro_number = stock;
-  if (vin8 && vin8 !== currentVin) patch.vin8 = vin8;
+  if (roNumber && roNumber !== currentRo) patch.ro_number = roNumber;
+  if (stock && stock !== currentStock) patch.stock = stock;
+  if (vin && vin !== currentVin) patch.vin = vin;
+  if (vin8 && vin8 !== currentVin8) patch.vin8 = vin8;
 
   return {
+    roNumber,
     stock,
+    vin,
     vin8,
     sheetLabel: getDetectedSheetLabel(entry),
     patch,
@@ -237,7 +254,7 @@ function getOcrSuggestionActions(entry) {
   const detected = getOcrDetectedFields(entry);
   const actions = [];
 
-  if (detected.patch.ro_number || detected.patch.vin8) {
+  if (detected.patch.ro_number || detected.patch.stock || detected.patch.vin || detected.patch.vin8) {
     actions.push({
       kind: "all",
       label: "Apply detected fields",
@@ -249,24 +266,25 @@ function getOcrSuggestionActions(entry) {
     });
   }
 
-  if (detected.patch.ro_number) {
+  if (detected.patch.stock) {
     actions.push({
       kind: "stock",
       label: "Apply STK",
       appliedLabel: `Applied STK ${detected.stock}`,
       patch: {
-        ro_number: detected.stock,
+        stock: detected.stock,
       },
     });
   }
 
-  if (detected.patch.vin8) {
+  if (detected.patch.vin || detected.patch.vin8) {
     actions.push({
       kind: "vin",
       label: "Apply VIN",
-      appliedLabel: `Applied VIN ${detected.vin8}`,
+      appliedLabel: `Applied VIN ${detected.vin || detected.vin8}`,
       patch: {
-        vin8: detected.vin8,
+        ...(detected.patch.vin ? { vin: detected.vin } : {}),
+        ...(detected.patch.vin8 ? { vin8: detected.vin8 } : {}),
       },
     });
   }
@@ -285,8 +303,9 @@ function buildOcrSuggestionStripHtml(entry, actionAttrName = "data-ocr-action") 
   const html = `
     <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
       <div class="small" style="margin-bottom:8px;color:rgba(191,219,254,.95);">Detected fields</div>
+      <div class="small">Detected RO: <span class="mono">${escapeHtml(detected.roNumber || "blank")}</span></div>
+      <div class="small">Detected VIN: <span class="mono">${escapeHtml(detected.vin || "blank")}</span></div>
       <div class="small">Detected STK: <span class="mono">${escapeHtml(detected.stock || "blank")}</span></div>
-      <div class="small">Detected VIN8: <span class="mono">${escapeHtml(detected.vin8 || "blank")}</span></div>
       <div class="small" style="margin-bottom:8px;">Detected from ${escapeHtml(detected.sheetLabel)}</div>
       <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -935,8 +954,8 @@ function rangeSubLabel(mode){
 
 function toCSV(entries, includeEmp = false){
   const header = includeEmp
-    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
-    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
+    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","roNumber","stock","vin","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrRoSuggestion","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
+    : ["createdAt","updatedAt","dayKey","refType","ref","roNumber","stock","vin","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrRoSuggestion","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
 
   const escape = (v) => {
     const s = String(v ?? "");
@@ -947,8 +966,8 @@ function toCSV(entries, includeEmp = false){
   const rows = (entries || []).map(e => {
     const hasPhoto = e.photo_path || e.photoDataUrl ? "yes" : "no";
     const row = includeEmp
-      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
-      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro, e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
+      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.ro_number || e.ro || "", e.stock || "", e.vin || "", e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_ro_suggestion || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
+      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.ro_number || e.ro || "", e.stock || "", e.vin || "", e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_ro_suggestion || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
     return row.map(escape).join(",");
   });
 
