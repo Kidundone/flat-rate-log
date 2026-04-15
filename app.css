@@ -194,7 +194,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 /* ---------- FR26 form (single source of truth) ---------- */
 .fr26{ padding: 0; overflow:hidden; }
-.fr26Form{ position: relative; padding-bottom: 90px; }
+.fr26Form{ position: relative; padding-bottom: 132px; }
 
 .fr26Group{
   border: 1px solid var(--stroke);
@@ -265,9 +265,12 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 }
 
 .fr26ActionBar{
-  position: sticky;
-  bottom: 10px;
-  z-index: 20;
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(calc(100vw - 24px), 848px);
+  z-index: 30;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
@@ -301,7 +304,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 /* ---------- Toast ---------- */
 .toast{
   position: fixed;
-  bottom: 16px;
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15,18,28,.95);

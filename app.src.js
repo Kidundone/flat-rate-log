@@ -3307,6 +3307,18 @@ function handleClear(ev) {
   if (saveBtn) saveBtn.disabled = true;
 }
 
+function focusHoursInput() {
+  const hoursEl = document.getElementById("hours");
+  if (!hoursEl) return;
+  requestAnimationFrame(() => {
+    try {
+      hoursEl.focus({ preventScroll: true });
+    } catch {
+      hoursEl.focus();
+    }
+  });
+}
+
 function showToast(msg) {
   console.log(msg);
   toast(msg);
@@ -3660,6 +3672,7 @@ async function handleSave(ev) {
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
     document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
+    focusHoursInput();
   } catch (err) {
     console.error("Save failed", err);
     const msg = /sign in required/i.test(String(err?.message || ""))
