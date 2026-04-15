@@ -2707,6 +2707,11 @@ function setPhotoUploadTarget(path) {
   if (pathEl) pathEl.textContent = path || "—";
 }
 
+function setPhotoSummaryState(text) {
+  const summaryEl = document.getElementById("photoSummaryState");
+  if (summaryEl) summaryEl.textContent = text || "No photo";
+}
+
 async function requireUserId(sb) {
   const uid = window.CURRENT_UID;
   if (!uid) return null;
@@ -2793,6 +2798,7 @@ function setSelectedPhotoFile(file, label = "") {
       ? `Selected: ${label || file.name} (${Math.round(file.size / 1024)} KB)`
       : "No photo";
   }
+  setPhotoSummaryState(file ? "Selected" : "No photo");
 }
 
 function setSelectedPhoto(file, label = "") {
@@ -2813,6 +2819,7 @@ function setPhotoLabelFromEntry(entry) {
   if (!lbl) return;
   const hasPhoto = !!entry?.photo_path;
   lbl.textContent = hasPhoto ? "Photo attached" : "No photo";
+  setPhotoSummaryState(hasPhoto ? "Attached" : "No photo");
   setPhotoUploadTarget(entry?.photo_path || "");
 }
 
@@ -2825,6 +2832,8 @@ function clearPickedPhoto() {
   if (file) file.value = "";
   setSelectedPhotoFile(null);
   setPhotoUploadTarget("");
+  const panel = document.getElementById("photoPanel");
+  if (panel) panel.open = false;
 }
 
 function wirePhotoPickers() {

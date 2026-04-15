@@ -23,26 +23,12 @@
   <section class="card fr26">
     <form id="logForm" class="fr26Form">
 
-      <!-- Employee -->
-      <section class="fr26Group">
-        <div class="fr26GroupHeader">Employee</div>
+      <div class="fr26EmployeeBar">
+        <label class="fr26EmployeeLabel" for="empId">Employee #</label>
+        <input id="empId" inputmode="numeric" placeholder="12345" autocomplete="off" class="fr26Input fr26InputCompact" />
+      </div>
 
-        <div class="fr26Row">
-          <label class="fr26Label" for="empId">Employee #</label>
-          <input id="empId" inputmode="numeric" placeholder="e.g. 12345" autocomplete="off" class="fr26Input" />
-        </div>
-        <div class="fr26Hint">Required. Entries are stored under this number on this device.</div>
-      </section>
-
-      <!-- Quick Entry -->
-      <section class="fr26Group">
-        <div class="fr26TopRow">
-          <div>
-            <div class="fr26GroupHeader" style="margin:0;">Quick Entry</div>
-            <div class="fr26Sub">Default flow: hours, work done, optional proof photo, save. Add reference details later if you need them.</div>
-          </div>
-          <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
-        </div>
+      <section class="fr26Group fr26PrimaryEntry">
 
         <div class="fr26Row">
           <label class="fr26Label" for="hours">Hours</label>
@@ -73,32 +59,45 @@
           />
           <datalist id="typeList"></datalist>
         </div>
-        <div class="fr26Hint">Just type it. New work types auto-save and show up next time.</div>
-
-        <div class="fr26Row">
-          <label class="fr26Label">Proof Photo</label>
-          <button id="btnPickPhoto" class="btn" type="button">Pick Photo</button>
-          <input id="photoPicker" type="file" style="display:none">
-
-          <button id="btnTakePhoto" class="btn" type="button">Take Photo</button>
-          <input id="photoCamera" type="file" style="display:none">
-
-          <button id="btnPickFile" class="btn" type="button">Pick File</button>
-          <input id="photoFile" type="file" style="display:none">
-
-          <div id="photoPickedLabel">No photo</div>
+        <div class="fr26PrimaryAction">
+          <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save</button>
         </div>
-        <div id="photoUploadTarget" class="fr26Hint mono" style="margin-top:6px;">
-          Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
-        </div>
-        <div class="fr26Hint">Photo is optional proof. It saves with the entry, but it does not drive OCR or dealer matching.</div>
       </section>
+
+      <details id="photoPanel" class="fr26Group fr26OptionalGroup">
+        <summary class="fr26OptionalSummary">
+          <span>+ Add Photo</span>
+          <span id="photoSummaryState" class="fr26OptionalMeta">No photo</span>
+        </summary>
+
+        <div class="fr26OptionalBody">
+          <div class="fr26PhotoActions">
+            <button id="btnPickPhoto" class="btn" type="button">Library</button>
+            <input id="photoPicker" type="file" style="display:none">
+
+            <button id="btnTakePhoto" class="btn" type="button">Camera</button>
+            <input id="photoCamera" type="file" style="display:none">
+
+            <button id="btnPickFile" class="btn" type="button">Files</button>
+            <input id="photoFile" type="file" style="display:none">
+          </div>
+          <div id="photoPickedLabel" class="fr26InlineStatus">No photo</div>
+          <div id="photoUploadTarget" class="fr26Hint mono">
+            Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
+          </div>
+        </div>
+      </details>
+
+      <div class="fr26QuickTools">
+        <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
+        <button id="clearBtn" class="fr26Chip fr26ChipGhost" type="button">Clear</button>
+        <button id="cancelEditBtn" class="fr26Chip fr26ChipGhost" type="button" style="display:none;">Cancel Edit</button>
+      </div>
 
       <!-- Details panel (keeps same id) -->
       <section id="detailsPanel" class="fr26Details" style="display:none;">
         <div class="fr26Group">
           <div class="fr26GroupHeader">Details</div>
-          <div class="fr26Sub">Optional fields for reference tracking and notes.</div>
 
           <div class="fr26TopRow" style="margin-top:6px;">
             <div class="fr26Sub">Reference type</div>
@@ -148,15 +147,6 @@
           </div>
         </div>
       </section>
-
-      <!-- Sticky action bar -->
-      <div class="fr26ActionBar">
-        <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save</button>
-        <div class="fr26SecondaryActions">
-          <button id="clearBtn" class="fr26BtnGhost" type="button">Clear</button>
-          <button id="cancelEditBtn" class="fr26BtnGhost" type="button" style="display:none;">Cancel Edit</button>
-        </div>
-      </div>
 
     </form>
   </section>
@@ -339,6 +329,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.f77fbfb63a.js" defer></script>
+<script src="/flat-rate-log/app.a15aa57d59.js" defer></script>
 </body>
 </html>

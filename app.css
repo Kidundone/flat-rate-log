@@ -194,7 +194,31 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 /* ---------- FR26 form (single source of truth) ---------- */
 .fr26{ padding: 0; overflow:hidden; }
-.fr26Form{ position: relative; padding-bottom: 182px; }
+.fr26Form{ position: relative; padding-bottom: 24px; }
+
+.fr26EmployeeBar{
+  display:grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items:center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-lg);
+  background: rgba(230,237,247,.05);
+}
+
+.fr26EmployeeLabel{
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(230,237,247,.68);
+  white-space: nowrap;
+}
+
+.fr26InputCompact{
+  min-width: 0;
+  padding: 11px 12px;
+}
 
 .fr26Group{
   border: 1px solid var(--stroke);
@@ -202,6 +226,10 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   border-radius: var(--r-lg);
   overflow: hidden;
   margin-bottom: 12px;
+}
+
+.fr26PrimaryEntry > .fr26Row:first-child{
+  border-top: 0;
 }
 
 .fr26GroupHeader{
@@ -264,21 +292,14 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   cursor:pointer;
 }
 
-.fr26ActionBar{
-  position: fixed;
-  left: 50%;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
-  width: min(calc(100vw - 24px), 848px);
-  z-index: 30;
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--stroke);
-  background: rgba(11,18,32,.78);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 -10px 28px rgba(0,0,0,.35);
+.fr26ChipGhost{
+  background: rgba(230,237,247,.04);
+}
+
+.fr26PrimaryAction{
+  padding: 14px;
+  border-top: 1px solid rgba(230,237,247,.08);
+  background: rgba(0,0,0,.08);
 }
 
 .fr26BtnPrimary, .fr26BtnGhost{
@@ -286,12 +307,6 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   border-radius: 14px;
   font-weight: 900;
   cursor:pointer;
-}
-
-.fr26SecondaryActions{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
 }
 
 .fr26BtnPrimary{
@@ -309,10 +324,75 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 }
 .fr26BtnPrimary:disabled{ opacity: .55; }
 
+.fr26OptionalGroup{
+  padding: 0;
+  overflow: hidden;
+}
+
+.fr26OptionalSummary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor:pointer;
+  list-style:none;
+  font-weight: 850;
+}
+
+.fr26OptionalSummary::-webkit-details-marker{ display:none; }
+
+.fr26OptionalSummary::after{
+  content:"+";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.fr26OptionalGroup[open] .fr26OptionalSummary::after{
+  content:"-";
+}
+
+.fr26OptionalMeta{
+  color: rgba(230,237,247,.55);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fr26OptionalBody{
+  border-top: 1px solid rgba(230,237,247,.08);
+}
+
+.fr26PhotoActions{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.fr26PhotoActions .btn{
+  width: 100%;
+}
+
+.fr26InlineStatus{
+  padding: 0 14px 10px;
+  color: rgba(230,237,247,.72);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fr26QuickTools{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
 /* ---------- Toast ---------- */
 .toast{
   position: fixed;
-  bottom: calc(136px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15,18,28,.95);
