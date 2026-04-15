@@ -104,7 +104,7 @@
         <div class="fr26TopRow">
           <div>
             <div class="fr26GroupHeader" style="margin:0;">Quick Entry</div>
-            <div class="fr26Sub">Default flow: hours, work done, save. Add reference details later if you need them.</div>
+            <div class="fr26Sub">Default flow: hours, work done, optional proof photo, save. Add reference details later if you need them.</div>
           </div>
           <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
         </div>
@@ -139,6 +139,24 @@
           <datalist id="typeList"></datalist>
         </div>
         <div class="fr26Hint">Just type it. New work types auto-save and show up next time.</div>
+
+        <div class="fr26Row">
+          <label class="fr26Label">Proof Photo</label>
+          <button id="btnPickPhoto" class="btn" type="button">Pick Photo</button>
+          <input id="photoPicker" type="file" style="display:none">
+
+          <button id="btnTakePhoto" class="btn" type="button">Take Photo</button>
+          <input id="photoCamera" type="file" style="display:none">
+
+          <button id="btnPickFile" class="btn" type="button">Pick File</button>
+          <input id="photoFile" type="file" style="display:none">
+
+          <div id="photoPickedLabel">No photo</div>
+        </div>
+        <div id="photoUploadTarget" class="fr26Hint mono" style="margin-top:6px;">
+          Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
+        </div>
+        <div class="fr26Hint">Photo is optional proof. It saves with the entry, but it does not drive OCR or dealer matching.</div>
       </section>
 
       <!-- Details panel (keeps same id) -->
@@ -303,6 +321,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.2c4d3bbaaa.js" defer></script>
+<script src="/flat-rate-log/app.05a6c47363.js" defer></script>
 </body>
 </html>

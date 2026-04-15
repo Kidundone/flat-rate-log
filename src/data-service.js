@@ -337,8 +337,7 @@ function getEmpId() {
   // digits only
   const digits = raw.replace(/\D/g, "");
 
-  // REQUIRE full employee # length (change 5 if yours differs)
-  if (digits.length < 5) return "";
+  if (!digits) return "";
 
   // persist only when valid
   localStorage.setItem("fr_emp_id", digits);
@@ -407,7 +406,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
     ({ data: created, error: e1 } = await sb()
       .from("work_logs")
       .insert([insertBody])
-      .select("id,photo_path,ro_number,stock,vin,vin8")
+      .select("id,photo_path")
       .maybeSingle());
     if (!e1) break;
 

@@ -85,6 +85,7 @@ async function smokeMainPage() {
       hasSupabaseClient: !!window.__FR?.sb,
       hasSaveBtn: !!document.getElementById('saveBtn'),
       hasEmpId: !!document.getElementById('empId'),
+      hasQuickPhotoButton: !!document.getElementById('btnPickPhoto'),
       hasDetailsToggle: !!document.getElementById('toggleDetailsBtn')
     };
   `);

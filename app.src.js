@@ -1445,8 +1445,7 @@ function getEmpId() {
   // digits only
   const digits = raw.replace(/\D/g, "");
 
-  // REQUIRE full employee # length (change 5 if yours differs)
-  if (digits.length < 5) return "";
+  if (!digits) return "";
 
   // persist only when valid
   localStorage.setItem("fr_emp_id", digits);
@@ -1515,7 +1514,7 @@ async function apiCreateLog(payload, sourceEntry = null) {
     ({ data: created, error: e1 } = await sb()
       .from("work_logs")
       .insert([insertBody])
-      .select("id,photo_path,ro_number,stock,vin,vin8")
+      .select("id,photo_path")
       .maybeSingle());
     if (!e1) break;
 
@@ -3661,6 +3660,12 @@ async function handleSave(ev) {
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
     document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
+  } catch (err) {
+    console.error("Save failed", err);
+    const msg = /sign in required/i.test(String(err?.message || ""))
+      ? "Sign in on More page first"
+      : (err?.message || "Save failed");
+    showToast(msg);
   } finally {
     isSaving = false;
     if (saveBtn) saveBtn.disabled = false;

@@ -486,6 +486,12 @@ async function handleSave(ev) {
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
     document.getElementById("photoFile") && (document.getElementById("photoFile").value = "");
+  } catch (err) {
+    console.error("Save failed", err);
+    const msg = /sign in required/i.test(String(err?.message || ""))
+      ? "Sign in on More page first"
+      : (err?.message || "Save failed");
+    showToast(msg);
   } finally {
     isSaving = false;
     if (saveBtn) saveBtn.disabled = false;
