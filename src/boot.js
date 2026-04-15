@@ -104,6 +104,8 @@ async function runOnce() {
     }
     if (rateInput) rateInput.addEventListener("input", () => rateInput.dataset.touched = "1");
 
+    syncKeepLastWorkInput?.();
+
     document.getElementById("closePhotoBtn")?.addEventListener("click", closePhotoModal);
     document.getElementById("photoModal")?.addEventListener("click", (e) => {
       if (e.target && e.target.id === "photoModal") closePhotoModal();
@@ -153,7 +155,22 @@ async function runOnce() {
       el?.addEventListener("input", updateSaveEnabled);
       el?.addEventListener("change", updateSaveEnabled);
     });
+    restoreLastWorkType?.();
     updateSaveEnabled();
+
+    const keepLastWorkEl = document.getElementById("keepLastWork");
+    keepLastWorkEl?.addEventListener("change", () => {
+      setKeepLastWork?.(!!keepLastWorkEl.checked);
+      if (keepLastWorkEl.checked) restoreLastWorkType?.({ force: false });
+      updateSaveEnabled();
+    });
+
+    document.querySelectorAll("[data-hours-quick]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        setQuickHoursValue?.(btn.getAttribute("data-hours-quick"));
+      });
+    });
 
     ["typeText", "hours", "ref"].forEach((id) => {
       document.getElementById(id)?.addEventListener("keydown", (e) => {

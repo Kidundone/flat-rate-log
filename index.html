@@ -43,6 +43,14 @@
             required
             class="fr26Input"
           />
+          <div class="fr26QuickHours" role="group" aria-label="Quick hours">
+            <button type="button" class="fr26HourBtn" data-hours-quick="0.5">0.5</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="1.0">1.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="2.0">2.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="2.5">2.5</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="3.0">3.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="4.0">4.0</button>
+          </div>
         </div>
 
         <div class="fr26Row">
@@ -58,6 +66,10 @@
             class="fr26Input"
           />
           <datalist id="typeList"></datalist>
+          <label class="fr26Check">
+            <input id="keepLastWork" type="checkbox" checked />
+            <span>Keep last work</span>
+          </label>
         </div>
         <div class="fr26PrimaryAction">
           <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save</button>
@@ -329,6 +341,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.a15aa57d59.js" defer></script>
+<script src="/flat-rate-log/app.d60e95b08e.js" defer></script>
 </body>
 </html>

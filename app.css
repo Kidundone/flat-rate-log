@@ -273,6 +273,39 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   outline: none;
 }
 
+.fr26QuickHours{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fr26HourBtn{
+  min-height: 42px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: rgba(230,237,247,.08);
+  color: rgba(255,255,255,.94);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.fr26HourBtn:active{
+  transform: translateY(1px);
+}
+
+.fr26Check{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  color: rgba(230,237,247,.72);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fr26Check input{
+  accent-color: rgba(29,78,216,1);
+}
+
 .fr26Textarea{ min-height: 92px; resize: vertical; }
 
 .fr26Hint{

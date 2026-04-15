@@ -2,6 +2,52 @@ let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
 let ocrBusy = false;
+const LS_KEEP_LAST_WORK = "fr_keep_last_work";
+const LS_LAST_WORK_TYPE = "fr_last_work_type";
+
+function shouldKeepLastWork() {
+  return localStorage.getItem(LS_KEEP_LAST_WORK) !== "0";
+}
+
+function setKeepLastWork(enabled) {
+  localStorage.setItem(LS_KEEP_LAST_WORK, enabled ? "1" : "0");
+}
+
+function syncKeepLastWorkInput() {
+  const keepLastWorkEl = document.getElementById("keepLastWork");
+  if (keepLastWorkEl) keepLastWorkEl.checked = shouldKeepLastWork();
+}
+
+function getLastWorkType() {
+  return String(localStorage.getItem(LS_LAST_WORK_TYPE) || "").trim();
+}
+
+function rememberLastWorkType(typeName) {
+  const next = String(typeName || "").trim();
+  if (!next) return;
+  localStorage.setItem(LS_LAST_WORK_TYPE, next);
+}
+
+function restoreLastWorkType({ force = false } = {}) {
+  if (!shouldKeepLastWork() || EDITING_ID) return;
+  const typeEl = document.getElementById("typeText");
+  if (!typeEl) return;
+  if (!force && String(typeEl.value || "").trim()) return;
+  const lastType = getLastWorkType();
+  if (!lastType) return;
+  typeEl.value = lastType;
+}
+
+function setQuickHoursValue(value) {
+  const hoursEl = document.getElementById("hours");
+  if (!hoursEl) return;
+  const next = String(value || "").trim();
+  if (!(num(next) > 0)) return;
+  hoursEl.value = next;
+  hoursEl.dataset.touched = "1";
+  hoursEl.dispatchEvent(new Event("input", { bubbles: true }));
+  hoursEl.dispatchEvent(new Event("change", { bubbles: true }));
+}
 
 function setEditingEntry(entry) {
   EDITING_ENTRY = entry || null;
@@ -105,8 +151,10 @@ async function handleDeleteEntry(entry, ev) {
   await onDeleteClicked(ev?.currentTarget, entry.id);
 }
 
-function handleClear(ev) {
+function handleClear(ev, options = {}) {
   if (ev) ev.preventDefault();
+  const preserveType = !!options.preserveType;
+  const preservedType = preserveType ? String(options.typeValue || getLastWorkType()).trim() : "";
   setEditingEntry(null);
   const empInputEl = document.getElementById("empId");
   const refEl = document.getElementById("ref");
@@ -118,7 +166,7 @@ function handleClear(ev) {
 
   if (refEl) refEl.value = "";
   if (vinEl) vinEl.value = "";
-  if (typeEl) typeEl.value = "";
+  if (typeEl) typeEl.value = preservedType;
   if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
   if (rateEl) { rateEl.value = "15"; rateEl.dataset.touched = ""; }
   if (notesEl) notesEl.value = "";
@@ -364,7 +412,9 @@ function buildEntryMetaHtml(entry) {
 window.__FR = window.__FR || {};
 window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
 
-async function saveEntry(entry) {
+async function saveEntry(entry, options = {}) {
+  const preserveType = !!options.preserveType;
+  const preservedType = String(options.preservedType || "").trim();
   const payload = normalizeEntryForApi(entry);
   const photoFile = getSelectedPhotoFile();
   const empId = getEmpId();
@@ -427,7 +477,7 @@ async function saveEntry(entry) {
   if (photoStatus === "fail") toast("Saved (photo failed)");
   else if (photoStatus === "ok") toast("Saved + Photo");
   else toast("Saved");
-  handleClear();
+  handleClear(null, { preserveType, typeValue: preservedType });
   return savedEntryForOcr;
 }
 
@@ -457,6 +507,7 @@ async function handleSave(ev) {
     const hoursVal = num(hoursEl?.value);
     const rateVal = num(rateEl?.value) || 15;
     const notes = (notesEl?.value || "").trim();
+    const keepLastWork = shouldKeepLastWork() && !isEditing;
 
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
@@ -492,7 +543,11 @@ async function handleSave(ev) {
     const refreshEntries = async () => {
       await safeLoadEntries();
     };
-    await saveEntry(entry);
+    if (keepLastWork) rememberLastWorkType(typeName);
+    await saveEntry(entry, {
+      preserveType: keepLastWork,
+      preservedType: keepLastWork ? typeName : "",
+    });
     await refreshEntries();
     setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
