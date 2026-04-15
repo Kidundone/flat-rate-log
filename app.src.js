@@ -327,15 +327,24 @@ function last8(vin = "") {
   return clean.length >= 8 ? clean.slice(-8) : "";
 }
 
-const OCR_HEADER_REGION = Object.freeze({ x: 0.34, y: 0.23, width: 0.58, height: 0.16 });
+const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
 const OCR_TEMPLATES = Object.freeze({
   ro: {
-    // Tuned to the Flow Motors workorder reprint photo framing used in proof
-    // shots: workorder number in the upper-center block, VIN in the vehicle
-    // info row, and STK/TAG in the row just below.
-    ro_number: { x: 0.39, y: 0.27, width: 0.20, height: 0.09 },
-    vin: { x: 0.36, y: 0.37, width: 0.33, height: 0.06 },
-    stock: { x: 0.38, y: 0.42, width: 0.33, height: 0.06 },
+    // `photo` is tuned for live proof shots with table/background in frame.
+    // `scan` is tuned for full-page Notes/PDF exports where the sheet fills
+    // the image and the tag cell sits farther right than the options row.
+    photo: {
+      ro_number: { x: 0.39, y: 0.27, width: 0.20, height: 0.09 },
+      vin: { x: 0.36, y: 0.37, width: 0.33, height: 0.06 },
+      vin_fallback: { x: 0.20, y: 0.34, width: 0.58, height: 0.09 },
+      stock: { x: 0.38, y: 0.42, width: 0.33, height: 0.06 },
+    },
+    scan: {
+      ro_number: { x: 0.40, y: 0.04, width: 0.20, height: 0.10 },
+      vin: { x: 0.37, y: 0.21, width: 0.40, height: 0.05 },
+      vin_fallback: { x: 0.20, y: 0.18, width: 0.62, height: 0.08 },
+      stock: { x: 0.78, y: 0.19, width: 0.15, height: 0.06 },
+    },
   },
   get_ready: {
     stock: { x: 0.22, y: 0.15, width: 0.26, height: 0.09 },
@@ -348,6 +357,12 @@ const OCR_MIN_EDGE_SCORE = 6;
 const OCR_QUALITY_SAMPLE_MAX = 256;
 let OCR_WORKER_PROMISE = null;
 let OCR_WORKER_QUEUE = Promise.resolve();
+const VIN_CHECKSUM_WEIGHTS = Object.freeze([8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]);
+const VIN_TRANSLITERATION = Object.freeze({
+  A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8,
+  J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9,
+  S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9,
+});
 
 function detectSheetType(text) {
   const t = up(text);
@@ -356,14 +371,109 @@ function detectSheetType(text) {
   return "unknown";
 }
 
-function extractVin(text) {
+function normalizeVinCandidateToken(value) {
+  return up(value)
+    .replace(/[IOQ]/g, (ch) => (ch === "I" ? "1" : "0"))
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function transliterateVinChar(ch) {
+  if (/\d/.test(ch)) return Number(ch);
+  return VIN_TRANSLITERATION[ch] ?? -1;
+}
+
+function isValidVinChecksum(vin) {
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return false;
+  let sum = 0;
+  for (let i = 0; i < vin.length; i += 1) {
+    const value = transliterateVinChar(vin[i]);
+    if (value < 0) return false;
+    sum += value * VIN_CHECKSUM_WEIGHTS[i];
+  }
+  const remainder = sum % 11;
+  const expected = remainder === 10 ? "X" : String(remainder);
+  return vin[8] === expected;
+}
+
+function collectVinCandidates(text) {
   const upper = up(text);
-  const matches = upper.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
-  if (matches[0]) return matches[0];
-  const compact = upper.replace(/[^A-HJ-NPR-Z0-9]/g, "");
-  const compactMatches = compact.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
-  if (compactMatches[0]) return compactMatches[0];
-  return "";
+  const out = [];
+  const seen = new Set();
+  const add = (rawValue, mode = "token") => {
+    const normalized = normalizeVinCandidateToken(rawValue);
+    if (normalized.length !== 17) return;
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(normalized)) return;
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push({ value: normalized, mode });
+  };
+  const addWindowed = (rawValue, mode = "token") => {
+    const normalized = normalizeVinCandidateToken(rawValue);
+    if (normalized.length < 17) return;
+    if (normalized.length === 17) {
+      add(normalized, mode);
+      return;
+    }
+    const maxWindows = Math.min(normalized.length - 16, 10);
+    for (let i = 0; i < maxWindows; i += 1) {
+      add(normalized.slice(i, i + 17), mode === "labeled" ? "labeled-window" : "window");
+    }
+  };
+
+  for (const match of upper.matchAll(/\bVIN[:\s#-]*([A-Z0-9]{11,22})\b/g)) {
+    addWindowed(match[1], "labeled");
+  }
+
+  for (const token of upper.match(/[A-Z0-9]{11,22}/g) || []) {
+    addWindowed(token, "token");
+  }
+
+  const compact = upper.replace(/[^A-Z0-9]/g, "");
+  if (compact.length >= 17) {
+    const maxWindows = Math.min(compact.length - 16, 8);
+    for (let i = 0; i < maxWindows; i += 1) {
+      add(compact.slice(i, i + 17), "compact");
+    }
+  }
+
+  return out;
+}
+
+function scoreVinCandidate(candidate, sourceText = "") {
+  if (!candidate?.value || !/[A-Z]/.test(candidate.value) || !/\d/.test(candidate.value)) {
+    return -Infinity;
+  }
+
+  let score = 20;
+  if (candidate.mode === "labeled") score += 8;
+  else if (candidate.mode === "labeled-window") score += 4;
+  else if (candidate.mode === "window") score -= 2;
+  else if (candidate.mode === "compact") score -= 6;
+
+  if (isValidVinChecksum(candidate.value)) score += 24;
+  if (up(sourceText).includes("VIN")) score += 2;
+  if (new Set(candidate.value).size < 8) score -= 6;
+  return score;
+}
+
+function extractBestVinCandidate(text) {
+  const candidates = collectVinCandidates(text);
+  let best = "";
+  let bestScore = -Infinity;
+
+  for (const candidate of candidates) {
+    const score = scoreVinCandidate(candidate, text);
+    if (score > bestScore) {
+      best = candidate.value;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 24 ? best : "";
+}
+
+function extractVin(text) {
+  return extractBestVinCandidate(text);
 }
 
 function parseRoNumber(text) {
@@ -379,8 +489,7 @@ function parseRoNumber(text) {
 }
 
 function parseVin(text) {
-  const match = String(text || "").toUpperCase().match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
-  return match ? match[1] : "";
+  return extractBestVinCandidate(text);
 }
 
 function parseStock(text) {
@@ -719,13 +828,19 @@ function combineOcrText(parts) {
   return normalizeText((parts || []).filter(Boolean).join("\n"));
 }
 
-async function runRoFieldOcr(imageBlob, headerText = "") {
-  const roText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.ro_number);
-  const vinText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.vin);
-  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
-  const combined = combineOcrText([headerText, roText, vinText, stockText]);
+async function runRoFieldOcr(imageBlob, headerText = "", roTemplate = OCR_TEMPLATES.ro.photo) {
+  const roText = await recognizeCrop(imageBlob, roTemplate.ro_number);
+  const vinText = await recognizeCrop(imageBlob, roTemplate.vin);
+  let vinFallbackText = "";
+  let vin = parseVin(vinText);
+  if (!vin && roTemplate.vin_fallback) {
+    vinFallbackText = await recognizeCrop(imageBlob, roTemplate.vin_fallback);
+    vin = parseVin(vinFallbackText);
+  }
+  const stockText = await recognizeCrop(imageBlob, roTemplate.stock);
+  const combined = combineOcrText([headerText, roText, vinText, vinFallbackText, stockText]);
   const roNumber = parseRoNumber(roText) || parseRoNumber(combined);
-  const vin = parseVin(vinText) || parseVin(combined);
+  vin = vin || parseVin(combined);
   const stock = parseStock(stockText)
     || parseStock(combined)
     || extractRoStockCandidate(stockText).value
@@ -752,6 +867,29 @@ async function runRoFieldOcr(imageBlob, headerText = "") {
     work_suggestion: null,
     confidence,
   };
+}
+
+function scoreRoOcrResult(result) {
+  let score = Number(result?.confidence || 0);
+  if (result?.ro_suggestion) score += 0.08;
+  if (result?.vin_suggestion) score += 0.12;
+  if (result?.stock_suggestion) score += 0.06;
+  if (result?.vin_suggestion && isValidVinChecksum(result.vin_suggestion)) score += 0.1;
+  return score;
+}
+
+async function runBestRoFieldOcr(imageBlob, headerText = "") {
+  let bestResult = null;
+  let bestScore = -Infinity;
+  for (const roTemplate of Object.values(OCR_TEMPLATES.ro)) {
+    const result = await runRoFieldOcr(imageBlob, headerText, roTemplate);
+    const score = scoreRoOcrResult(result);
+    if (!bestResult || score > bestScore) {
+      bestResult = result;
+      bestScore = score;
+    }
+  }
+  return bestResult || await runRoFieldOcr(imageBlob, headerText, OCR_TEMPLATES.ro.photo);
 }
 
 async function runGetReadyFieldOcr(imageBlob, headerText = "") {
@@ -788,13 +926,13 @@ async function runOcrOnImage(imageUrlOrBlob) {
   const sheetType = detectSheetType(headerText);
 
   if (sheetType === "ro") {
-    return finalizeOcrResult(await runRoFieldOcr(imageBlob, headerText), quality);
+    return finalizeOcrResult(await runBestRoFieldOcr(imageBlob, headerText), quality);
   }
   if (sheetType === "get_ready") {
     return finalizeOcrResult(await runGetReadyFieldOcr(imageBlob, headerText), quality);
   }
 
-  const roCandidate = await runRoFieldOcr(imageBlob, headerText);
+  const roCandidate = await runBestRoFieldOcr(imageBlob, headerText);
   if (roCandidate.stock_suggestion || roCandidate.vin_suggestion) {
     return finalizeOcrResult({
       ...roCandidate,
@@ -1085,7 +1223,6 @@ async function sbListRows(empId) {
   if (!empId) return [];
   const uid = await requireUserId(sb());
   if (!uid) return [];
-  const dealerFilter = document.getElementById("dealerFilter")?.value;
 
   let q = sb()
     .from("work_logs")
@@ -1093,10 +1230,6 @@ async function sbListRows(empId) {
     .eq("user_id", uid)
     .eq("employee_number", empId)
     .or("is_deleted.is.null,is_deleted.eq.false");
-
-  if (dealerFilter && dealerFilter !== "all") {
-    q = q.eq("dealer", dealerFilter);
-  }
 
   q = q
     .order("work_date", { ascending: false })
@@ -1178,7 +1311,6 @@ async function saveEditedLog(logId, patch) {
     });
     const newPath = uploaded?.path || null;
     patch.photo_path = newPath;
-    patch.dealer = uploaded?.dealer || patch.dealer || "UNKNOWN";
   }
 
   const runUpdate = (body) => sb()
@@ -1188,28 +1320,8 @@ async function saveEditedLog(logId, patch) {
     .select("id, photo_path")
     .maybeSingle();
 
-  let { data, error } = await runUpdate(patch);
-  if (error && Object.prototype.hasOwnProperty.call(patch, "dealer") && isDealerColumnMissingError(error)) {
-    const { dealer: _dealer, ...patchWithoutDealer } = patch;
-    ({ data, error } = await runUpdate(patchWithoutDealer));
-  }
-
+  const { data, error } = await runUpdate(patch);
   if (error) throw error;
-
-  if (!file) {
-    try {
-      const resolvedDealer = await resolveDealerForLog({
-        ro_number: patch.ro_number || null,
-        photo_path: data?.photo_path || null,
-      });
-      await updateWorkLogWithFallback(sb(), logId, {
-        dealer: resolvedDealer,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (resolveErr) {
-      console.error("Dealer resolve failed", resolveErr);
-    }
-  }
 
   window.SELECTED_PHOTO_FILE = null;
   SELECTED_PHOTO_FILE = null;
@@ -1379,34 +1491,13 @@ async function apiCreateLog(payload, sourceEntry = null) {
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
-  const classification = await classifyEntryUniversal({
-    ro: payload.ro_number || null,
-    stock: sourceEntry?.stock || sourceEntry?.ref || null,
-    vin: payload.vin8 || sourceEntry?.vin || sourceEntry?.vin8 || null,
-  });
-
-  payload.brand = classification.brand;
-  payload.store = classification.store;
-  payload.store_code = classification.store;
-  payload.campus = classification.campus;
-  if (sourceEntry && typeof sourceEntry === "object") {
-    sourceEntry.brand = classification.brand;
-    sourceEntry.store = classification.store;
-    sourceEntry.campus = classification.campus;
-  }
-
-  const dealer = "Processing";
-
   const insertRow = {
     user_id: uid,
     employee_number: empId,
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
-    dealer,
-    brand: payload.brand || null,
-    store_code: payload.store_code || null,
-    campus: payload.campus || null,
+    dealer: payload.dealer || null,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -1446,13 +1537,11 @@ async function apiUpdateLog(id, payload) {
   if (!empId) return null;
   const uid = await requireUserId(sb());
   if (!uid) return null;
-  const dealer = await resolveDealerForLog(payload);
 
   const updateFields = {
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
-    dealer,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -1470,18 +1559,6 @@ async function apiUpdateLog(id, payload) {
     .eq("employee_number", empId)
     .select("*")
     .limit(1);
-
-  if (e1 && isDealerColumnMissingError(e1)) {
-    const { dealer: _dealer, ...updateWithoutDealer } = updateFields;
-    ({ data: updated, error: e1 } = await sb()
-      .from("work_logs")
-      .update(updateWithoutDealer)
-      .eq("id", id)
-      .eq("user_id", uid)
-      .eq("employee_number", empId)
-      .select("*")
-      .limit(1));
-  }
 
   if (e1) throw e1;
   const updatedRow = updated?.[0] ?? null;
@@ -1592,13 +1669,12 @@ function syncStateEntries(entries) {
 
 function normalizeEntryForApi(entry) {
   const roNumber = entry.ro || entry.ro_number || entry.ref || null;
-  const dealer = entry.dealer || "UNKNOWN";
   // Map the UI entry object into the active Supabase work_logs schema.
   return {
     work_date: entry.dayKey || entry.date || entry.work_date || (entry.createdAt ? dayKeyFromISO(entry.createdAt) : null), // MUST be "YYYY-MM-DD"
     category: entry.typeText || entry.type || entry.category || "work",
     ro_number: roNumber,
-    dealer,
+    dealer: entry.dealer || null,
     description: entry.notes || entry.desc || entry.description || null,
     flat_hours: Number(entry.hours || entry.flat || entry.flat_hours || 0),
     cash_amount: Number(entry.earnings || entry.cash || entry.cash_amount || 0),
@@ -1823,22 +1899,6 @@ async function backfillDayKeysForEmpCursor(empId, { batch = 150 } = {}) {
 async function renderLogs(logs) {
   const entries = Array.isArray(logs) ? normalizeEntries(logs) : [];
 
-  entries.forEach(entry => {
-    entry.detected_brand = entry.brand;
-    entry.detected_type = null;
-  });
-
-  // Group by detected brand, then newest first within each brand.
-  entries.sort((a, b) => {
-    const brandA = a.detected_brand || "";
-    const brandB = b.detected_brand || "";
-
-    if (brandA < brandB) return -1;
-    if (brandA > brandB) return 1;
-
-    return new Date(b.work_date) - new Date(a.work_date);
-  });
-
   await refreshUI(entries);
 }
 
@@ -1861,7 +1921,6 @@ async function loadEntries() {
     console.warn("No UID - skipping loadEntries");
     return [];
   }
-  const dealerFilter = document.getElementById("dealerFilter")?.value;
 
   let query = sb()
     .from("work_logs")
@@ -1869,10 +1928,6 @@ async function loadEntries() {
     .eq("user_id", uid)
     .eq("employee_number", empId)
     .or("is_deleted.is.null,is_deleted.eq.false");
-
-  if (dealerFilter && dealerFilter !== "all") {
-    query = query.eq("dealer", dealerFilter);
-  }
 
   const res = await query
     .order("work_date", { ascending: false })
@@ -2712,25 +2767,7 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
-  const dealerGuess = await classifyDealerUniversal({
-    ro: roNumber || null,
-    stock: null,
-    vin: null,
-  });
-  const resolvedDealer = dealerGuess && dealerGuess !== "Unknown" ? dealerGuess : null;
-
-  if (resolvedDealer) {
-    try {
-      await updateWorkLogWithFallback(sb, logId, {
-        dealer: resolvedDealer,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (dealerErr) {
-      console.error("Dealer seed update failed", dealerErr);
-    }
-  }
-
-  return { path, dealer: resolvedDealer };
+  return { path, dealer: null };
 }
 
 async function runOCR(photoPath) {
@@ -3474,11 +3511,16 @@ async function applyEntryOcrSuggestion(entry, action) {
 }
 
 function buildEntryMetaHtml(entry) {
-  const facts = getEntryRecordFacts(entry);
+  const dayKey = entry?.dayKey || dayKeyFromISO(entry?.createdAt) || entry?.work_date || "-";
+  const vin8 = String(entry?.vin8 || "").trim();
+  const meta = [];
+
+  if (vin8) meta.push(`VIN8: <span class="mono">${escapeHtml(vin8)}</span>`);
+  if (entryHasPhoto(entry)) meta.push("Photo attached");
+
   return `
-    <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
-    <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
-    <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
+    <div class="small">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""}</div>
+    <div class="small">Created: ${escapeHtml(formatWhen(entry?.createdAt || entry?.created_at || ""))} • Updated: ${escapeHtml(formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""))}</div>
   `;
 }
 
@@ -3570,10 +3612,6 @@ async function handleSave(ev) {
     const typeEl = document.getElementById("typeText");
     const hoursEl = document.getElementById("hours");
     const rateEl = document.querySelector('input[name="rate"]');
-    const photoEl = document.getElementById("proofPhoto")
-      || document.getElementById("photoPicker")
-      || document.getElementById("photoCamera")
-      || document.getElementById("photoFile");
     const notesEl = document.querySelector('textarea[name="notes"]');
 
     const ref = (refEl?.value || "").trim();
@@ -3586,7 +3624,6 @@ async function handleSave(ev) {
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-    const photoFile = getSelectedPhotoFile() || photoEl?.files?.[0] || null;
     const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
     const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
     const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
@@ -3603,7 +3640,7 @@ async function handleSave(ev) {
       refType: currentRefType,
       ref,
       ro: ref,
-      dealer: baseEntry.dealer || "UNKNOWN",
+      dealer: baseEntry.dealer || null,
       vin8,
       type: typeName,
       typeText: typeName,
@@ -3618,9 +3655,8 @@ async function handleSave(ev) {
     const refreshEntries = async () => {
       await safeLoadEntries();
     };
-    const savedEntry = await saveEntry(entry);
+    await saveEntry(entry);
     await refreshEntries();
-    queueOcrForSavedEntry(savedEntry, refreshEntries).catch((err) => console.error("OCR queue failed", err));
     setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
@@ -3645,7 +3681,9 @@ async function renderHistory(){
   const range = $("histRange")?.value || "week";
   const group = $("histGroup")?.value || "none";
 
-  const all = sortEntriesByRo(filterEntriesByEmp(await getAll(STORES.entries), empId));
+  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
+    .slice()
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   let slice = all;
 
@@ -3661,6 +3699,7 @@ async function renderHistory(){
   }
 
   slice = slice.filter(e => matchSearch(e, q));
+  slice.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   const totals = computeTotals(slice);
   const meta = $("historyMeta");
@@ -3675,15 +3714,15 @@ async function renderHistory(){
     return;
   }
 
-  if (group === "day" || group === "dealer") {
-    const groups = group === "dealer" ? groupByDealer(slice) : groupByDay(slice);
+  if (group === "day") {
+    const groups = groupByDay(slice);
     for (const g of groups) {
       const t = computeTotals(g.entries);
       const header = document.createElement("div");
       header.className = "item";
       header.innerHTML = `
         <div class="itemTop">
-          <div class="mono">${group === "dealer" ? escapeHtml(g.dealer) : g.dayKey}</div>
+          <div class="mono">${g.dayKey}</div>
           <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
         </div>
       `;
@@ -4092,8 +4131,8 @@ function rangeSubLabel(mode){
 
 function toCSV(entries, includeEmp = false){
   const header = includeEmp
-    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","roNumber","stock","vin","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrRoSuggestion","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
-    : ["createdAt","updatedAt","dayKey","refType","ref","roNumber","stock","vin","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrRoSuggestion","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
+    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath"]
+    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath"];
 
   const escape = (v) => {
     const s = String(v ?? "");
@@ -4104,8 +4143,8 @@ function toCSV(entries, includeEmp = false){
   const rows = (entries || []).map(e => {
     const hasPhoto = e.photo_path || e.photoDataUrl ? "yes" : "no";
     const row = includeEmp
-      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.ro_number || e.ro || "", e.stock || "", e.vin || "", e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_ro_suggestion || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
-      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.ro_number || e.ro || "", e.stock || "", e.vin || "", e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_ro_suggestion || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
+      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.vin8 || "", e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || ""]
+      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.vin8 || "", e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || ""];
     return row.map(escape).join(",");
   });
 
@@ -4167,22 +4206,13 @@ function renderList(entries, mode){
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = (searchInput?.value || "").trim().toLowerCase();
 
-  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
   const visible = applySearch(ranged, q).slice();
-  if (!isWeekRange) {
-    visible.sort((a, b) => {
-      const brandA = String(a.detected_brand || a.dealer || "Unknown");
-      const brandB = String(b.detected_brand || b.dealer || "Unknown");
-      const byBrand = brandA.localeCompare(brandB, undefined, { sensitivity: "base" });
-      if (byBrand !== 0) return byBrand;
-
-      const aTs = Date.parse(a.work_date || a.createdAt || "") || 0;
-      const bTs = Date.parse(b.work_date || b.createdAt || "") || 0;
-      return bTs - aTs;
-    });
-  } else {
-    visible.sort((a, b) => (b.dayKey || "").localeCompare(a.dayKey || ""));
-  }
+  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
+  visible.sort((a, b) => {
+    const aTs = Date.parse(a.work_date || a.createdAt || "") || 0;
+    const bTs = Date.parse(b.work_date || b.createdAt || "") || 0;
+    return bTs - aTs;
+  });
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
@@ -4199,7 +4229,6 @@ function renderList(entries, mode){
     const refDisplay = `${refLabel}: ${refVal}`;
     const typeLabel = escapeHtml(e.type || e.typeText || "-");
     const entryId = escapeHtml(String(e.id ?? ""));
-    const { actions: ocrActions, html: ocrSuggestionBlock } = buildOcrSuggestionStripHtml(e);
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
@@ -4218,7 +4247,6 @@ function renderList(entries, mode){
           </div>
           ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-          ${ocrSuggestionBlock}
           <div style="margin-top:8px;">${actionButtons}</div>
         </div>
         <div class="right">
@@ -4238,23 +4266,6 @@ function renderList(entries, mode){
     if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhoto(e));
-    }
-    const ocrBtns = Array.from(row.querySelectorAll("button[data-ocr-action]"));
-    for (const btn of ocrBtns) {
-      btn.addEventListener("click", async () => {
-        const kind = btn.getAttribute("data-ocr-action") || "";
-        const action = ocrActions.find((item) => item.kind === kind);
-        if (!action) return;
-
-        ocrBtns.forEach((el) => { el.disabled = true; });
-        try {
-          await applyEntryOcrSuggestion(e, action);
-        } catch (err) {
-          console.error("Apply OCR suggestion failed", e?.id, kind, err);
-          showToast("Could not apply OCR suggestion");
-          ocrBtns.forEach((el) => { el.disabled = false; });
-        }
-      });
     }
     return row;
   };
@@ -4286,23 +4297,7 @@ function renderList(entries, mode){
     return;
   }
 
-  let currentBrand = null;
   for (const e of capped) {
-    const brand = String(e.detected_brand || e.dealer || "Unknown");
-    if (brand !== currentBrand) {
-      currentBrand = brand;
-
-      const header = document.createElement("div");
-      header.style.padding = "12px 10px";
-      header.style.fontWeight = "600";
-      header.style.fontSize = "14px";
-      header.style.background = "#111";
-      header.style.borderTop = "1px solid #333";
-      header.style.borderBottom = "1px solid #333";
-      header.style.marginTop = "12px";
-      header.textContent = currentBrand.toUpperCase();
-      list.appendChild(header);
-    }
     list.appendChild(buildEntry(e));
   }
 }
@@ -4422,7 +4417,6 @@ async function refreshUI(entriesOverride){
 
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  populateDealerFilter(entries);
 
   window.__RANGE_ENTRIES__ = entries;
 
@@ -4468,8 +4462,7 @@ async function refreshUI(entriesOverride){
 
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = searchInput?.value || "";
-  const dealerFiltered = applyDealerFilter(shownEntries);
-  const searched = applySearch(dealerFiltered, q);
+  const searched = applySearch(shownEntries, q);
 
   window.__RANGE_FILTERED__ = searched; // replace for list + totals
   let totals = computeTotals(searched);
@@ -4535,10 +4528,8 @@ async function refreshUI(entriesOverride){
   const status = document.getElementById("filterStatus");
   if (status) {
     const rangeLabel = title;
-    const dealerVal = document.getElementById("dealerFilter")?.value || "all";
-    const dealerTxt = dealerVal !== "all" ? ` • Dealer: ${dealerVal}` : "";
     const qtxt = q.trim() ? ` • Search: "${q.trim()}"` : "";
-    status.textContent = `Showing: ${rangeLabel}${dealerTxt}${qtxt} • ${searched.length} entries`;
+    status.textContent = `Showing: ${rangeLabel}${qtxt} • ${searched.length} entries`;
   }
 
   const hasWeekHeader =
@@ -5389,12 +5380,6 @@ async function runOnce() {
     bootAuth().catch(console.error);
   }
 
-  try {
-    USER_PREFIX_RULES = await loadUserPrefixRules();
-  } catch (e) {
-    USER_PREFIX_RULES = [];
-  }
-
   await ensureDefaultTypes();
 
   // ================= MAIN PAGE ONLY =================
@@ -5407,7 +5392,6 @@ async function runOnce() {
     await renderTypesListInMore();
 
     document.getElementById("filterSelect")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
-    document.getElementById("dealerFilter")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
     document.getElementById("refreshBtn")?.addEventListener("click", () => refreshUI(CURRENT_ENTRIES));
 
     const sIn = document.getElementById("searchInput");
@@ -5528,6 +5512,9 @@ async function runOnce() {
 
   // ================= MORE PAGE ONLY =================
   if (window.__PAGE__ === "more") {
+    const hasReviewUi = !!document.getElementById("reviewList");
+    const hasGalleryUi = !!document.getElementById("photoGallery");
+
     const wrapMoreClick = (id, handler) => {
       const el = document.getElementById(id);
       if (!el || typeof handler !== "function") return;
@@ -5545,23 +5532,18 @@ async function runOnce() {
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
     wrapMoreClick("savePayStubBtn", savePayStubEntry);
     wrapMoreClick("wipeBtn", wipeLocalOnly);
-    document.getElementById("refreshBtn")?.addEventListener("click", () => {
-      if (!_photosRequested) {
-        setGalleryStatus("Tap Load Photos first.");
-        return;
-      }
-      renderPhotoGrid(true, { updateStatus: true });
-    });
 
     document.getElementById("wipeAllBtn")?.addEventListener("click", wipeAllData);
-    document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
-    document.getElementById("reviewRange")?.addEventListener("change", renderReview);
-    document.getElementById("reviewFocus")?.addEventListener("change", renderReview);
-    document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
-    document.getElementById("reviewSearch")?.addEventListener("input", () => {
-      clearTimeout(window.__REVIEW_T__);
-      window.__REVIEW_T__ = setTimeout(renderReview, 150);
-    });
+    if (hasReviewUi) {
+      document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
+      document.getElementById("reviewRange")?.addEventListener("change", renderReview);
+      document.getElementById("reviewFocus")?.addEventListener("change", renderReview);
+      document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
+      document.getElementById("reviewSearch")?.addEventListener("input", () => {
+        clearTimeout(window.__REVIEW_T__);
+        window.__REVIEW_T__ = setTimeout(renderReview, 150);
+      });
+    }
 
     document.getElementById("repairBtn")?.addEventListener("click", async () => {
       const empId = getEmpId();
@@ -5578,10 +5560,14 @@ async function runOnce() {
     });
 
     await safeLoadEntries();
-    initPhotosUI();
-    wireOcrReprocessButton?.();
+    if (hasGalleryUi) {
+      initPhotosUI();
+      wireOcrReprocessButton?.();
+    }
     initPayStubUI();
-    await renderReview();
+    if (hasReviewUi) {
+      await renderReview();
+    }
   }
 }
 

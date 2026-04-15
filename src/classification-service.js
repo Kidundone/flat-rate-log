@@ -325,15 +325,24 @@ function last8(vin = "") {
   return clean.length >= 8 ? clean.slice(-8) : "";
 }
 
-const OCR_HEADER_REGION = Object.freeze({ x: 0.34, y: 0.23, width: 0.58, height: 0.16 });
+const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
 const OCR_TEMPLATES = Object.freeze({
   ro: {
-    // Tuned to the Flow Motors workorder reprint photo framing used in proof
-    // shots: workorder number in the upper-center block, VIN in the vehicle
-    // info row, and STK/TAG in the row just below.
-    ro_number: { x: 0.39, y: 0.27, width: 0.20, height: 0.09 },
-    vin: { x: 0.36, y: 0.37, width: 0.33, height: 0.06 },
-    stock: { x: 0.38, y: 0.42, width: 0.33, height: 0.06 },
+    // `photo` is tuned for live proof shots with table/background in frame.
+    // `scan` is tuned for full-page Notes/PDF exports where the sheet fills
+    // the image and the tag cell sits farther right than the options row.
+    photo: {
+      ro_number: { x: 0.39, y: 0.27, width: 0.20, height: 0.09 },
+      vin: { x: 0.36, y: 0.37, width: 0.33, height: 0.06 },
+      vin_fallback: { x: 0.20, y: 0.34, width: 0.58, height: 0.09 },
+      stock: { x: 0.38, y: 0.42, width: 0.33, height: 0.06 },
+    },
+    scan: {
+      ro_number: { x: 0.40, y: 0.04, width: 0.20, height: 0.10 },
+      vin: { x: 0.37, y: 0.21, width: 0.40, height: 0.05 },
+      vin_fallback: { x: 0.20, y: 0.18, width: 0.62, height: 0.08 },
+      stock: { x: 0.78, y: 0.19, width: 0.15, height: 0.06 },
+    },
   },
   get_ready: {
     stock: { x: 0.22, y: 0.15, width: 0.26, height: 0.09 },
@@ -346,6 +355,12 @@ const OCR_MIN_EDGE_SCORE = 6;
 const OCR_QUALITY_SAMPLE_MAX = 256;
 let OCR_WORKER_PROMISE = null;
 let OCR_WORKER_QUEUE = Promise.resolve();
+const VIN_CHECKSUM_WEIGHTS = Object.freeze([8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]);
+const VIN_TRANSLITERATION = Object.freeze({
+  A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8,
+  J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9,
+  S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9,
+});
 
 function detectSheetType(text) {
   const t = up(text);
@@ -354,14 +369,109 @@ function detectSheetType(text) {
   return "unknown";
 }
 
-function extractVin(text) {
+function normalizeVinCandidateToken(value) {
+  return up(value)
+    .replace(/[IOQ]/g, (ch) => (ch === "I" ? "1" : "0"))
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function transliterateVinChar(ch) {
+  if (/\d/.test(ch)) return Number(ch);
+  return VIN_TRANSLITERATION[ch] ?? -1;
+}
+
+function isValidVinChecksum(vin) {
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return false;
+  let sum = 0;
+  for (let i = 0; i < vin.length; i += 1) {
+    const value = transliterateVinChar(vin[i]);
+    if (value < 0) return false;
+    sum += value * VIN_CHECKSUM_WEIGHTS[i];
+  }
+  const remainder = sum % 11;
+  const expected = remainder === 10 ? "X" : String(remainder);
+  return vin[8] === expected;
+}
+
+function collectVinCandidates(text) {
   const upper = up(text);
-  const matches = upper.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
-  if (matches[0]) return matches[0];
-  const compact = upper.replace(/[^A-HJ-NPR-Z0-9]/g, "");
-  const compactMatches = compact.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
-  if (compactMatches[0]) return compactMatches[0];
-  return "";
+  const out = [];
+  const seen = new Set();
+  const add = (rawValue, mode = "token") => {
+    const normalized = normalizeVinCandidateToken(rawValue);
+    if (normalized.length !== 17) return;
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(normalized)) return;
+    if (seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push({ value: normalized, mode });
+  };
+  const addWindowed = (rawValue, mode = "token") => {
+    const normalized = normalizeVinCandidateToken(rawValue);
+    if (normalized.length < 17) return;
+    if (normalized.length === 17) {
+      add(normalized, mode);
+      return;
+    }
+    const maxWindows = Math.min(normalized.length - 16, 10);
+    for (let i = 0; i < maxWindows; i += 1) {
+      add(normalized.slice(i, i + 17), mode === "labeled" ? "labeled-window" : "window");
+    }
+  };
+
+  for (const match of upper.matchAll(/\bVIN[:\s#-]*([A-Z0-9]{11,22})\b/g)) {
+    addWindowed(match[1], "labeled");
+  }
+
+  for (const token of upper.match(/[A-Z0-9]{11,22}/g) || []) {
+    addWindowed(token, "token");
+  }
+
+  const compact = upper.replace(/[^A-Z0-9]/g, "");
+  if (compact.length >= 17) {
+    const maxWindows = Math.min(compact.length - 16, 8);
+    for (let i = 0; i < maxWindows; i += 1) {
+      add(compact.slice(i, i + 17), "compact");
+    }
+  }
+
+  return out;
+}
+
+function scoreVinCandidate(candidate, sourceText = "") {
+  if (!candidate?.value || !/[A-Z]/.test(candidate.value) || !/\d/.test(candidate.value)) {
+    return -Infinity;
+  }
+
+  let score = 20;
+  if (candidate.mode === "labeled") score += 8;
+  else if (candidate.mode === "labeled-window") score += 4;
+  else if (candidate.mode === "window") score -= 2;
+  else if (candidate.mode === "compact") score -= 6;
+
+  if (isValidVinChecksum(candidate.value)) score += 24;
+  if (up(sourceText).includes("VIN")) score += 2;
+  if (new Set(candidate.value).size < 8) score -= 6;
+  return score;
+}
+
+function extractBestVinCandidate(text) {
+  const candidates = collectVinCandidates(text);
+  let best = "";
+  let bestScore = -Infinity;
+
+  for (const candidate of candidates) {
+    const score = scoreVinCandidate(candidate, text);
+    if (score > bestScore) {
+      best = candidate.value;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 24 ? best : "";
+}
+
+function extractVin(text) {
+  return extractBestVinCandidate(text);
 }
 
 function parseRoNumber(text) {
@@ -377,8 +487,7 @@ function parseRoNumber(text) {
 }
 
 function parseVin(text) {
-  const match = String(text || "").toUpperCase().match(/\b([A-HJ-NPR-Z0-9]{17})\b/);
-  return match ? match[1] : "";
+  return extractBestVinCandidate(text);
 }
 
 function parseStock(text) {
@@ -717,13 +826,19 @@ function combineOcrText(parts) {
   return normalizeText((parts || []).filter(Boolean).join("\n"));
 }
 
-async function runRoFieldOcr(imageBlob, headerText = "") {
-  const roText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.ro_number);
-  const vinText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.vin);
-  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.ro.stock);
-  const combined = combineOcrText([headerText, roText, vinText, stockText]);
+async function runRoFieldOcr(imageBlob, headerText = "", roTemplate = OCR_TEMPLATES.ro.photo) {
+  const roText = await recognizeCrop(imageBlob, roTemplate.ro_number);
+  const vinText = await recognizeCrop(imageBlob, roTemplate.vin);
+  let vinFallbackText = "";
+  let vin = parseVin(vinText);
+  if (!vin && roTemplate.vin_fallback) {
+    vinFallbackText = await recognizeCrop(imageBlob, roTemplate.vin_fallback);
+    vin = parseVin(vinFallbackText);
+  }
+  const stockText = await recognizeCrop(imageBlob, roTemplate.stock);
+  const combined = combineOcrText([headerText, roText, vinText, vinFallbackText, stockText]);
   const roNumber = parseRoNumber(roText) || parseRoNumber(combined);
-  const vin = parseVin(vinText) || parseVin(combined);
+  vin = vin || parseVin(combined);
   const stock = parseStock(stockText)
     || parseStock(combined)
     || extractRoStockCandidate(stockText).value
@@ -750,6 +865,29 @@ async function runRoFieldOcr(imageBlob, headerText = "") {
     work_suggestion: null,
     confidence,
   };
+}
+
+function scoreRoOcrResult(result) {
+  let score = Number(result?.confidence || 0);
+  if (result?.ro_suggestion) score += 0.08;
+  if (result?.vin_suggestion) score += 0.12;
+  if (result?.stock_suggestion) score += 0.06;
+  if (result?.vin_suggestion && isValidVinChecksum(result.vin_suggestion)) score += 0.1;
+  return score;
+}
+
+async function runBestRoFieldOcr(imageBlob, headerText = "") {
+  let bestResult = null;
+  let bestScore = -Infinity;
+  for (const roTemplate of Object.values(OCR_TEMPLATES.ro)) {
+    const result = await runRoFieldOcr(imageBlob, headerText, roTemplate);
+    const score = scoreRoOcrResult(result);
+    if (!bestResult || score > bestScore) {
+      bestResult = result;
+      bestScore = score;
+    }
+  }
+  return bestResult || await runRoFieldOcr(imageBlob, headerText, OCR_TEMPLATES.ro.photo);
 }
 
 async function runGetReadyFieldOcr(imageBlob, headerText = "") {
@@ -786,13 +924,13 @@ async function runOcrOnImage(imageUrlOrBlob) {
   const sheetType = detectSheetType(headerText);
 
   if (sheetType === "ro") {
-    return finalizeOcrResult(await runRoFieldOcr(imageBlob, headerText), quality);
+    return finalizeOcrResult(await runBestRoFieldOcr(imageBlob, headerText), quality);
   }
   if (sheetType === "get_ready") {
     return finalizeOcrResult(await runGetReadyFieldOcr(imageBlob, headerText), quality);
   }
 
-  const roCandidate = await runRoFieldOcr(imageBlob, headerText);
+  const roCandidate = await runBestRoFieldOcr(imageBlob, headerText);
   if (roCandidate.stock_suggestion || roCandidate.vin_suggestion) {
     return finalizeOcrResult({
       ...roCandidate,

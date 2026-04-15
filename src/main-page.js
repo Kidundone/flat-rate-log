@@ -336,11 +336,16 @@ async function applyEntryOcrSuggestion(entry, action) {
 }
 
 function buildEntryMetaHtml(entry) {
-  const facts = getEntryRecordFacts(entry);
+  const dayKey = entry?.dayKey || dayKeyFromISO(entry?.createdAt) || entry?.work_date || "-";
+  const vin8 = String(entry?.vin8 || "").trim();
+  const meta = [];
+
+  if (vin8) meta.push(`VIN8: <span class="mono">${escapeHtml(vin8)}</span>`);
+  if (entryHasPhoto(entry)) meta.push("Photo attached");
+
   return `
-    <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
-    <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
-    <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
+    <div class="small">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""}</div>
+    <div class="small">Created: ${escapeHtml(formatWhen(entry?.createdAt || entry?.created_at || ""))} • Updated: ${escapeHtml(formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""))}</div>
   `;
 }
 
@@ -432,10 +437,6 @@ async function handleSave(ev) {
     const typeEl = document.getElementById("typeText");
     const hoursEl = document.getElementById("hours");
     const rateEl = document.querySelector('input[name="rate"]');
-    const photoEl = document.getElementById("proofPhoto")
-      || document.getElementById("photoPicker")
-      || document.getElementById("photoCamera")
-      || document.getElementById("photoFile");
     const notesEl = document.querySelector('textarea[name="notes"]');
 
     const ref = (refEl?.value || "").trim();
@@ -448,7 +449,6 @@ async function handleSave(ev) {
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-    const photoFile = getSelectedPhotoFile() || photoEl?.files?.[0] || null;
     const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
     const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
     const dayKey = (isEditing && baseEntry.dayKey) ? baseEntry.dayKey : dayKeyFromISO(createdAt);
@@ -465,7 +465,7 @@ async function handleSave(ev) {
       refType: currentRefType,
       ref,
       ro: ref,
-      dealer: baseEntry.dealer || "UNKNOWN",
+      dealer: baseEntry.dealer || null,
       vin8,
       type: typeName,
       typeText: typeName,
@@ -480,9 +480,8 @@ async function handleSave(ev) {
     const refreshEntries = async () => {
       await safeLoadEntries();
     };
-    const savedEntry = await saveEntry(entry);
+    await saveEntry(entry);
     await refreshEntries();
-    queueOcrForSavedEntry(savedEntry, refreshEntries).catch((err) => console.error("OCR queue failed", err));
     setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");
@@ -507,7 +506,9 @@ async function renderHistory(){
   const range = $("histRange")?.value || "week";
   const group = $("histGroup")?.value || "none";
 
-  const all = sortEntriesByRo(filterEntriesByEmp(await getAll(STORES.entries), empId));
+  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
+    .slice()
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   let slice = all;
 
@@ -523,6 +524,7 @@ async function renderHistory(){
   }
 
   slice = slice.filter(e => matchSearch(e, q));
+  slice.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   const totals = computeTotals(slice);
   const meta = $("historyMeta");
@@ -537,15 +539,15 @@ async function renderHistory(){
     return;
   }
 
-  if (group === "day" || group === "dealer") {
-    const groups = group === "dealer" ? groupByDealer(slice) : groupByDay(slice);
+  if (group === "day") {
+    const groups = groupByDay(slice);
     for (const g of groups) {
       const t = computeTotals(g.entries);
       const header = document.createElement("div");
       header.className = "item";
       header.innerHTML = `
         <div class="itemTop">
-          <div class="mono">${group === "dealer" ? escapeHtml(g.dealer) : g.dayKey}</div>
+          <div class="mono">${g.dayKey}</div>
           <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
         </div>
       `;
@@ -954,8 +956,8 @@ function rangeSubLabel(mode){
 
 function toCSV(entries, includeEmp = false){
   const header = includeEmp
-    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","roNumber","stock","vin","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrRoSuggestion","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"]
-    : ["createdAt","updatedAt","dayKey","refType","ref","roNumber","stock","vin","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath","ocrStatus","ocrError","ocrQualityWarning","ocrRoSuggestion","ocrStockSuggestion","ocrVinSuggestion","ocrVin8Suggestion"];
+    ? ["empId","createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath"]
+    : ["createdAt","updatedAt","dayKey","refType","ref","vin8","type","hours","rate","earnings","notes","hasPhoto","photoPath"];
 
   const escape = (v) => {
     const s = String(v ?? "");
@@ -966,8 +968,8 @@ function toCSV(entries, includeEmp = false){
   const rows = (entries || []).map(e => {
     const hasPhoto = e.photo_path || e.photoDataUrl ? "yes" : "no";
     const row = includeEmp
-      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.ro_number || e.ro || "", e.stock || "", e.vin || "", e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_ro_suggestion || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""]
-      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.ro_number || e.ro || "", e.stock || "", e.vin || "", e.vin8, e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || "", e.ocr_status || "", e.ocr_error || "", e.ocr_quality_warning || "", e.ocr_ro_suggestion || "", e.ocr_stock_suggestion || "", e.ocr_vin_suggestion || "", e.ocr_vin8_suggestion || ""];
+      ? [e.empId, e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.vin8 || "", e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || ""]
+      : [e.createdAt, e.updatedAt || e.updated_at || e.createdAt, e.dayKey, e.refType || "RO", e.ref || e.ro || e.stock, e.vin8 || "", e.type, e.hours, e.rate, e.earnings, e.notes, hasPhoto, e.photo_path || ""];
     return row.map(escape).join(",");
   });
 
@@ -1029,22 +1031,13 @@ function renderList(entries, mode){
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = (searchInput?.value || "").trim().toLowerCase();
 
-  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
   const visible = applySearch(ranged, q).slice();
-  if (!isWeekRange) {
-    visible.sort((a, b) => {
-      const brandA = String(a.detected_brand || a.dealer || "Unknown");
-      const brandB = String(b.detected_brand || b.dealer || "Unknown");
-      const byBrand = brandA.localeCompare(brandB, undefined, { sensitivity: "base" });
-      if (byBrand !== 0) return byBrand;
-
-      const aTs = Date.parse(a.work_date || a.createdAt || "") || 0;
-      const bTs = Date.parse(b.work_date || b.createdAt || "") || 0;
-      return bTs - aTs;
-    });
-  } else {
-    visible.sort((a, b) => (b.dayKey || "").localeCompare(a.dayKey || ""));
-  }
+  const isWeekRange = (window.__RANGE_MODE__ || rangeMode) === "week";
+  visible.sort((a, b) => {
+    const aTs = Date.parse(a.work_date || a.createdAt || "") || 0;
+    const bTs = Date.parse(b.work_date || b.createdAt || "") || 0;
+    return bTs - aTs;
+  });
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
@@ -1061,7 +1054,6 @@ function renderList(entries, mode){
     const refDisplay = `${refLabel}: ${refVal}`;
     const typeLabel = escapeHtml(e.type || e.typeText || "-");
     const entryId = escapeHtml(String(e.id ?? ""));
-    const { actions: ocrActions, html: ocrSuggestionBlock } = buildOcrSuggestionStripHtml(e);
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
     const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
@@ -1080,7 +1072,6 @@ function renderList(entries, mode){
           </div>
           ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-          ${ocrSuggestionBlock}
           <div style="margin-top:8px;">${actionButtons}</div>
         </div>
         <div class="right">
@@ -1100,23 +1091,6 @@ function renderList(entries, mode){
     if (entryHasPhoto(e)) {
       const btn = row.querySelector('button[data-action="view-photo"]');
       if (btn) btn.addEventListener("click", () => openPhoto(e));
-    }
-    const ocrBtns = Array.from(row.querySelectorAll("button[data-ocr-action]"));
-    for (const btn of ocrBtns) {
-      btn.addEventListener("click", async () => {
-        const kind = btn.getAttribute("data-ocr-action") || "";
-        const action = ocrActions.find((item) => item.kind === kind);
-        if (!action) return;
-
-        ocrBtns.forEach((el) => { el.disabled = true; });
-        try {
-          await applyEntryOcrSuggestion(e, action);
-        } catch (err) {
-          console.error("Apply OCR suggestion failed", e?.id, kind, err);
-          showToast("Could not apply OCR suggestion");
-          ocrBtns.forEach((el) => { el.disabled = false; });
-        }
-      });
     }
     return row;
   };
@@ -1148,23 +1122,7 @@ function renderList(entries, mode){
     return;
   }
 
-  let currentBrand = null;
   for (const e of capped) {
-    const brand = String(e.detected_brand || e.dealer || "Unknown");
-    if (brand !== currentBrand) {
-      currentBrand = brand;
-
-      const header = document.createElement("div");
-      header.style.padding = "12px 10px";
-      header.style.fontWeight = "600";
-      header.style.fontSize = "14px";
-      header.style.background = "#111";
-      header.style.borderTop = "1px solid #333";
-      header.style.borderBottom = "1px solid #333";
-      header.style.marginTop = "12px";
-      header.textContent = currentBrand.toUpperCase();
-      list.appendChild(header);
-    }
     list.appendChild(buildEntry(e));
   }
 }
@@ -1284,7 +1242,6 @@ async function refreshUI(entriesOverride){
 
   const entries = filterEntriesByEmp(allEntries, empId);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  populateDealerFilter(entries);
 
   window.__RANGE_ENTRIES__ = entries;
 
@@ -1330,8 +1287,7 @@ async function refreshUI(entriesOverride){
 
   const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
   const q = searchInput?.value || "";
-  const dealerFiltered = applyDealerFilter(shownEntries);
-  const searched = applySearch(dealerFiltered, q);
+  const searched = applySearch(shownEntries, q);
 
   window.__RANGE_FILTERED__ = searched; // replace for list + totals
   let totals = computeTotals(searched);
@@ -1397,10 +1353,8 @@ async function refreshUI(entriesOverride){
   const status = document.getElementById("filterStatus");
   if (status) {
     const rangeLabel = title;
-    const dealerVal = document.getElementById("dealerFilter")?.value || "all";
-    const dealerTxt = dealerVal !== "all" ? ` • Dealer: ${dealerVal}` : "";
     const qtxt = q.trim() ? ` • Search: "${q.trim()}"` : "";
-    status.textContent = `Showing: ${rangeLabel}${dealerTxt}${qtxt} • ${searched.length} entries`;
+    status.textContent = `Showing: ${rangeLabel}${qtxt} • ${searched.length} entries`;
   }
 
   const hasWeekHeader =

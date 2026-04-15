@@ -66,25 +66,7 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
 
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
-  const dealerGuess = await classifyDealerUniversal({
-    ro: roNumber || null,
-    stock: null,
-    vin: null,
-  });
-  const resolvedDealer = dealerGuess && dealerGuess !== "Unknown" ? dealerGuess : null;
-
-  if (resolvedDealer) {
-    try {
-      await updateWorkLogWithFallback(sb, logId, {
-        dealer: resolvedDealer,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (dealerErr) {
-      console.error("Dealer seed update failed", dealerErr);
-    }
-  }
-
-  return { path, dealer: resolvedDealer };
+  return { path, dealer: null };
 }
 
 async function runOCR(photoPath) {

@@ -83,10 +83,8 @@ async function smokeMainPage() {
       buildTag: window.__FR?.buildTag || null,
       activeDataPath: window.__FR?.activeDataPath || null,
       hasSupabaseClient: !!window.__FR?.sb,
-      hasTesseract: !!window.Tesseract,
       hasSaveBtn: !!document.getElementById('saveBtn'),
       hasEmpId: !!document.getElementById('empId'),
-      hasQuickPhotoButton: !!document.getElementById('btnPickPhoto'),
       hasDetailsToggle: !!document.getElementById('toggleDetailsBtn')
     };
   `);
@@ -121,18 +119,16 @@ async function smokeMainPage() {
 
 async function smokeMorePage() {
   await navigate(`${baseUrl}/more.html`);
-  await waitFor("return document.readyState === 'complete' && window.__PAGE__ === 'more' && !!document.getElementById('processPhotosBtn');");
+  await waitFor("return document.readyState === 'complete' && window.__PAGE__ === 'more' && !!document.getElementById('missingWorkSummary');");
 
   return await execute(`
     return {
       page: window.__PAGE__,
       buildTag: window.__FR?.buildTag || null,
       activeDataPath: window.__FR?.activeDataPath || null,
-      hasProcessPhotosBtn: !!document.getElementById('processPhotosBtn'),
-      hasLoadPhotosBtn: !!document.getElementById('loadPhotosBtn'),
-      hasGalleryStatus: !!document.getElementById('galleryStatus'),
-      hasTesseract: !!window.Tesseract,
-      hasReviewFocus: !!document.getElementById('reviewFocus'),
+      hasPayStubWeekEnding: !!document.getElementById('payStubWeekEnding'),
+      hasSavePayStubBtn: !!document.getElementById('savePayStubBtn'),
+      hasRepairBtn: !!document.getElementById('repairBtn'),
       hasMissingWorkSummary: !!document.getElementById('missingWorkSummary'),
       hasMissingWorkList: !!document.getElementById('missingWorkList')
     };

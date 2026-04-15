@@ -115,7 +115,6 @@ async function sbListRows(empId) {
   if (!empId) return [];
   const uid = await requireUserId(sb());
   if (!uid) return [];
-  const dealerFilter = document.getElementById("dealerFilter")?.value;
 
   let q = sb()
     .from("work_logs")
@@ -123,10 +122,6 @@ async function sbListRows(empId) {
     .eq("user_id", uid)
     .eq("employee_number", empId)
     .or("is_deleted.is.null,is_deleted.eq.false");
-
-  if (dealerFilter && dealerFilter !== "all") {
-    q = q.eq("dealer", dealerFilter);
-  }
 
   q = q
     .order("work_date", { ascending: false })
@@ -208,7 +203,6 @@ async function saveEditedLog(logId, patch) {
     });
     const newPath = uploaded?.path || null;
     patch.photo_path = newPath;
-    patch.dealer = uploaded?.dealer || patch.dealer || "UNKNOWN";
   }
 
   const runUpdate = (body) => sb()
@@ -218,28 +212,8 @@ async function saveEditedLog(logId, patch) {
     .select("id, photo_path")
     .maybeSingle();
 
-  let { data, error } = await runUpdate(patch);
-  if (error && Object.prototype.hasOwnProperty.call(patch, "dealer") && isDealerColumnMissingError(error)) {
-    const { dealer: _dealer, ...patchWithoutDealer } = patch;
-    ({ data, error } = await runUpdate(patchWithoutDealer));
-  }
-
+  const { data, error } = await runUpdate(patch);
   if (error) throw error;
-
-  if (!file) {
-    try {
-      const resolvedDealer = await resolveDealerForLog({
-        ro_number: patch.ro_number || null,
-        photo_path: data?.photo_path || null,
-      });
-      await updateWorkLogWithFallback(sb(), logId, {
-        dealer: resolvedDealer,
-        updated_at: new Date().toISOString(),
-      });
-    } catch (resolveErr) {
-      console.error("Dealer resolve failed", resolveErr);
-    }
-  }
 
   window.SELECTED_PHOTO_FILE = null;
   SELECTED_PHOTO_FILE = null;
@@ -409,34 +383,13 @@ async function apiCreateLog(payload, sourceEntry = null) {
   const empId = String(document.getElementById("empId").value || "").trim();
   if (!empId) throw new Error("Employee # required");
 
-  const classification = await classifyEntryUniversal({
-    ro: payload.ro_number || null,
-    stock: sourceEntry?.stock || sourceEntry?.ref || null,
-    vin: payload.vin8 || sourceEntry?.vin || sourceEntry?.vin8 || null,
-  });
-
-  payload.brand = classification.brand;
-  payload.store = classification.store;
-  payload.store_code = classification.store;
-  payload.campus = classification.campus;
-  if (sourceEntry && typeof sourceEntry === "object") {
-    sourceEntry.brand = classification.brand;
-    sourceEntry.store = classification.store;
-    sourceEntry.campus = classification.campus;
-  }
-
-  const dealer = "Processing";
-
   const insertRow = {
     user_id: uid,
     employee_number: empId,
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
-    dealer,
-    brand: payload.brand || null,
-    store_code: payload.store_code || null,
-    campus: payload.campus || null,
+    dealer: payload.dealer || null,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -476,13 +429,11 @@ async function apiUpdateLog(id, payload) {
   if (!empId) return null;
   const uid = await requireUserId(sb());
   if (!uid) return null;
-  const dealer = await resolveDealerForLog(payload);
 
   const updateFields = {
     work_date: payload.work_date,
     category: payload.category || "work",
     ro_number: payload.ro_number || null,
-    dealer,
     description: payload.description || null,
     flat_hours: Number(payload.flat_hours || 0),
     cash_amount: Number(payload.cash_amount || 0),
@@ -500,18 +451,6 @@ async function apiUpdateLog(id, payload) {
     .eq("employee_number", empId)
     .select("*")
     .limit(1);
-
-  if (e1 && isDealerColumnMissingError(e1)) {
-    const { dealer: _dealer, ...updateWithoutDealer } = updateFields;
-    ({ data: updated, error: e1 } = await sb()
-      .from("work_logs")
-      .update(updateWithoutDealer)
-      .eq("id", id)
-      .eq("user_id", uid)
-      .eq("employee_number", empId)
-      .select("*")
-      .limit(1));
-  }
 
   if (e1) throw e1;
   const updatedRow = updated?.[0] ?? null;
@@ -622,13 +561,12 @@ function syncStateEntries(entries) {
 
 function normalizeEntryForApi(entry) {
   const roNumber = entry.ro || entry.ro_number || entry.ref || null;
-  const dealer = entry.dealer || "UNKNOWN";
   // Map the UI entry object into the active Supabase work_logs schema.
   return {
     work_date: entry.dayKey || entry.date || entry.work_date || (entry.createdAt ? dayKeyFromISO(entry.createdAt) : null), // MUST be "YYYY-MM-DD"
     category: entry.typeText || entry.type || entry.category || "work",
     ro_number: roNumber,
-    dealer,
+    dealer: entry.dealer || null,
     description: entry.notes || entry.desc || entry.description || null,
     flat_hours: Number(entry.hours || entry.flat || entry.flat_hours || 0),
     cash_amount: Number(entry.earnings || entry.cash || entry.cash_amount || 0),
@@ -853,22 +791,6 @@ async function backfillDayKeysForEmpCursor(empId, { batch = 150 } = {}) {
 async function renderLogs(logs) {
   const entries = Array.isArray(logs) ? normalizeEntries(logs) : [];
 
-  entries.forEach(entry => {
-    entry.detected_brand = entry.brand;
-    entry.detected_type = null;
-  });
-
-  // Group by detected brand, then newest first within each brand.
-  entries.sort((a, b) => {
-    const brandA = a.detected_brand || "";
-    const brandB = b.detected_brand || "";
-
-    if (brandA < brandB) return -1;
-    if (brandA > brandB) return 1;
-
-    return new Date(b.work_date) - new Date(a.work_date);
-  });
-
   await refreshUI(entries);
 }
 
@@ -891,7 +813,6 @@ async function loadEntries() {
     console.warn("No UID - skipping loadEntries");
     return [];
   }
-  const dealerFilter = document.getElementById("dealerFilter")?.value;
 
   let query = sb()
     .from("work_logs")
@@ -899,10 +820,6 @@ async function loadEntries() {
     .eq("user_id", uid)
     .eq("employee_number", empId)
     .or("is_deleted.is.null,is_deleted.eq.false");
-
-  if (dealerFilter && dealerFilter !== "all") {
-    query = query.eq("dealer", dealerFilter);
-  }
 
   const res = await query
     .order("work_date", { ascending: false })

@@ -104,7 +104,7 @@
         <div class="fr26TopRow">
           <div>
             <div class="fr26GroupHeader" style="margin:0;">Quick Entry</div>
-            <div class="fr26Sub">Default flow: hours, work done, photo, save. Add RO, VIN, and notes later if you need them.</div>
+            <div class="fr26Sub">Default flow: hours, work done, save. Add reference details later if you need them.</div>
           </div>
           <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
         </div>
@@ -139,31 +139,13 @@
           <datalist id="typeList"></datalist>
         </div>
         <div class="fr26Hint">Just type it. New work types auto-save and show up next time.</div>
-
-        <div class="fr26Row">
-          <label class="fr26Label">Proof Photo</label>
-          <button id="btnPickPhoto" class="btn" type="button">Pick Photo</button>
-          <input id="photoPicker" type="file" style="display:none">
-
-          <button id="btnTakePhoto" class="btn" type="button">Take Photo</button>
-          <input id="photoCamera" type="file" style="display:none">
-
-          <button id="btnPickFile" class="btn" type="button">Pick File</button>
-          <input id="photoFile" type="file" style="display:none">
-
-          <div id="photoPickedLabel">No photo</div>
-        </div>
-        <div id="photoUploadTarget" class="fr26Hint mono" style="margin-top:6px;">
-          Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
-        </div>
-        <div class="fr26Hint">Photo is optional, but it makes missing-work review defensible later.</div>
       </section>
 
       <!-- Details panel (keeps same id) -->
       <section id="detailsPanel" class="fr26Details" style="display:none;">
         <div class="fr26Group">
           <div class="fr26GroupHeader">Details</div>
-          <div class="fr26Sub">Optional fields. Manual values always win over OCR suggestions until you tap Apply.</div>
+          <div class="fr26Sub">Optional fields for reference tracking and notes.</div>
 
           <div class="fr26TopRow" style="margin-top:6px;">
             <div class="fr26Sub">Reference type</div>
@@ -259,14 +241,9 @@
 
     <div class="card card--tight" style="margin-top:12px">
       <div class="row" style="gap:10px; align-items:center">
-        <input id="searchInput" placeholder="Search RO, VIN, type, notes..." 
+        <input id="searchInput" placeholder="Search reference, VIN, type, notes..." 
           style="flex:1;min-width:220px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
         <button class="btn" type="button" id="clearSearchBtn">Clear</button>
-      </div>
-      <div class="row" style="gap:10px; align-items:center; margin-top:8px;">
-        <select id="dealerFilter" class="btn" style="min-width:200px;">
-          <option value="all">All Dealers</option>
-        </select>
       </div>
       <div class="muted" id="filterStatus" style="margin-top:8px"></div>
     </div>
@@ -300,7 +277,6 @@
       <select id="histGroup" style="width:160px;">
         <option value="none">No Group</option>
         <option value="day">Group by Day</option>
-        <option value="dealer">Group by Dealer</option>
       </select>
     </div>
 
@@ -319,15 +295,14 @@
     </div>
   </div>
 
-  <script>
+<script>
     window.__SUPABASE_CONFIG__ = {
       url: "https://lfnydhidbwfyfjafazdy.supabase.co",
     anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
   };
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js" defer></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.3380024df4.js" defer></script>
+<script src="/flat-rate-log/app.2c4d3bbaaa.js" defer></script>
 </body>
 </html>

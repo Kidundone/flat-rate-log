@@ -45,12 +45,6 @@ async function runOnce() {
     bootAuth().catch(console.error);
   }
 
-  try {
-    USER_PREFIX_RULES = await loadUserPrefixRules();
-  } catch (e) {
-    USER_PREFIX_RULES = [];
-  }
-
   await ensureDefaultTypes();
 
   // ================= MAIN PAGE ONLY =================
@@ -63,7 +57,6 @@ async function runOnce() {
     await renderTypesListInMore();
 
     document.getElementById("filterSelect")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
-    document.getElementById("dealerFilter")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
     document.getElementById("refreshBtn")?.addEventListener("click", () => refreshUI(CURRENT_ENTRIES));
 
     const sIn = document.getElementById("searchInput");
@@ -184,6 +177,9 @@ async function runOnce() {
 
   // ================= MORE PAGE ONLY =================
   if (window.__PAGE__ === "more") {
+    const hasReviewUi = !!document.getElementById("reviewList");
+    const hasGalleryUi = !!document.getElementById("photoGallery");
+
     const wrapMoreClick = (id, handler) => {
       const el = document.getElementById(id);
       if (!el || typeof handler !== "function") return;
@@ -201,23 +197,18 @@ async function runOnce() {
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
     wrapMoreClick("savePayStubBtn", savePayStubEntry);
     wrapMoreClick("wipeBtn", wipeLocalOnly);
-    document.getElementById("refreshBtn")?.addEventListener("click", () => {
-      if (!_photosRequested) {
-        setGalleryStatus("Tap Load Photos first.");
-        return;
-      }
-      renderPhotoGrid(true, { updateStatus: true });
-    });
 
     document.getElementById("wipeAllBtn")?.addEventListener("click", wipeAllData);
-    document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
-    document.getElementById("reviewRange")?.addEventListener("change", renderReview);
-    document.getElementById("reviewFocus")?.addEventListener("change", renderReview);
-    document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
-    document.getElementById("reviewSearch")?.addEventListener("input", () => {
-      clearTimeout(window.__REVIEW_T__);
-      window.__REVIEW_T__ = setTimeout(renderReview, 150);
-    });
+    if (hasReviewUi) {
+      document.getElementById("reviewRefreshBtn")?.addEventListener("click", renderReview);
+      document.getElementById("reviewRange")?.addEventListener("change", renderReview);
+      document.getElementById("reviewFocus")?.addEventListener("change", renderReview);
+      document.getElementById("reviewGroup")?.addEventListener("change", renderReview);
+      document.getElementById("reviewSearch")?.addEventListener("input", () => {
+        clearTimeout(window.__REVIEW_T__);
+        window.__REVIEW_T__ = setTimeout(renderReview, 150);
+      });
+    }
 
     document.getElementById("repairBtn")?.addEventListener("click", async () => {
       const empId = getEmpId();
@@ -234,10 +225,14 @@ async function runOnce() {
     });
 
     await safeLoadEntries();
-    initPhotosUI();
-    wireOcrReprocessButton?.();
+    if (hasGalleryUi) {
+      initPhotosUI();
+      wireOcrReprocessButton?.();
+    }
     initPayStubUI();
-    await renderReview();
+    if (hasReviewUi) {
+      await renderReview();
+    }
   }
 }
 

@@ -22,12 +22,12 @@
 
     <section class="card">
       <div class="h">Employee</div>
-      <div class="muted">Required to load your saved entries/photos on this device.</div>
+      <div class="muted">Required to load your saved entries on this device.</div>
       <div class="row" style="margin-top:10px">
         <input
           id="empId"
           inputmode="numeric"
-          placeholder="Employee # (required for export/photos)"
+          placeholder="Employee # (required for export)"
           style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc"
         />
       </div>
@@ -83,61 +83,6 @@
         <button class="btn" type="button" id="exportAuditBtn">Audit Report (PDF)</button>
         <button class="btn" type="button" id="repairBtn">Repair / Reindex Data</button>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" type="button" id="refreshBtn">Refresh Totals</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="h">Needs Review</div>
-      <div class="muted">Filter entries with proof, OCR failures, unapplied suggestions, and manual-vs-OCR mismatches.</div>
-
-      <div class="row" style="margin-top:10px">
-        <select id="reviewRange" class="btn" style="flex:1;min-width:160px">
-          <option value="week">This Week</option>
-          <option value="lastweek">Last Week</option>
-          <option value="month">This Month</option>
-          <option value="all">All Time</option>
-        </select>
-
-        <select id="reviewFocus" class="btn" style="flex:1;min-width:180px">
-          <option value="needs-review">Needs Review</option>
-          <option value="all">All Entries</option>
-          <option value="with-photo">Photo Attached</option>
-          <option value="ocr-pending">OCR Waiting</option>
-          <option value="ocr-suggestions">Suggestions Ready</option>
-          <option value="ocr-failed">OCR Failed</option>
-          <option value="ocr-mismatch">OCR Mismatch</option>
-        </select>
-
-        <select id="reviewGroup" class="btn" style="flex:1;min-width:160px">
-          <option value="day">Group by Day</option>
-          <option value="dealer">Group by Dealer</option>
-          <option value="none">No Group</option>
-        </select>
-      </div>
-
-      <div class="row" style="margin-top:10px">
-        <input id="reviewSearch" placeholder="Search RO/Stock, VIN8, Type, Notes…" style="flex:1;min-width:200px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
-        <button class="btn" type="button" id="reviewRefreshBtn">Refresh</button>
-      </div>
-
-      <div class="muted" id="reviewMeta" style="margin-top:10px"></div>
-      <div id="reviewList" class="list" style="margin-top:10px"></div>
-    </section>
-
-    <section class="card">
-      <div class="h">Saved Photos (Entries)</div>
-      <div class="muted">Tap "Load Photos" to avoid iPhone crashes.</div>
-
-      <div class="row" style="margin-top:10px">
-        <button class="btn primary" type="button" id="loadPhotosBtn">Load Photos</button>
-        <button class="btn" type="button" id="processPhotosBtn">Process OCR</button>
-        <button class="btn" type="button" id="clearGalleryBtn">Clear</button>
-        <div class="muted" id="galleryStatus" style="align-self:center"></div>
-      </div>
-
-      <div id="photoGallery" class="gallery" style="margin-top:10px"></div>
     </section>
 
     <div id="photoViewer" class="modalShell" style="display:none;">
@@ -179,13 +124,12 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js" defer></script>
   <script>
     window.__SUPABASE_CONFIG__ = {
       url: "https://lfnydhidbwfyfjafazdy.supabase.co",
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.3380024df4.js" defer></script>
+  <script src="/flat-rate-log/app.2c4d3bbaaa.js" defer></script>
 </body>
 </html>
