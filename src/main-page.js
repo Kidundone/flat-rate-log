@@ -1330,6 +1330,8 @@ async function refreshUI(entriesOverride){
   setText("rangeCount", String(totals.count));
   setText("rangeAvgHrs", r1(totals.avgHrs));
   setText("rangeSub", rangeSubLabel(mode));
+  setText("statsSummaryHours", `${r1(totals.hours)} hrs`);
+  setText("statsSummaryDollars", formatMoney(totals.dollars));
 
   // Today
   const today = computeToday(entries, dayKey);

@@ -20,71 +20,6 @@
 <div id="dataWarning" class="warningBanner" style="display:none;max-width:780px;margin:10px auto 0;"></div>
 
 <main>
-  <section class="card">
-    <div class="row u-row u-wrap" style="justify-content:space-between;">
-      <div class="mono" style="font-size:13px; opacity:.85;" id="rangeTitle">Today</div>
-
-      <div class="seg rangeTabs" role="tablist" aria-label="Range">
-        <button id="rangeDayBtn" type="button" class="segBtn active">Day</button>
-        <button id="rangeWeekBtn" type="button" class="segBtn">Week</button>
-        <button id="rangeMonthBtn" type="button" class="segBtn">Month</button>
-        <button id="rangeAllBtn" type="button" class="segBtn">All</button>
-      </div>
-    </div>
-
-    <div id="weekWhichRow" class="seg" style="margin-top:10px; display:none;">
-      <button id="weekThisBtn" type="button" class="segBtn active">This Week</button>
-      <button id="weekLastBtn" type="button" class="segBtn">Last Week</button>
-    </div>
-
-    <div class="pillRow" style="margin-top:10px;">
-      <div class="pill">
-        <div class="k">Hours</div>
-        <div class="v" id="rangeHours">0.0</div>
-        <div class="muted" id="rangeSub">—</div>
-      </div>
-      <div class="pill">
-        <div class="k">$</div>
-        <div class="v" id="rangeDollars">$0.00</div>
-      </div>
-      <div class="pill">
-        <div class="k">Entries</div>
-        <div class="v" id="rangeCount">0</div>
-      </div>
-      <div class="pill">
-        <div class="k">Avg hrs/entry</div>
-        <div class="v" id="rangeAvgHrs">0.0</div>
-      </div>
-    </div>
-  </section>
-
-  <section id="weekBreakdownCard" class="card" style="display:none;">
-    <div class="muted">This Week Breakdown (tap a day to filter the list)</div>
-    <div id="weekBreakdownList" class="list" style="margin-top:12px;"></div>
-  </section>
-
-  <div id="legacyTotals">
-    <section class="card">
-      <div class="summary">
-        <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
-        <div class="pill"><div class="k">Today $</div><div class="v" id="todayDollars">$0.00</div></div>
-        <div class="pill"><div class="k">Entries Today</div><div class="v" id="todayCount">0</div></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="summary">
-        <div class="pill"><div class="k">This Week Hours</div><div class="v" id="weekHours">0</div><div class="muted" id="weekRange"></div></div>
-        <div class="pill"><div class="k">This Week $</div><div class="v" id="weekDollars">$0.00</div></div>
-        <div class="pill">
-          <div class="k">Week Difference</div>
-          <div class="v" id="weekDelta">0</div>
-          <div id="weekDeltaHint" class="muted small"></div>
-        </div>
-      </div>
-    </section>
-  </div>
-
   <section class="card fr26">
     <form id="logForm" class="fr26Form">
 
@@ -216,13 +151,96 @@
 
       <!-- Sticky action bar -->
       <div class="fr26ActionBar">
-        <button id="clearBtn" class="fr26BtnGhost" type="button">Clear</button>
-        <button id="cancelEditBtn" class="fr26BtnGhost" type="button" style="display:none;">Cancel Edit</button>
         <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save</button>
+        <div class="fr26SecondaryActions">
+          <button id="clearBtn" class="fr26BtnGhost" type="button">Clear</button>
+          <button id="cancelEditBtn" class="fr26BtnGhost" type="button" style="display:none;">Cancel Edit</button>
+        </div>
       </div>
 
     </form>
   </section>
+
+  <details id="statsPanel" class="card statsCard">
+    <summary class="statsSummary">
+      <div>
+        <div class="mono">Show Stats</div>
+        <div class="small">Range totals and breakdown</div>
+      </div>
+      <div class="statsSummaryMeta">
+        <span id="statsSummaryHours">0.0 hrs</span>
+        <span id="statsSummaryDollars">$0.00</span>
+      </div>
+    </summary>
+
+    <div class="statsPanelBody">
+      <section class="card">
+        <div class="row u-row u-wrap" style="justify-content:space-between;">
+          <div class="mono" style="font-size:13px; opacity:.85;" id="rangeTitle">Today</div>
+
+          <div class="seg rangeTabs" role="tablist" aria-label="Range">
+            <button id="rangeDayBtn" type="button" class="segBtn active">Day</button>
+            <button id="rangeWeekBtn" type="button" class="segBtn">Week</button>
+            <button id="rangeMonthBtn" type="button" class="segBtn">Month</button>
+            <button id="rangeAllBtn" type="button" class="segBtn">All</button>
+          </div>
+        </div>
+
+        <div id="weekWhichRow" class="seg" style="margin-top:10px; display:none;">
+          <button id="weekThisBtn" type="button" class="segBtn active">This Week</button>
+          <button id="weekLastBtn" type="button" class="segBtn">Last Week</button>
+        </div>
+
+        <div class="pillRow" style="margin-top:10px;">
+          <div class="pill">
+            <div class="k">Hours</div>
+            <div class="v" id="rangeHours">0.0</div>
+            <div class="muted" id="rangeSub">—</div>
+          </div>
+          <div class="pill">
+            <div class="k">$</div>
+            <div class="v" id="rangeDollars">$0.00</div>
+          </div>
+          <div class="pill">
+            <div class="k">Entries</div>
+            <div class="v" id="rangeCount">0</div>
+          </div>
+          <div class="pill">
+            <div class="k">Avg hrs/entry</div>
+            <div class="v" id="rangeAvgHrs">0.0</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="weekBreakdownCard" class="card" style="display:none;">
+        <div class="muted">This Week Breakdown (tap a day to filter the list)</div>
+        <div id="weekBreakdownList" class="list" style="margin-top:12px;"></div>
+      </section>
+
+      <div id="legacyTotals">
+        <section class="card">
+          <div class="summary">
+            <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
+            <div class="pill"><div class="k">Today $</div><div class="v" id="todayDollars">$0.00</div></div>
+            <div class="pill"><div class="k">Entries Today</div><div class="v" id="todayCount">0</div></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="summary">
+            <div class="pill"><div class="k">This Week Hours</div><div class="v" id="weekHours">0</div><div class="muted" id="weekRange"></div></div>
+            <div class="pill"><div class="k">This Week $</div><div class="v" id="weekDollars">$0.00</div></div>
+            <div class="pill">
+              <div class="k">Week Difference</div>
+              <div class="v" id="weekDelta">0</div>
+              <div id="weekDeltaHint" class="muted small"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </details>
+
   <div id="toast" class="toast" aria-live="polite"></div>
 
   <div id="photoModal" class="modalShell">
@@ -321,6 +339,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.ea84e36e13.js" defer></script>
+<script src="/flat-rate-log/app.f77fbfb63a.js" defer></script>
 </body>
 </html>

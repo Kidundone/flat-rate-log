@@ -194,7 +194,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 /* ---------- FR26 form (single source of truth) ---------- */
 .fr26{ padding: 0; overflow:hidden; }
-.fr26Form{ position: relative; padding-bottom: 132px; }
+.fr26Form{ position: relative; padding-bottom: 182px; }
 
 .fr26Group{
   border: 1px solid var(--stroke);
@@ -272,7 +272,6 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   width: min(calc(100vw - 24px), 848px);
   z-index: 30;
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 12px;
   border-radius: var(--r-lg);
@@ -289,10 +288,19 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   cursor:pointer;
 }
 
+.fr26SecondaryActions{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .fr26BtnPrimary{
+  width:100%;
+  min-height: 56px;
   border: 1px solid rgba(29,78,216,.55);
   background: linear-gradient(180deg, rgba(29,78,216,1), rgba(29,78,216,.75));
   color: rgba(255,255,255,.96);
+  box-shadow: 0 14px 30px rgba(29,78,216,.22);
 }
 .fr26BtnGhost{
   border: 1px solid var(--stroke);
@@ -304,7 +312,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 /* ---------- Toast ---------- */
 .toast{
   position: fixed;
-  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(136px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15,18,28,.95);
@@ -357,6 +365,56 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   gap: 12px;
 }
 .u-wrap{ flex-wrap: wrap; }
+
+.statsCard{
+  padding: 0;
+  overflow: hidden;
+}
+
+.statsSummary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor:pointer;
+  list-style:none;
+}
+
+.statsSummary::-webkit-details-marker{ display:none; }
+
+.statsSummary::after{
+  content:"+";
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--muted);
+}
+
+.statsCard[open] .statsSummary::after{
+  content:"−";
+}
+
+.statsSummaryMeta{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.statsPanelBody{
+  padding: 0 16px 16px;
+}
+
+.statsPanelBody > .card:first-child{
+  margin-top: 0;
+}
+
+.statsPanelBody > .card:last-child,
+.statsPanelBody #legacyTotals > .card:last-child{
+  margin-bottom: 0;
+}
 
 /* ---------- More page helpers ---------- */
 .top{
