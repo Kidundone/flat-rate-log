@@ -42,28 +42,24 @@ serve(async (req) => {
               },
               {
                 type: "text",
-                text: `You are reading an automotive shop document. This could be a Repair Order (RO), Get Ready form, Detail Sheet, Pre-Delivery Inspection, or any dealership work order. The writing may be HANDWRITTEN — read it carefully.
+                text: `You are reading an automotive dealership document. It may be HANDWRITTEN. Read it carefully.
 
-Extract ONLY these three values:
+STEP 1 — Identify the document type:
+- "Repair Order" (RO): titled "Repair Order", "Service RO", "Work Order". Has a labeled RO# or R.O. number.
+- "Get Ready" / "Detail Sheet" / "Pre-Delivery": titled "Get Ready", "Detail", "Pre-Delivery Inspection", "PDI". These do NOT have an RO number — they have a Stock number and VIN instead.
 
-1. RO number or Job/Work Order number
-   - Look for labels: "RO#", "R.O.", "Work Order", "Job #", "WO#", or a standalone number written near checkboxes/lines
-   - On Get Ready / Detail sheets, there is often a number written in the upper-right or next to "DETAILDR" — that is the RO/job number
-   - Examples: "40534", "RO: 12345", "W/O 98765"
+STEP 2 — Extract only what the LABEL says:
 
-2. Stock number
-   - Look for labels: "Stock", "Stock#", "STK", "STK#", "Stk No"
-   - Usually alphanumeric like "SLV13231A", "S12345", "P98765"
+1. RO number — ONLY if the document is a Repair Order AND the number is EXPLICITLY labeled "RO#", "R.O.", "Repair Order #", or "Work Order #". Do NOT guess. If it is a Get Ready or Detail form, set ro to null.
 
-3. VIN or partial VIN
-   - Full VIN is 17 characters
-   - "VIN Verification" fields often show only the last 6–8 digits (like "360036")
-   - Return whatever partial VIN is visible
+2. Stock number — look for a label that says "Stock", "Stock#", "STK", "STK#", or "Stock No". The value is usually alphanumeric like "SLV13231A" or "P12345". Employee numbers, phone numbers, and unlabeled numbers are NOT stock numbers.
 
-Respond with ONLY a JSON object. No explanation, no markdown, just JSON:
-{"ro": "40534", "vin": "360036", "stk": "SLV13231A"}
+3. VIN — a full 17-character VIN, or a "VIN Verification" field that shows the last 6–8 digits (e.g. "360036"). Do not confuse this with other numbers.
 
-Use null for any value you cannot find or read. If a number is partially illegible, make your best guess.`,
+Return ONLY this JSON, nothing else:
+{"ro": null, "vin": "360036", "stk": "SLV13231A"}
+
+Use null for any value not present or not clearly labeled. Do not guess unlabeled numbers.`,
               },
             ],
           },
