@@ -155,6 +155,16 @@ async function runOnce() {
       el?.addEventListener("input", updateSaveEnabled);
       el?.addEventListener("change", updateSaveEnabled);
     });
+
+    // Auto-fill hours + rate from stored type defaults when a type is selected
+    document.getElementById("typeText")?.addEventListener("change", async () => {
+      const name = document.getElementById("typeText")?.value || "";
+      await maybeAutofillFromType?.(name);
+      updateEarningsPreview?.();
+      checkDuplicates?.();
+      updateSaveEnabled();
+    });
+
     restoreLastWorkType?.();
     updateSaveEnabled();
 

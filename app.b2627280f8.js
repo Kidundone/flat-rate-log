@@ -3785,9 +3785,11 @@ async function saveEntry(entry, options = {}) {
     id: saved?.id || null,
     photo_path: photo_path || saved?.photo_path || null,
   };
-  if (photoStatus === "fail") toast("Saved (photo failed)");
-  else if (photoStatus === "ok") toast("Saved + Photo");
-  else toast("Saved");
+  const earningsStr = formatMoney(entry.earnings || 0);
+  const isEdit = options.__isEdit;
+  if (photoStatus === "fail") toast(`${isEdit ? "Updated" : "Saved"} · ${earningsStr} (photo failed)`);
+  else if (photoStatus === "ok") toast(`${isEdit ? "Updated" : "Saved"} · ${earningsStr} + Photo`);
+  else toast(`${isEdit ? "Updated" : "Saved"} · ${earningsStr}`);
   handleClear(null, { preserveType, typeValue: preservedType });
   return savedEntryForOcr;
 }
@@ -3887,6 +3889,7 @@ async function handleSave(ev) {
     await saveEntry(entry, {
       preserveType: keepLastWork,
       preservedType: keepLastWork ? typeName : "",
+      __isEdit: isEditing,
     });
     await refreshEntries();
     setSelectedPhotoFile(null);
@@ -4461,8 +4464,17 @@ function renderList(entries, mode){
   const capped = visible.slice(0, 60);
 
   if (capped.length === 0) {
-    const msg = q ? `No entries match "${escapeHtml(q)}".` : "No entries match your search.";
-    list.innerHTML = `<div class="muted">${msg}</div>`;
+    list.innerHTML = q
+      ? `<div style="text-align:center;padding:28px 16px;">
+           <div style="font-size:28px;margin-bottom:8px;">🔍</div>
+           <div style="font-weight:800;color:var(--text);">No results for "${escapeHtml(q)}"</div>
+           <div class="small" style="margin-top:4px;">Try a different RO, VIN, or work type</div>
+         </div>`
+      : `<div style="text-align:center;padding:28px 16px;">
+           <div style="font-size:32px;margin-bottom:8px;">📋</div>
+           <div style="font-weight:800;color:var(--text);">No entries yet</div>
+           <div class="small" style="margin-top:4px;">Select hours above and tap Save to start logging</div>
+         </div>`;
     return;
   }
 
@@ -5754,6 +5766,16 @@ async function runOnce() {
       el?.addEventListener("input", updateSaveEnabled);
       el?.addEventListener("change", updateSaveEnabled);
     });
+
+    // Auto-fill hours + rate from stored type defaults when a type is selected
+    document.getElementById("typeText")?.addEventListener("change", async () => {
+      const name = document.getElementById("typeText")?.value || "";
+      await maybeAutofillFromType?.(name);
+      updateEarningsPreview?.();
+      checkDuplicates?.();
+      updateSaveEnabled();
+    });
+
     restoreLastWorkType?.();
     updateSaveEnabled();
 

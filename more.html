@@ -56,6 +56,17 @@
     </div>
 
     <section class="card">
+      <div class="h">Weekly Goal</div>
+      <div class="muted">Set your flagged hours for this week. The goal progress bar on the main page will track your progress.</div>
+      <div class="row" style="margin-top:10px;display:flex;gap:10px;align-items:center;">
+        <input id="flaggedHours" inputmode="decimal" type="number" step="0.5" min="0" placeholder="e.g. 40"
+               style="flex:1;min-width:120px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+        <button class="btn primary" id="saveFlaggedBtn" type="button">Save Goal</button>
+      </div>
+      <div class="muted small" style="margin-top:8px;">Changes take effect immediately on the main page.</div>
+    </section>
+
+    <section class="card">
       <div class="h">Pay Stub Entry</div>
       <div class="muted">Enter your pay-stub week and compare paid values against expected values from your entries.</div>
       <div class="row" style="margin-top:10px; gap:10px; flex-wrap:wrap;">
@@ -101,6 +112,46 @@
       </div>
     </div>
 
+    <section class="card">
+      <div class="h">Needs Review</div>
+      <div class="muted">Entries that may need attention — missing RO, OCR mismatches, or unconfirmed data.</div>
+      <div class="row u-row u-wrap" style="margin-top:10px;gap:8px;">
+        <select id="reviewRange" style="padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;">
+          <option value="week">This Week</option>
+          <option value="lastweek">Last Week</option>
+          <option value="month">This Month</option>
+          <option value="all">All Time</option>
+        </select>
+        <select id="reviewFocus" style="padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;">
+          <option value="needs-review">Needs Review</option>
+          <option value="all">All Entries</option>
+          <option value="ocr-failed">OCR Failed</option>
+          <option value="suggestions">Has Suggestions</option>
+        </select>
+        <select id="reviewGroup" style="padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;">
+          <option value="day">Group by Day</option>
+          <option value="none">No Group</option>
+        </select>
+        <button class="btn" id="reviewRefreshBtn" type="button">Refresh</button>
+      </div>
+      <input id="reviewSearch" placeholder="Search entries…" style="width:100%;margin-top:10px;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;" />
+      <div id="reviewMeta" class="muted small" style="margin-top:8px;"></div>
+      <div id="reviewList" class="list" style="margin-top:10px;"></div>
+    </section>
+
+    <section class="card">
+      <div class="h">Saved Work Types</div>
+      <div class="muted">Your logged work types with their last-used hours and rate. Tap to delete.</div>
+      <div id="savedTypesList" class="list" style="margin-top:10px;"></div>
+    </section>
+
+    <section class="card">
+      <div class="h">Proof Photos</div>
+      <div class="muted">All photos attached to your entries.</div>
+      <button class="btn" id="ocrReprocessBtn" type="button" style="margin-top:10px;">Re-run OCR on All</button>
+      <div id="photoGallery" class="gallery" style="margin-top:14px;"></div>
+    </section>
+
     <section class="card danger">
       <div class="h">Danger Zone</div>
       <div class="muted">This wipes everything stored on this device for this app.</div>
@@ -130,6 +181,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.38fb8ee238.js" defer></script>
+  <script src="/flat-rate-log/app.b2627280f8.js" defer></script>
 </body>
 </html>
