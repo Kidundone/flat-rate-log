@@ -182,6 +182,10 @@ function handleClear(ev, options = {}) {
   if (detailsBtn) detailsBtn.textContent = "Add Details";
   const saveBtn = document.getElementById("saveBtn");
   if (saveBtn) saveBtn.disabled = true;
+  const dw = document.getElementById("dupWarnGlobal");
+  if (dw) { dw.style.display = "none"; dw.dataset.level = ""; }
+  const ep = document.getElementById("earningsPreview");
+  if (ep) { ep.textContent = ""; ep.classList.remove("hasValue"); }
 }
 
 function focusHoursInput() {
@@ -425,20 +429,45 @@ function typeBadgeHtml(label) {
   return `<span class="typeBadge ${typeColorClass(label)}">${escapeHtml(label)}</span>`;
 }
 
-function checkDuplicateRef() {
-  const warn = document.getElementById("dupWarning");
+function checkDuplicates() {
+  const warn = document.getElementById("dupWarnGlobal");
   if (!warn) return;
+
   const ref = String(document.getElementById("ref")?.value || "").trim().toUpperCase();
-  if (!ref || ref.length < 2) { warn.style.display = "none"; return; }
+  const type = String(document.getElementById("typeText")?.value || "").trim().toLowerCase();
+  const hours = round1(num(document.getElementById("hours")?.value));
   const dayKey = todayKeyLocal();
-  const dupes = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
-    .filter(e => String(e.ref || e.ro || "").trim().toUpperCase() === ref
-      && (e.dayKey === dayKey || !e.dayKey)
-      && String(e.id ?? "") !== String(EDITING_ID ?? ""));
-  if (!dupes.length) { warn.style.display = "none"; return; }
-  const d = dupes[0];
-  warn.style.display = "";
-  warn.textContent = `⚠️ ${ref} already logged today — ${d.type || d.typeText || "?"}, ${d.hours} hrs (${formatMoney(d.earnings)})`;
+
+  const pool = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+    .filter(e => e.dayKey === dayKey && String(e.id ?? "") !== String(EDITING_ID ?? ""));
+
+  // Strong: same RO on same day
+  if (ref.length >= 2) {
+    const hit = pool.find(e => String(e.ref || e.ro || "").trim().toUpperCase() === ref);
+    if (hit) {
+      warn.dataset.level = "strong";
+      warn.style.display = "";
+      warn.textContent = `⛔ RO ${ref} already logged today — ${hit.type || hit.typeText || "?"} · ${hit.hours} hrs · ${formatMoney(hit.earnings)}`;
+      return;
+    }
+  }
+
+  // Weak: same type + same hours on same day
+  if (type && hours > 0) {
+    const hit = pool.find(e =>
+      String(e.type || e.typeText || "").trim().toLowerCase() === type &&
+      round1(e.hours) === hours
+    );
+    if (hit) {
+      warn.dataset.level = "weak";
+      warn.style.display = "";
+      warn.textContent = `⚠️ Similar entry today — ${hit.type || "?"} · ${hit.hours} hrs · ${formatTimeAgo(hit.updatedAt || hit.createdAt)}`;
+      return;
+    }
+  }
+
+  warn.dataset.level = "";
+  warn.style.display = "none";
 }
 
 function updateEarningsPreview() {
@@ -494,7 +523,7 @@ window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
 window.__FR.updateEarningsPreview = updateEarningsPreview;
 window.__FR.repeatLastEntry = repeatLastEntry;
 window.__FR.deleteSelectedEntries = deleteSelectedEntries;
-window.__FR.checkDuplicateRef = checkDuplicateRef;
+window.__FR.checkDuplicates = checkDuplicates;
 
 async function saveEntry(entry, options = {}) {
   const preserveType = !!options.preserveType;
@@ -596,15 +625,32 @@ async function handleSave(ev) {
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
 
-    if (!isEditing && ref) {
-      const refUp = ref.toUpperCase();
+    if (!isEditing) {
       const todayKey = dayKeyFromISO(nowISO());
-      const dupes = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
-        .filter(e => String(e.ref || e.ro || "").trim().toUpperCase() === refUp && e.dayKey === todayKey);
-      if (dupes.length > 0) {
-        const d = dupes[0];
-        const ok = confirm(`⚠️ Possible duplicate!\n\n${ref} was already logged today:\n${d.type || d.typeText || "?"} · ${d.hours} hrs · ${formatMoney(d.earnings)}\n\nSave anyway?`);
-        if (!ok) return;
+      const pool = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).filter(e => e.dayKey === todayKey);
+
+      // Strong block: same RO on same day
+      if (ref) {
+        const refUp = ref.toUpperCase();
+        const hit = pool.find(e => String(e.ref || e.ro || "").trim().toUpperCase() === refUp);
+        if (hit) {
+          const ok = confirm(`⛔ Duplicate RO detected!\n\n${ref} was already logged today:\n${hit.type || hit.typeText || "?"} · ${hit.hours} hrs · ${formatMoney(hit.earnings)}\n\nSave anyway?`);
+          if (!ok) return;
+        }
+      }
+
+      // Weak warn: same type + same hours on same day (no RO match)
+      if (!ref && typeName && hoursVal > 0) {
+        const tLow = typeName.trim().toLowerCase();
+        const hRound = round1(hoursVal);
+        const hit = pool.find(e =>
+          String(e.type || e.typeText || "").trim().toLowerCase() === tLow &&
+          round1(e.hours) === hRound
+        );
+        if (hit) {
+          const ok = confirm(`⚠️ Possible duplicate!\n\nSame type + hours already logged today:\n${hit.type || "?"} · ${hit.hours} hrs · ${formatTimeAgo(hit.updatedAt || hit.createdAt)}\n\nSave anyway?`);
+          if (!ok) return;
+        }
       }
     }
 

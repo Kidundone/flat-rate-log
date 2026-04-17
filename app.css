@@ -477,17 +477,22 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .goalBarFill.complete{ background: linear-gradient(90deg, #22c55e, #14b8a6); }
 
 /* ---------- Duplicate warning ---------- */
-#dupWarning{
+#dupWarnGlobal{
   display: none;
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(251,146,60,.40);
-  background: rgba(251,146,60,.12);
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(251,146,60,.45);
+  background: rgba(251,146,60,.13);
   color: #fb923c;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
-  line-height: 1.4;
+  line-height: 1.45;
+}
+#dupWarnGlobal[data-level="strong"]{
+  border-color: rgba(239,68,68,.50);
+  background: rgba(239,68,68,.14);
+  color: #f87171;
 }
 
 /* ---------- Earnings preview ---------- */
