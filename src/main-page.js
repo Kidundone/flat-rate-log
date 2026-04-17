@@ -412,8 +412,59 @@ function buildEntryMetaHtml(entry) {
   `;
 }
 
+function updateEarningsPreview() {
+  const el = document.getElementById("earningsPreview");
+  if (!el) return;
+  const hours = parseFloat(document.getElementById("hours")?.value) || 0;
+  const rate = parseFloat(document.querySelector('input[name="rate"]')?.value) || 15;
+  if (hours > 0 && rate > 0) {
+    el.textContent = `= ${formatMoney(round2(hours * rate))}`;
+    el.classList.add("hasValue");
+  } else {
+    el.textContent = "";
+    el.classList.remove("hasValue");
+  }
+}
+
+function updateHeaderTodayTotal(dollars) {
+  const el = document.getElementById("headerTodayTotal");
+  if (!el) return;
+  if (dollars > 0) {
+    el.textContent = formatMoney(dollars);
+    el.style.opacity = "1";
+  } else {
+    el.style.opacity = "0";
+  }
+}
+
+async function repeatLastEntry() {
+  const entries = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
+  const last = entries[0];
+  if (!last) { showToast("No previous entry."); return; }
+  const typeEl = document.getElementById("typeText");
+  const rateEl = document.querySelector('input[name="rate"]');
+  if (typeEl) { typeEl.value = last.type || last.typeText || ""; typeEl.dispatchEvent(new Event("input", { bubbles: true })); }
+  if (rateEl) { rateEl.value = last.rate != null ? String(last.rate) : "15"; rateEl.dispatchEvent(new Event("input", { bubbles: true })); }
+  updateEarningsPreview();
+  showToast("Last job loaded — update hours and save.");
+}
+
+async function deleteSelectedEntries() {
+  const selected = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).filter(e => e.selected);
+  if (!selected.length) { showToast("No entries selected."); return; }
+  const word = selected.length === 1 ? "entry" : "entries";
+  if (!confirm(`Delete ${selected.length} selected ${word}? This cannot be undone.`)) return;
+  for (const e of selected) {
+    try { await onDeleteClicked(null, e.id); } catch {}
+  }
+  await safeLoadEntries();
+}
+
 window.__FR = window.__FR || {};
 window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
+window.__FR.updateEarningsPreview = updateEarningsPreview;
+window.__FR.repeatLastEntry = repeatLastEntry;
+window.__FR.deleteSelectedEntries = deleteSelectedEntries;
 
 async function saveEntry(entry, options = {}) {
   const preserveType = !!options.preserveType;
@@ -715,7 +766,7 @@ async function ensureDefaultTypes(){
 async function loadTypesSorted(empId){
   const e = String(empId || "").trim();
   const types = (await getAll(STORES.types)).filter(t => String(t.empId || "").trim() === e);
-  types.sort((a,b) => a.name.localeCompare(b.name));
+  types.sort((a,b) => (b.updatedAt || "").localeCompare(a.updatedAt || "") || a.name.localeCompare(b.name));
   return types;
 }
 
@@ -1395,6 +1446,7 @@ async function refreshUI(entriesOverride){
   setText("todayHours", round1(today.hours));
   setText("todayDollars", formatMoney(today.dollars));
   setText("todayCount", String(today.count));
+  updateHeaderTodayTotal(today.dollars);
 
   // Week
   const week = computeWeek(entries, ws);

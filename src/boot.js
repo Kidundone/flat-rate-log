@@ -169,8 +169,25 @@ async function runOnce() {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         setQuickHoursValue?.(btn.getAttribute("data-hours-quick"));
+        updateEarningsPreview?.();
       });
     });
+
+    const _hoursEl = document.getElementById("hours");
+    const _rateEl = document.querySelector('input[name="rate"]');
+    _hoursEl?.addEventListener("input", () => updateEarningsPreview?.());
+    _rateEl?.addEventListener("input", () => updateEarningsPreview?.());
+
+    document.getElementById("repeatLastBtn")?.addEventListener("click", () => repeatLastEntry?.());
+    document.getElementById("deleteSelectedBtn")?.addEventListener("click", () => deleteSelectedEntries?.());
+
+    const _offlineBanner = document.getElementById("offlineBanner");
+    if (_offlineBanner) {
+      const _syncOffline = () => { _offlineBanner.style.display = navigator.onLine ? "none" : ""; };
+      window.addEventListener("online", _syncOffline);
+      window.addEventListener("offline", _syncOffline);
+      _syncOffline();
+    }
 
     ["typeText", "hours", "ref"].forEach((id) => {
       document.getElementById(id)?.addEventListener("keydown", (e) => {

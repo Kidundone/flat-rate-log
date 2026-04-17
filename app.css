@@ -442,6 +442,27 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   margin: 12px 0;
 }
 
+/* ---------- Earnings preview ---------- */
+#earningsPreview{
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(230,237,247,.45);
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 200ms var(--ease), opacity 200ms var(--ease), color 200ms var(--ease);
+  opacity: 0;
+  letter-spacing: .2px;
+}
+#earningsPreview.hasValue{
+  color: var(--accent);
+  font-size: 15px;
+  max-height: 30px;
+  opacity: 1;
+  margin-top: 10px;
+}
+
 /* ---------- Toast ---------- */
 .toast{
   position: fixed;

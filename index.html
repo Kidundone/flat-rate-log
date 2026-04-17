@@ -13,11 +13,17 @@
 <body data-page="main">
 <header>
   <h1>Flat-Rate Tracker</h1>
-  <a class="btn primary" href="./more.html">More</a>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <span id="headerTodayTotal" style="font-size:14px;font-weight:800;color:#14b8a6;letter-spacing:-.2px;opacity:0;transition:opacity 300ms;"></span>
+    <a class="btn primary" href="./more.html">More</a>
+  </div>
 </header>
 
 <div id="statusMsg" class="muted small" style="max-width:780px;margin:10px auto 0;padding:0 16px;"></div>
 <div id="dataWarning" class="warningBanner" style="display:none;max-width:780px;margin:10px auto 0;"></div>
+<div id="offlineBanner" style="display:none;max-width:780px;margin:8px auto 0;padding:10px 16px;border-radius:12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#ffd1d1;font-size:13px;font-weight:800;text-align:center;">
+  You're offline — entries may not save
+</div>
 
 <main>
   <section class="card fr26">
@@ -73,6 +79,7 @@
         </div>
         <div class="fr26PrimaryAction">
           <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save</button>
+          <div id="earningsPreview" aria-live="polite"></div>
         </div>
       </section>
 
@@ -102,6 +109,7 @@
 
       <div class="fr26QuickTools">
         <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
+        <button id="repeatLastBtn" class="fr26Chip" type="button">↩ Repeat Last</button>
         <button id="clearBtn" class="fr26Chip fr26ChipGhost" type="button">Clear</button>
         <button id="cancelEditBtn" class="fr26Chip fr26ChipGhost" type="button" style="display:none;">Cancel Edit</button>
       </div>
@@ -272,6 +280,7 @@
         <div class="row u-row u-wrap" style="justify-content:flex-end; margin-top:6px;">
           <button class="btn" id="historyBtn" type="button">History</button>
           <button class="btn" id="exportSelectedBtn" type="button" onclick="exportSelected()">Export Selected</button>
+          <button class="btn danger-ghost" id="deleteSelectedBtn" type="button">Delete Selected</button>
           <button class="btn primary" id="exportCsvMainBtn" type="button">Export CSV</button>
         </div>
       </div>
@@ -341,6 +350,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.cf685d5828.js" defer></script>
+<script src="/flat-rate-log/app.d19a496cc1.js" defer></script>
 </body>
 </html>
