@@ -563,6 +563,8 @@ async function saveEntry(entry, options = {}) {
         setPhotoUploadTarget(newPath);
         photo_path = newPath;
         photoStatus = "ok";
+        // Fire-and-forget OCR — runs in background, patches DB if it finds something
+        autoScanPhotoAndPatch?.(photoFile, saved.id, payload.ro_number, entry.vin8);
       } catch (err) {
         photoStatus = "fail";
       }

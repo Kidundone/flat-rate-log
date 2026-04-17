@@ -3001,13 +3001,6 @@ function openPhotoModal(url, pathLabel) {
     return;
   }
 
-  _photoModalCurrentUrl = url;
-
-  const scanBtn = document.getElementById("photoModalScanBtn");
-  const scanOut = document.getElementById("photoModalScanResult");
-  if (scanBtn) scanBtn.style.display = "";
-  if (scanOut) { scanOut.style.display = "none"; scanOut.textContent = ""; }
-
   if (label) label.textContent = pathLabel || "";
   applyPhotoLoadGuard(img, pathLabel);
   img.src = url;
@@ -3032,11 +3025,6 @@ function closePhotoModal(){
     shell.style.display = "";
   }
   document.body.classList.remove("modal-open");
-  _photoModalCurrentUrl = null;
-  const scanBtn = document.getElementById("photoModalScanBtn");
-  const scanOut = document.getElementById("photoModalScanResult");
-  if (scanBtn) scanBtn.style.display = "none";
-  if (scanOut) { scanOut.style.display = "none"; scanOut.textContent = ""; }
 }
 
 async function entryPhotoUrl(entry) {
@@ -3184,97 +3172,50 @@ async function _callScanRo(base64, mediaType = "image/jpeg") {
   return res.json();
 }
 
-function _applyRoVinStkToForm(ro, vin, stk) {
-  const filled = [];
-  const refEl = document.getElementById("ref");
-  const vinEl = document.getElementById("vin8");
-
-  if (ro && refEl) {
-    if (!refEl.value) { refEl.value = ro; filled.push(`RO: ${ro}`); }
-    else filled.push(`RO found: ${ro} (field not empty)`);
-  }
-  if (vin && vinEl) {
-    const vin8 = vin.replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase();
-    if (!vinEl.value) { vinEl.value = vin8; filled.push(`VIN: ${vin8}`); }
-  }
-  if (stk && refEl && !refEl.value) {
-    refEl.value = stk; filled.push(`STK: ${stk}`);
-  } else if (stk && (!ro)) {
-    filled.push(`STK found: ${stk}`);
-  }
-
-  if (filled.length) {
-    const panel = document.getElementById("detailsPanel");
-    if (panel && panel.style.display === "none") {
-      panel.style.display = "block";
-      const tb = document.getElementById("toggleDetailsBtn");
-      if (tb) tb.textContent = "Less";
-    }
-  }
-  return filled;
-}
-
-async function scanPhotoForRoVinStk() {
-  const file = getSelectedPhotoFile();
-  if (!file) return toast("Pick a photo first, then tap Scan.");
-
-  const btn = document.getElementById("btnScanPhoto");
-  const resultEl = document.getElementById("scanResult");
-  if (btn) btn.disabled = true;
-  if (resultEl) { resultEl.style.display = ""; resultEl.textContent = "Scanning…"; }
-
+async function autoScanPhotoAndPatch(file, entryId, currentRef, currentVin8) {
   try {
-    const dataUrl = await compressImageFileToDataUrl(file, 1200, 0.8);
+    const dataUrl = await compressImageFileToDataUrl(file, 1200, 0.75);
     const base64 = dataUrl.split(",")[1];
     const mediaType = dataUrl.match(/data:([^;]+)/)?.[1] || "image/jpeg";
     const { ro, vin, stk } = await _callScanRo(base64, mediaType);
-    const filled = _applyRoVinStkToForm(ro, vin, stk);
-    const msg = filled.length ? `Found — ${filled.join(" · ")}` : "Nothing detected";
-    if (resultEl) resultEl.textContent = msg;
-    toast(filled.length ? "Auto-filled from photo" : "Scan: nothing found");
-  } catch (e) {
-    if (resultEl) resultEl.textContent = `Scan error: ${e?.message || e}`;
-    toast("Scan failed");
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
 
-let _photoModalCurrentUrl = null;
+    const patch = {};
+    const found = [];
 
-async function scanPhotoModalImage() {
-  if (!_photoModalCurrentUrl) return toast("No photo loaded.");
-  const btn = document.getElementById("photoModalScanBtn");
-  const out = document.getElementById("photoModalScanResult");
-  if (btn) btn.disabled = true;
-  if (out) { out.style.display = ""; out.textContent = "Scanning… this takes a few seconds"; }
+    const hasRef = !!String(currentRef || "").trim();
+    if (!hasRef) {
+      if (ro)       { patch.ro_number = ro;  found.push(`RO: ${ro}`);   }
+      else if (stk) { patch.ro_number = stk; found.push(`STK: ${stk}`); }
+    }
 
-  try {
-    const imgRes = await fetch(_photoModalCurrentUrl);
-    if (!imgRes.ok) throw new Error("Could not load photo");
-    const blob = await imgRes.blob();
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    const base64 = dataUrl.split(",")[1];
-    const mediaType = blob.type || "image/jpeg";
-    const { ro, vin, stk } = await _callScanRo(base64, mediaType);
+    const hasVin = !!String(currentVin8 || "").trim();
+    if (!hasVin && vin) {
+      const vin8 = vin.replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase();
+      if (vin8.length >= 6) { patch.vin8 = vin8; found.push(`VIN: ${vin8}`); }
+    }
 
-    const parts = [];
-    if (ro)  parts.push(`RO/Job: ${ro}`);
-    if (stk) parts.push(`Stock: ${stk}`);
-    if (vin) parts.push(`VIN: ${vin.replace(/[^A-Za-z0-9]/g,"").slice(-8).toUpperCase()}`);
+    if (!Object.keys(patch).length) return;
 
-    if (out) out.textContent = parts.length ? parts.join(" · ") : "Nothing detected — try a clearer photo";
-    toast(parts.length ? "Scan complete" : "Nothing found");
-  } catch (e) {
-    if (out) out.textContent = `Scan error: ${e?.message || e}`;
-    toast("Scan failed");
-  } finally {
-    if (btn) btn.disabled = false;
+    const sb = window.__FR?.sb;
+    const uid = window.CURRENT_UID;
+    if (sb && entryId && uid) {
+      await sb.from("work_logs").update(patch).eq("id", entryId).eq("user_id", uid);
+    }
+
+    if (Array.isArray(window.CURRENT_ENTRIES)) {
+      const idx = window.CURRENT_ENTRIES.findIndex(e => String(e.id) === String(entryId));
+      if (idx >= 0) {
+        const updated = { ...window.CURRENT_ENTRIES[idx] };
+        if (patch.ro_number) { updated.ro_number = patch.ro_number; updated.ref = patch.ro_number; updated.ro = patch.ro_number; }
+        if (patch.vin8) updated.vin8 = patch.vin8;
+        window.CURRENT_ENTRIES[idx] = updated;
+        refreshUI?.(window.CURRENT_ENTRIES);
+      }
+    }
+
+    if (found.length) toast(`Photo scanned — ${found.join(" · ")}`);
+  } catch {
+    // Silent — OCR is a bonus, not critical
   }
 }
 
@@ -3283,7 +3224,6 @@ function initPhotosUI(){
   document.getElementById("photoViewer")?.addEventListener("click", (e) => {
     if (e.target?.id === "photoViewer") closePhotoViewer();
   });
-  document.getElementById("photoModalScanBtn")?.addEventListener("click", () => scanPhotoModalImage());
 
   clearPhotoGallery();
 
@@ -3885,6 +3825,8 @@ async function saveEntry(entry, options = {}) {
         setPhotoUploadTarget(newPath);
         photo_path = newPath;
         photoStatus = "ok";
+        // Fire-and-forget OCR — runs in background, patches DB if it finds something
+        autoScanPhotoAndPatch?.(photoFile, saved.id, payload.ro_number, entry.vin8);
       } catch (err) {
         photoStatus = "fail";
       }
@@ -5962,21 +5904,6 @@ async function runOnce() {
     document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
     initPhotosUI();
-
-    document.getElementById("btnScanPhoto")?.addEventListener("click", () => scanPhotoForRoVinStk?.());
-
-    // Show/hide Scan button whenever a photo is selected
-    const _showScanBtn = () => {
-      const has = !!getSelectedPhotoFile?.();
-      const sb = document.getElementById("btnScanPhoto");
-      const sr = document.getElementById("scanResult");
-      if (sb) sb.style.display = has ? "" : "none";
-      if (!has && sr) { sr.style.display = "none"; sr.textContent = ""; }
-    };
-    ["photoPicker", "photoCamera", "photoFile"].forEach(id => {
-      document.getElementById(id)?.addEventListener("change", _showScanBtn);
-    });
-
     return;
   }
 
