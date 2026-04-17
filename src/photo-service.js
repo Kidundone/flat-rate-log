@@ -442,18 +442,21 @@ function closePhotoViewer(){
 async function _callScanRo(base64, mediaType = "image/jpeg") {
   const sb = window.__FR?.sb;
   const { data: { session } } = await sb.auth.getSession();
-  const token = session?.access_token;
+  const token = session?.access_token || window.__SUPABASE_CONFIG__.anonKey;
   const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-ro`;
   const res = await fetch(fnUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      "Authorization": `Bearer ${token}`,
       "apikey": window.__SUPABASE_CONFIG__.anonKey,
     },
     body: JSON.stringify({ imageBase64: base64, mediaType }),
   });
-  if (!res.ok) throw new Error(`Scan failed (${res.status})`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => res.status);
+    throw new Error(`Scan failed (${res.status}): ${txt}`);
+  }
   return res.json();
 }
 
@@ -499,8 +502,9 @@ async function autoScanPhotoAndPatch(file, entryId, currentRef, currentVin8) {
     }
 
     if (found.length) toast(`Photo scanned — ${found.join(" · ")}`);
-  } catch {
-    // Silent — OCR is a bonus, not critical
+  } catch (e) {
+    console.warn("[OCR]", e?.message || e);
+    toast(`OCR: ${e?.message || "failed"}`);
   }
 }
 
