@@ -84,7 +84,7 @@ main{ padding:16px; max-width:880px; margin:0 auto; }
 .right{ text-align:right; }
 
 /* ---------- Pills / Stats ---------- */
-.pillRow{ display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; }
+.pillRow{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; }
 .pill{
   background: rgba(230,237,247,.06);
   border:1px solid var(--stroke);
@@ -94,8 +94,8 @@ main{ padding:16px; max-width:880px; margin:0 auto; }
 .k{ font-size:12px; color:var(--muted); }
 .v{ font-size:20px; margin-top:4px; font-weight:850; letter-spacing:-.2px; }
 
-@media (max-width:520px){
-  .pillRow{ grid-template-columns: repeat(3, 1fr); }
+@media (min-width:640px){
+  .pillRow{ grid-template-columns: repeat(5, 1fr); }
 }
 
 /* ---------- Inputs ---------- */

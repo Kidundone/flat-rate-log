@@ -217,7 +217,7 @@
             <div class="v" id="rangeCount">0</div>
           </div>
           <div class="pill">
-            <div class="k">Avg hrs/entry</div>
+            <div class="k">Avg/job</div>
             <div class="v" id="rangeAvgHrs">0.0</div>
           </div>
           <div class="pill">
@@ -241,27 +241,15 @@
         <div id="weekBreakdownList" class="list" style="margin-top:12px;"></div>
       </section>
 
-      <div id="legacyTotals">
-        <section class="card">
-          <div class="summary">
-            <div class="pill"><div class="k">Today Hours</div><div class="v" id="todayHours">0</div></div>
-            <div class="pill"><div class="k">Today $</div><div class="v" id="todayDollars">$0.00</div></div>
-            <div class="pill"><div class="k">Entries Today</div><div class="v" id="todayCount">0</div></div>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="summary">
-            <div class="pill"><div class="k">This Week Hours</div><div class="v" id="weekHours">0</div><div class="muted" id="weekRange"></div></div>
-            <div class="pill"><div class="k">This Week $</div><div class="v" id="weekDollars">$0.00</div></div>
-            <div class="pill">
-              <div class="k">Week Difference</div>
-              <div class="v" id="weekDelta">0</div>
-              <div id="weekDeltaHint" class="muted small"></div>
-            </div>
-          </div>
-        </section>
-      </div>
+      <!-- hidden sinks so JS setText calls don't error -->
+      <span id="todayHours" style="display:none"></span>
+      <span id="todayDollars" style="display:none"></span>
+      <span id="todayCount" style="display:none"></span>
+      <span id="weekHours" style="display:none"></span>
+      <span id="weekDollars" style="display:none"></span>
+      <span id="weekRange" style="display:none"></span>
+      <span id="weekDelta" style="display:none"></span>
+      <span id="weekDeltaHint" style="display:none"></span>
     </div>
   </details>
 
@@ -364,6 +352,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.171eff4f6d.js" defer></script>
+<script src="/flat-rate-log/app.38fb8ee238.js" defer></script>
 </body>
 </html>

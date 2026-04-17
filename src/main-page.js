@@ -1283,23 +1283,22 @@ function renderList(entries, mode){
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
     row.innerHTML = `
-      <div class="itemTop">
-        <div>
-          <div>
-            <label class="small muted" style="display:inline-flex;align-items:center;gap:6px;margin-right:8px;">
-              <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} />
-            </label>
-            <span class="mono">${refDisplay}</span> ${typeBadgeHtml(typeLabel)}
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} style="flex-shrink:0;" />
+            ${typeBadgeHtml(typeLabel)}
+            <span class="mono" style="font-size:13px;color:var(--muted);">${refDisplay}</span>
           </div>
           ${buildEntryMetaHtml(e)}
-          ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-          <div style="margin-top:8px;">${actionButtons}</div>
+          ${e.notes ? `<div style="margin-top:4px;font-size:12px;color:var(--muted);">${escapeHtml(e.notes)}</div>` : ""}
         </div>
-        <div class="right">
-          <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-          <div style="margin-top:6px;font-size:22px;font-weight:800;">${formatMoney(e.earnings)}</div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:22px;font-weight:800;letter-spacing:-.3px;line-height:1;">${formatMoney(e.earnings)}</div>
+          <div class="mono" style="font-size:12px;color:var(--muted);margin-top:3px;">${String(e.hours)} hrs</div>
         </div>
       </div>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">${actionButtons}</div>
     `;
     const editBtnEl = row.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
