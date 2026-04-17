@@ -227,6 +227,21 @@ async function runOnce() {
     document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
 
     initPhotosUI();
+
+    document.getElementById("btnScanPhoto")?.addEventListener("click", () => scanPhotoForRoVinStk?.());
+
+    // Show/hide Scan button whenever a photo is selected
+    const _showScanBtn = () => {
+      const has = !!getSelectedPhotoFile?.();
+      const sb = document.getElementById("btnScanPhoto");
+      const sr = document.getElementById("scanResult");
+      if (sb) sb.style.display = has ? "" : "none";
+      if (!has && sr) { sr.style.display = "none"; sr.textContent = ""; }
+    };
+    ["photoPicker", "photoCamera", "photoFile"].forEach(id => {
+      document.getElementById(id)?.addEventListener("change", _showScanBtn);
+    });
+
     return;
   }
 
