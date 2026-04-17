@@ -712,6 +712,7 @@ function showHistory(open=true){
   const p = $("historyPanel");
   if (!p) return;
   p.style.display = open ? "block" : "none";
+  if (open) setTimeout(() => p.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
 }
 
 async function renderHistory(){
@@ -722,7 +723,12 @@ async function renderHistory(){
   const range = $("histRange")?.value || "week";
   const group = $("histGroup")?.value || "none";
 
-  const all = filterEntriesByEmp(await getAll(STORES.entries), empId)
+  // Use already-loaded Supabase data instead of local IndexedDB
+  const source = Array.isArray(CURRENT_ENTRIES) && CURRENT_ENTRIES.length
+    ? CURRENT_ENTRIES
+    : normalizeEntries(Array.isArray(window.STATE?.entries) ? window.STATE.entries : []);
+
+  const all = filterEntriesByEmp(source, empId)
     .slice()
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
@@ -781,7 +787,7 @@ async function renderHistory(){
             </div>
             <div class="right">
               <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-              <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
+              <div style="margin-top:6px;font-size:22px;font-weight:800;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
                 <button class="btn danger-ghost" data-del="${e.id}">Delete</button>

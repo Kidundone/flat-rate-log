@@ -201,9 +201,17 @@ async function runOnce() {
       });
     });
 
-    document.getElementById("historyBtn")?.addEventListener("click", () => { showHistory(true); renderHistory(); });
+    document.getElementById("historyBtn")?.addEventListener("click", () => {
+      const panel = document.getElementById("historyPanel");
+      const isOpen = panel?.style.display !== "none" && panel?.style.display !== "";
+      if (isOpen) { showHistory(false); document.querySelector("header")?.scrollIntoView({ behavior: "smooth" }); }
+      else { showHistory(true); renderHistory(); }
+    });
     document.getElementById("exportCsvMainBtn")?.addEventListener("click", exportCSV);
-    document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
+    document.getElementById("closeHistoryBtn")?.addEventListener("click", () => {
+      showHistory(false);
+      document.querySelector("header")?.scrollIntoView({ behavior: "smooth" });
+    });
     document.getElementById("histRange")?.addEventListener("change", renderHistory);
     document.getElementById("histGroup")?.addEventListener("change", renderHistory);
     document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
