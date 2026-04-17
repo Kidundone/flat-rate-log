@@ -42,15 +42,28 @@ serve(async (req) => {
               },
               {
                 type: "text",
-                text: `Look at this repair order / work order image. Extract ONLY these three values if visible:
-1. RO number (Repair Order number — often labeled "RO#", "R.O.", "Work Order", "Job #")
-2. VIN (Vehicle Identification Number — 17 characters, or last 8 digits if partial)
-3. Stock number (often labeled "Stock#", "STK#", "Stock No")
+                text: `You are reading an automotive shop document. This could be a Repair Order (RO), Get Ready form, Detail Sheet, Pre-Delivery Inspection, or any dealership work order. The writing may be HANDWRITTEN — read it carefully.
 
-Respond with ONLY a JSON object like:
-{"ro": "12345", "vin": "AB1CD2EF", "stk": "S12345"}
+Extract ONLY these three values:
 
-Use null for any value not found. No explanation, only JSON.`,
+1. RO number or Job/Work Order number
+   - Look for labels: "RO#", "R.O.", "Work Order", "Job #", "WO#", or a standalone number written near checkboxes/lines
+   - On Get Ready / Detail sheets, there is often a number written in the upper-right or next to "DETAILDR" — that is the RO/job number
+   - Examples: "40534", "RO: 12345", "W/O 98765"
+
+2. Stock number
+   - Look for labels: "Stock", "Stock#", "STK", "STK#", "Stk No"
+   - Usually alphanumeric like "SLV13231A", "S12345", "P98765"
+
+3. VIN or partial VIN
+   - Full VIN is 17 characters
+   - "VIN Verification" fields often show only the last 6–8 digits (like "360036")
+   - Return whatever partial VIN is visible
+
+Respond with ONLY a JSON object. No explanation, no markdown, just JSON:
+{"ro": "40534", "vin": "360036", "stk": "SLV13231A"}
+
+Use null for any value you cannot find or read. If a number is partially illegible, make your best guess.`,
               },
             ],
           },

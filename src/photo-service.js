@@ -282,16 +282,22 @@ function openPhotoModal(url, pathLabel) {
   const label = document.getElementById("photoPathLabel") || document.getElementById("photoMeta");
 
   if (!modal || !img) {
-    // fallback: just open in new tab
     window.open(url, "_blank");
     return;
   }
+
+  _photoModalCurrentUrl = url;
+
+  const scanBtn = document.getElementById("photoModalScanBtn");
+  const scanOut = document.getElementById("photoModalScanResult");
+  if (scanBtn) scanBtn.style.display = "";
+  if (scanOut) { scanOut.style.display = "none"; scanOut.textContent = ""; }
 
   if (label) label.textContent = pathLabel || "";
   applyPhotoLoadGuard(img, pathLabel);
   img.src = url;
 
-  modal.classList.add("open"); // use your existing show logic
+  modal.classList.add("open");
   document.body.classList.add("modal-open");
 }
 
@@ -311,6 +317,11 @@ function closePhotoModal(){
     shell.style.display = "";
   }
   document.body.classList.remove("modal-open");
+  _photoModalCurrentUrl = null;
+  const scanBtn = document.getElementById("photoModalScanBtn");
+  const scanOut = document.getElementById("photoModalScanResult");
+  if (scanBtn) scanBtn.style.display = "none";
+  if (scanOut) { scanOut.style.display = "none"; scanOut.textContent = ""; }
 }
 
 async function entryPhotoUrl(entry) {
@@ -440,6 +451,54 @@ function closePhotoViewer(){
   shell.style.display = "none";
 }
 
+async function _callScanRo(base64, mediaType = "image/jpeg") {
+  const sb = window.__FR?.sb;
+  const { data: { session } } = await sb.auth.getSession();
+  const token = session?.access_token;
+  const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-ro`;
+  const res = await fetch(fnUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      "apikey": window.__SUPABASE_CONFIG__.anonKey,
+    },
+    body: JSON.stringify({ imageBase64: base64, mediaType }),
+  });
+  if (!res.ok) throw new Error(`Scan failed (${res.status})`);
+  return res.json();
+}
+
+function _applyRoVinStkToForm(ro, vin, stk) {
+  const filled = [];
+  const refEl = document.getElementById("ref");
+  const vinEl = document.getElementById("vin8");
+
+  if (ro && refEl) {
+    if (!refEl.value) { refEl.value = ro; filled.push(`RO: ${ro}`); }
+    else filled.push(`RO found: ${ro} (field not empty)`);
+  }
+  if (vin && vinEl) {
+    const vin8 = vin.replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase();
+    if (!vinEl.value) { vinEl.value = vin8; filled.push(`VIN: ${vin8}`); }
+  }
+  if (stk && refEl && !refEl.value) {
+    refEl.value = stk; filled.push(`STK: ${stk}`);
+  } else if (stk && (!ro)) {
+    filled.push(`STK found: ${stk}`);
+  }
+
+  if (filled.length) {
+    const panel = document.getElementById("detailsPanel");
+    if (panel && panel.style.display === "none") {
+      panel.style.display = "block";
+      const tb = document.getElementById("toggleDetailsBtn");
+      if (tb) tb.textContent = "Less";
+    }
+  }
+  return filled;
+}
+
 async function scanPhotoForRoVinStk() {
   const file = getSelectedPhotoFile();
   if (!file) return toast("Pick a photo first, then tap Scan.");
@@ -453,74 +512,51 @@ async function scanPhotoForRoVinStk() {
     const dataUrl = await compressImageFileToDataUrl(file, 1200, 0.8);
     const base64 = dataUrl.split(",")[1];
     const mediaType = dataUrl.match(/data:([^;]+)/)?.[1] || "image/jpeg";
-
-    const sb = window.__FR?.sb;
-    const { data: { session } } = await sb.auth.getSession();
-    const token = session?.access_token;
-
-    const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-ro`;
-    const res = await fetch(fnUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        "apikey": window.__SUPABASE_CONFIG__.anonKey,
-      },
-      body: JSON.stringify({ imageBase64: base64, mediaType }),
-    });
-
-    if (!res.ok) throw new Error(`Scan failed (${res.status})`);
-    const { ro, vin, stk } = await res.json();
-
-    let filled = [];
-
-    if (ro) {
-      const refEl = document.getElementById("ref");
-      if (refEl && !refEl.value) {
-        refEl.value = ro;
-        filled.push(`RO: ${ro}`);
-      } else if (refEl && refEl.value !== ro) {
-        filled.push(`RO found: ${ro} (not overwritten)`);
-      }
-    }
-
-    if (vin) {
-      const vinEl = document.getElementById("vin8");
-      const vin8 = vin.replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase();
-      if (vinEl && !vinEl.value) {
-        vinEl.value = vin8;
-        filled.push(`VIN: ${vin8}`);
-      }
-    }
-
-    if (stk) {
-      const refEl = document.getElementById("ref");
-      if (refEl && !refEl.value) {
-        refEl.value = stk;
-        filled.push(`STK: ${stk}`);
-      } else {
-        filled.push(`STK found: ${stk}`);
-      }
-    }
-
-    const msg = filled.length
-      ? `Found — ${filled.join(" · ")}`
-      : "Nothing detected (RO/VIN/STK not found in image)";
+    const { ro, vin, stk } = await _callScanRo(base64, mediaType);
+    const filled = _applyRoVinStkToForm(ro, vin, stk);
+    const msg = filled.length ? `Found — ${filled.join(" · ")}` : "Nothing detected";
     if (resultEl) resultEl.textContent = msg;
     toast(filled.length ? "Auto-filled from photo" : "Scan: nothing found");
-
-    // open details panel so user sees the filled fields
-    if (filled.length) {
-      const panel = document.getElementById("detailsPanel");
-      if (panel && panel.style.display === "none") {
-        panel.style.display = "block";
-        const btn2 = document.getElementById("toggleDetailsBtn");
-        if (btn2) btn2.textContent = "Less";
-      }
-    }
   } catch (e) {
-    const msg = e?.message || String(e);
-    if (resultEl) resultEl.textContent = `Scan error: ${msg}`;
+    if (resultEl) resultEl.textContent = `Scan error: ${e?.message || e}`;
+    toast("Scan failed");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let _photoModalCurrentUrl = null;
+
+async function scanPhotoModalImage() {
+  if (!_photoModalCurrentUrl) return toast("No photo loaded.");
+  const btn = document.getElementById("photoModalScanBtn");
+  const out = document.getElementById("photoModalScanResult");
+  if (btn) btn.disabled = true;
+  if (out) { out.style.display = ""; out.textContent = "Scanning… this takes a few seconds"; }
+
+  try {
+    const imgRes = await fetch(_photoModalCurrentUrl);
+    if (!imgRes.ok) throw new Error("Could not load photo");
+    const blob = await imgRes.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    const base64 = dataUrl.split(",")[1];
+    const mediaType = blob.type || "image/jpeg";
+    const { ro, vin, stk } = await _callScanRo(base64, mediaType);
+
+    const parts = [];
+    if (ro)  parts.push(`RO/Job: ${ro}`);
+    if (stk) parts.push(`Stock: ${stk}`);
+    if (vin) parts.push(`VIN: ${vin.replace(/[^A-Za-z0-9]/g,"").slice(-8).toUpperCase()}`);
+
+    if (out) out.textContent = parts.length ? parts.join(" · ") : "Nothing detected — try a clearer photo";
+    toast(parts.length ? "Scan complete" : "Nothing found");
+  } catch (e) {
+    if (out) out.textContent = `Scan error: ${e?.message || e}`;
     toast("Scan failed");
   } finally {
     if (btn) btn.disabled = false;
@@ -532,6 +568,7 @@ function initPhotosUI(){
   document.getElementById("photoViewer")?.addEventListener("click", (e) => {
     if (e.target?.id === "photoViewer") closePhotoViewer();
   });
+  document.getElementById("photoModalScanBtn")?.addEventListener("click", () => scanPhotoModalImage());
 
   clearPhotoGallery();
 
