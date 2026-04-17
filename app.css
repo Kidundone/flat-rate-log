@@ -84,7 +84,7 @@ main{ padding:16px; max-width:880px; margin:0 auto; }
 .right{ text-align:right; }
 
 /* ---------- Pills / Stats ---------- */
-.pillRow{ display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+.pillRow{ display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; }
 .pill{
   background: rgba(230,237,247,.06);
   border:1px solid var(--stroke);
@@ -95,7 +95,7 @@ main{ padding:16px; max-width:880px; margin:0 auto; }
 .v{ font-size:20px; margin-top:4px; font-weight:850; letter-spacing:-.2px; }
 
 @media (max-width:520px){
-  .pillRow{ grid-template-columns: repeat(2, 1fr); }
+  .pillRow{ grid-template-columns: repeat(3, 1fr); }
 }
 
 /* ---------- Inputs ---------- */
@@ -440,6 +440,54 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   flex-wrap: wrap;
   gap: 10px;
   margin: 12px 0;
+}
+
+/* ---------- Type badges ---------- */
+.typeBadge{
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  vertical-align: middle;
+}
+.typeBadge--sold{ background: rgba(34,197,94,.18); color: #4ade80; border: 1px solid rgba(34,197,94,.30); }
+.typeBadge--preowned{ background: rgba(59,130,246,.18); color: #60a5fa; border: 1px solid rgba(59,130,246,.30); }
+.typeBadge--fpf{ background: rgba(251,146,60,.18); color: #fb923c; border: 1px solid rgba(251,146,60,.30); }
+.typeBadge--warranty{ background: rgba(250,204,21,.18); color: #fde047; border: 1px solid rgba(250,204,21,.30); }
+.typeBadge--default{ background: rgba(230,237,247,.10); color: var(--muted); border: 1px solid var(--stroke); }
+
+/* ---------- Week goal progress ---------- */
+.goalBar{
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(230,237,247,.08);
+  border: 1px solid var(--stroke);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.goalBarFill{
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  transition: width 600ms var(--ease);
+  width: 0%;
+}
+.goalBarFill.complete{ background: linear-gradient(90deg, #22c55e, #14b8a6); }
+
+/* ---------- Duplicate warning ---------- */
+#dupWarning{
+  display: none;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(251,146,60,.40);
+  background: rgba(251,146,60,.12);
+  color: #fb923c;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 /* ---------- Earnings preview ---------- */

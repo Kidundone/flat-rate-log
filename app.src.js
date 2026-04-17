@@ -2592,6 +2592,21 @@ function formatWhen(iso){
   try { return new Date(iso).toLocaleString(); } catch { return iso || ""; }
 }
 
+function formatTimeAgo(iso) {
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    if (hrs < 48) return "Yesterday";
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(iso).toLocaleDateString();
+  } catch { return iso || ""; }
+}
+
 function normalizeEntryToken(value) {
   return String(value || "").trim().toUpperCase();
 }
@@ -3591,8 +3606,37 @@ function buildEntryMetaHtml(entry) {
 
   const updatedAt = entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || "";
   return `
-    <div class="small">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""} • ${escapeHtml(formatWhen(updatedAt))}</div>
+    <div class="small muted">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""} • ${escapeHtml(formatTimeAgo(updatedAt))}</div>
   `;
+}
+
+function typeColorClass(type) {
+  const t = String(type || "").toLowerCase();
+  if (t.includes("preown") || t.includes("pre-own") || t.includes("used")) return "typeBadge--preowned";
+  if (t.includes("fpf") || t.includes("f&i") || t.includes("finance")) return "typeBadge--fpf";
+  if (t.includes("warrant")) return "typeBadge--warranty";
+  if (t.includes("sold")) return "typeBadge--sold";
+  return "typeBadge--default";
+}
+
+function typeBadgeHtml(label) {
+  return `<span class="typeBadge ${typeColorClass(label)}">${escapeHtml(label)}</span>`;
+}
+
+function checkDuplicateRef() {
+  const warn = document.getElementById("dupWarning");
+  if (!warn) return;
+  const ref = String(document.getElementById("ref")?.value || "").trim().toUpperCase();
+  if (!ref || ref.length < 2) { warn.style.display = "none"; return; }
+  const dayKey = todayKeyLocal();
+  const dupes = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+    .filter(e => String(e.ref || e.ro || "").trim().toUpperCase() === ref
+      && (e.dayKey === dayKey || !e.dayKey)
+      && String(e.id ?? "") !== String(EDITING_ID ?? ""));
+  if (!dupes.length) { warn.style.display = "none"; return; }
+  const d = dupes[0];
+  warn.style.display = "";
+  warn.textContent = `⚠️ ${ref} already logged today — ${d.type || d.typeText || "?"}, ${d.hours} hrs (${formatMoney(d.earnings)})`;
 }
 
 function updateEarningsPreview() {
@@ -3648,6 +3692,7 @@ window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
 window.__FR.updateEarningsPreview = updateEarningsPreview;
 window.__FR.repeatLastEntry = repeatLastEntry;
 window.__FR.deleteSelectedEntries = deleteSelectedEntries;
+window.__FR.checkDuplicateRef = checkDuplicateRef;
 
 async function saveEntry(entry, options = {}) {
   const preserveType = !!options.preserveType;
@@ -3748,6 +3793,18 @@ async function handleSave(ev) {
 
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
+
+    if (!isEditing && ref) {
+      const refUp = ref.toUpperCase();
+      const todayKey = dayKeyFromISO(nowISO());
+      const dupes = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
+        .filter(e => String(e.ref || e.ro || "").trim().toUpperCase() === refUp && e.dayKey === todayKey);
+      if (dupes.length > 0) {
+        const d = dupes[0];
+        const ok = confirm(`⚠️ Possible duplicate!\n\n${ref} was already logged today:\n${d.type || d.typeText || "?"} · ${d.hours} hrs · ${formatMoney(d.earnings)}\n\nSave anyway?`);
+        if (!ok) return;
+      }
+    }
 
     const createdAt = (isEditing && baseEntry.createdAt) ? baseEntry.createdAt : nowISO();
     const createdAtMs = (isEditing && Number.isFinite(baseEntry.createdAtMs)) ? baseEntry.createdAtMs : Date.now();
@@ -3870,7 +3927,7 @@ async function renderHistory(){
         row.innerHTML = `
           <div class="itemTop">
             <div>
-              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} ${typeBadgeHtml(e.type||"")}</div>
               ${buildEntryMetaHtml(e)}
               ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
             </div>
@@ -3896,7 +3953,7 @@ async function renderHistory(){
     row.innerHTML = `
       <div class="itemTop">
         <div>
-          <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} <span class="muted">(${escapeHtml(e.type||"")})</span></div>
+          <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} ${typeBadgeHtml(e.type||"")}</div>
           ${buildEntryMetaHtml(e)}
         </div>
         <div class="right">
@@ -4378,7 +4435,7 @@ function renderList(entries, mode){
             <label class="small muted" style="display:inline-flex;align-items:center;gap:6px;margin-right:8px;">
               <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} />
             </label>
-            <span class="mono">${refDisplay}</span> <span class="muted">(${typeLabel})</span>
+            <span class="mono">${refDisplay}</span> ${typeBadgeHtml(typeLabel)}
           </div>
           ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
@@ -4620,6 +4677,7 @@ async function refreshUI(entriesOverride){
   setText("rangeDollars", formatMoney(totals.dollars));
   setText("rangeCount", String(totals.count));
   setText("rangeAvgHrs", r1(totals.avgHrs));
+  setText("rangeEffRate", totals.hours > 0 ? formatMoney(round2(totals.dollars / totals.hours)) : "—");
   setText("rangeSub", rangeSubLabel(mode));
   setText("statsSummaryHours", `${r1(totals.hours)} hrs`);
   setText("statsSummaryDollars", formatMoney(totals.dollars));
@@ -4646,10 +4704,27 @@ async function refreshUI(entriesOverride){
   if (!flagged || flagged <= 0) {
     setText("weekDelta", "—");
     setText("weekDeltaHint", "Set flagged hours in More");
+    const gc = document.getElementById("weekGoalCard");
+    if (gc) gc.style.display = "none";
   } else {
     delta = round1(flagged - week.hours);
     setText("weekDelta", String(delta));
     setText("weekDeltaHint", "");
+
+    const pct = Math.min(100, Math.round((week.hours / flagged) * 100));
+    const gc = document.getElementById("weekGoalCard");
+    const gf = document.getElementById("weekGoalFill");
+    const gl = document.getElementById("weekGoalLabel");
+    const gs = document.getElementById("weekGoalSub");
+    if (gc) gc.style.display = "";
+    if (gf) { gf.style.width = pct + "%"; gf.classList.toggle("complete", pct >= 100); }
+    if (gl) gl.textContent = `${r1(week.hours)} / ${r1(flagged)} hrs`;
+    if (gs) {
+      const rem = round1(Math.max(0, flagged - week.hours));
+      gs.textContent = pct >= 100
+        ? `Goal reached! ${formatMoney(week.dollars)} earned this week`
+        : `${rem} hrs to go • ${formatMoney(week.dollars)} earned so far`;
+    }
   }
 
   // More panel input value
@@ -5653,6 +5728,7 @@ async function runOnce() {
 
     document.getElementById("repeatLastBtn")?.addEventListener("click", () => repeatLastEntry?.());
     document.getElementById("deleteSelectedBtn")?.addEventListener("click", () => deleteSelectedEntries?.());
+    document.getElementById("ref")?.addEventListener("input", () => checkDuplicateRef?.());
 
     const _offlineBanner = document.getElementById("offlineBanner");
     if (_offlineBanner) {

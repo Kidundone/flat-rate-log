@@ -180,6 +180,7 @@ async function runOnce() {
 
     document.getElementById("repeatLastBtn")?.addEventListener("click", () => repeatLastEntry?.());
     document.getElementById("deleteSelectedBtn")?.addEventListener("click", () => deleteSelectedEntries?.());
+    document.getElementById("ref")?.addEventListener("input", () => checkDuplicateRef?.());
 
     const _offlineBanner = document.getElementById("offlineBanner");
     if (_offlineBanner) {

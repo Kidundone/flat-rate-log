@@ -139,6 +139,7 @@
               spellcheck="false"
               class="fr26Input"
             />
+            <div id="dupWarning"></div>
           </div>
 
           <div class="fr26Row">
@@ -219,7 +220,20 @@
             <div class="k">Avg hrs/entry</div>
             <div class="v" id="rangeAvgHrs">0.0</div>
           </div>
+          <div class="pill">
+            <div class="k">$/hr eff</div>
+            <div class="v" id="rangeEffRate">—</div>
+          </div>
         </div>
+      </section>
+
+      <section id="weekGoalCard" class="card" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.3px;">WEEK GOAL</div>
+          <div id="weekGoalLabel" class="mono" style="font-size:13px;font-weight:800;"></div>
+        </div>
+        <div class="goalBar"><div id="weekGoalFill" class="goalBarFill"></div></div>
+        <div id="weekGoalSub" class="small" style="margin-top:6px;"></div>
       </section>
 
       <section id="weekBreakdownCard" class="card" style="display:none;">
@@ -350,6 +364,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.d19a496cc1.js" defer></script>
+<script src="/flat-rate-log/app.fdcd83a5a8.js" defer></script>
 </body>
 </html>
