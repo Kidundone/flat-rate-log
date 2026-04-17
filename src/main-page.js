@@ -47,6 +47,9 @@ function setQuickHoursValue(value) {
   hoursEl.dataset.touched = "1";
   hoursEl.dispatchEvent(new Event("input", { bubbles: true }));
   hoursEl.dispatchEvent(new Event("change", { bubbles: true }));
+  document.querySelectorAll("[data-hours-quick]").forEach((btn) => {
+    btn.classList.toggle("selected", btn.getAttribute("data-hours-quick") === next);
+  });
 }
 
 function setEditingEntry(entry) {
@@ -403,9 +406,9 @@ function buildEntryMetaHtml(entry) {
   if (vin8) meta.push(`VIN8: <span class="mono">${escapeHtml(vin8)}</span>`);
   if (entryHasPhoto(entry)) meta.push("Photo attached");
 
+  const updatedAt = entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || "";
   return `
-    <div class="small">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""}</div>
-    <div class="small">Created: ${escapeHtml(formatWhen(entry?.createdAt || entry?.created_at || ""))} • Updated: ${escapeHtml(formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""))}</div>
+    <div class="small">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""} • ${escapeHtml(formatWhen(updatedAt))}</div>
   `;
 }
 
@@ -642,7 +645,7 @@ async function renderHistory(){
               <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
               <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger" data-del="${e.id}">Delete</button>
+                <button class="btn danger-ghost" data-del="${e.id}">Delete</button>
               </div>
             </div>
           </div>`;
@@ -667,7 +670,7 @@ async function renderHistory(){
           <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
           <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger" data-del="${e.id}">Delete</button>
+            <button class="btn danger-ghost" data-del="${e.id}">Delete</button>
           </div>
         </div>
       </div>
@@ -1129,7 +1132,7 @@ function renderList(entries, mode){
     const typeLabel = escapeHtml(e.type || e.typeText || "-");
     const entryId = escapeHtml(String(e.id ?? ""));
     const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
-    const deleteBtn = `<button class="btn danger" data-del="${e.id}">Delete</button>`;
+    const deleteBtn = `<button class="btn danger-ghost" data-del="${e.id}">Delete</button>`;
     const viewPhotoBtn = entryHasPhoto(e)
       ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
       : "";
@@ -1140,7 +1143,6 @@ function renderList(entries, mode){
           <div>
             <label class="small muted" style="display:inline-flex;align-items:center;gap:6px;margin-right:8px;">
               <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} />
-              Select
             </label>
             <span class="mono">${refDisplay}</span> <span class="muted">(${typeLabel})</span>
           </div>
@@ -1150,7 +1152,7 @@ function renderList(entries, mode){
         </div>
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-          <div style="margin-top:6px;font-size:18px;">${formatMoney(e.earnings)}</div>
+          <div style="margin-top:6px;font-size:22px;font-weight:800;">${formatMoney(e.earnings)}</div>
         </div>
       </div>
     `;

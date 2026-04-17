@@ -149,6 +149,18 @@ a.btn{
   border-color: rgba(239,68,68,.55);
   box-shadow: 0 10px 26px rgba(239,68,68,.18);
 }
+.btn.danger-ghost{
+  background: transparent;
+  border-color: rgba(239,68,68,.30);
+  color: rgba(239,68,68,.80);
+  padding: 6px 11px;
+  font-size: 13px;
+  font-weight: 750;
+}
+.btn.danger-ghost:hover{
+  background: rgba(239,68,68,.10);
+  border-color: rgba(239,68,68,.50);
+}
 
 /* Any bare buttons (like your photo buttons) become .btn automatically */
 button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26Chip){
@@ -287,10 +299,18 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   color: rgba(255,255,255,.94);
   font-weight: 900;
   cursor: pointer;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease), box-shadow 120ms var(--ease);
 }
 
 .fr26HourBtn:active{
   transform: translateY(1px);
+}
+
+.fr26HourBtn.selected{
+  background: rgba(29,78,216,.35);
+  border-color: rgba(29,78,216,.65);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(29,78,216,.25);
 }
 
 .fr26Check{
