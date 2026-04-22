@@ -282,7 +282,6 @@ async function runOnce() {
     await safeLoadEntries();
     if (hasGalleryUi) {
       initPhotosUI();
-      wireOcrReprocessButton?.();
     }
     initPayStubUI();
     if (hasReviewUi) {

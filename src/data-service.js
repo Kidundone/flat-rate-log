@@ -231,75 +231,6 @@ async function getPhotoUrl(photoPath) {
   return getSignedPhotoUrl(photoPath);
 }
 
-async function markEntryQueuedForOcr(entryId) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "queued",
-      ocr_error: null,
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
-}
-
-async function markEntryProcessingOcr(entryId) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "processing",
-      ocr_error: null,
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
-}
-
-async function saveOcrResult(entryId, payload) {
-  const body = {
-    ocr_status: payload.ocr_status || (payload.quality_warning ? "needs_review" : "done"),
-    ocr_text_raw: payload.raw_text || null,
-    ocr_sheet_type: payload.sheet_type || null,
-    ocr_ro_suggestion: payload.ro_suggestion || null,
-    ocr_stock_suggestion: payload.stock_suggestion || null,
-    ocr_vin_suggestion: payload.vin_suggestion || null,
-    ocr_vin8_suggestion: payload.vin8_suggestion || null,
-    ocr_work_suggestion: payload.work_suggestion || null,
-    ocr_confidence: payload.confidence ?? null,
-    ocr_quality_warning: payload.quality_warning || null,
-    ocr_processed_at: new Date().toISOString(),
-    ocr_error: null,
-  };
-  const saved = await updateWorkLogWithFallback(sb(), entryId, body);
-  if (!saved) throw new Error("OCR result save failed");
-}
-
-async function markOcrFailed(entryId, err) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "failed",
-      ocr_error: String(err?.message || err || "OCR failed").slice(0, 500),
-      ocr_processed_at: new Date().toISOString(),
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
-}
-
-async function listEntriesNeedingOcr(limit = 25) {
-  const { data, error } = await sb()
-    .from("work_logs")
-    .select("*")
-    .not("photo_path", "is", null)
-    .in("ocr_status", ["queued", "failed", "none"])
-    .order("id", { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return data || [];
-}
-
 async function listEntriesWithPhotos(limit = 100) {
   const { data, error } = await sb()
     .from("work_logs")
@@ -312,10 +243,6 @@ async function listEntriesWithPhotos(limit = 100) {
   return data || [];
 }
 
-async function applyOcrSuggestion(entryId, patch) {
-  const saved = await updateWorkLogWithFallback(sb(), entryId, patch);
-  if (!saved) throw new Error("OCR suggestion apply failed");
-}
 
 async function getSignedPhotoUrl(photoPath, expiresIn = 1800) {
   const { data, error } = await sb()
@@ -575,18 +502,16 @@ function normalizeEntryForApi(entry) {
   };
 }
 
-function normalizeOcrToken(value) {
+function normalizeToken(value) {
   return String(value || "").trim().toUpperCase();
 }
 
 function inferRefTypeFromLog(log) {
-  const explicit = normalizeOcrToken(log?.refType || log?.ref_type);
+  const explicit = normalizeToken(log?.refType || log?.ref_type);
   if (explicit === "STOCK") return "STOCK";
 
-  const currentRef = normalizeOcrToken(log?.ro_number || log?.ref || log?.ro);
-  const stockSuggestion = normalizeOcrToken(log?.ocr_stock_suggestion);
-  const liveStock = normalizeOcrToken(log?.stock);
-  if (stockSuggestion && currentRef && stockSuggestion === currentRef) return "STOCK";
+  const currentRef = normalizeToken(log?.ro_number || log?.ref || log?.ro);
+  const liveStock = normalizeToken(log?.stock);
   if (!currentRef && liveStock) return "STOCK";
 
   return "RO";
@@ -630,18 +555,6 @@ function normalizeSupabaseLog(r) {
     vin: r.vin ?? "",
     vin8: r.vin8 ?? "",
     photo_path: r.photo_path ?? null,
-    ocr_status: r.ocr_status ?? "none",
-    ocr_error: r.ocr_error ?? null,
-    ocr_quality_warning: r.ocr_quality_warning ?? null,
-    ocr_text_raw: r.ocr_text_raw ?? null,
-    ocr_sheet_type: r.ocr_sheet_type ?? null,
-    ocr_ro_suggestion: r.ocr_ro_suggestion ?? null,
-    ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
-    ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
-    ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
-    ocr_work_suggestion: r.ocr_work_suggestion ?? null,
-    ocr_confidence: r.ocr_confidence ?? null,
-    ocr_processed_at: r.ocr_processed_at ?? null,
 
     owner_key: r.owner_key ?? null,
     employee_number: r.employee_number ?? null,
@@ -690,18 +603,6 @@ function mapServerLogToEntry(r) {
     photoDataUrl: null,
     photo_path: r.photo_path || null,
     location: r.location || null,
-    ocr_status: r.ocr_status ?? "none",
-    ocr_error: r.ocr_error ?? null,
-    ocr_quality_warning: r.ocr_quality_warning ?? null,
-    ocr_text_raw: r.ocr_text_raw ?? null,
-    ocr_sheet_type: r.ocr_sheet_type ?? null,
-    ocr_ro_suggestion: r.ocr_ro_suggestion ?? null,
-    ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
-    ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
-    ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
-    ocr_work_suggestion: r.ocr_work_suggestion ?? null,
-    ocr_confidence: r.ocr_confidence ?? null,
-    ocr_processed_at: r.ocr_processed_at ?? null,
   };
 }
 

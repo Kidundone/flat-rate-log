@@ -32,10 +32,10 @@ async function getWeekPayroll(){
   return await get(STORES.payroll, key);
 }
 
-async function saveWeekPayroll({ photoDataUrl, ocrText }){
+async function saveWeekPayroll({ photoDataUrl }){
   const ws = startOfWeekLocal(new Date());
   const key = dateKey(ws);
-  await put(STORES.payroll, { weekStartKey: key, photoDataUrl: photoDataUrl || null, ocrText: ocrText || "", updatedAt: nowISO() });
+  await put(STORES.payroll, { weekStartKey: key, photoDataUrl: photoDataUrl || null, updatedAt: nowISO() });
 }
 
 function rateForPdfEntry(entry, hours) {
@@ -166,66 +166,6 @@ async function exportJSON(){
   const entries = filterEntriesByEmp(all, getEmpId(), true);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-}
-
-function wireOcrReprocessButton() {
-  const btn = document.getElementById("processPhotosBtn");
-  const status = document.getElementById("galleryStatus");
-  if (!btn || !status) return;
-  if (btn.dataset.wired === "1") return;
-  btn.dataset.wired = "1";
-
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    status.textContent = "Looking for saved photos to process...";
-
-    try {
-      const entries = await listEntriesNeedingOcr(10);
-      if (!entries.length) {
-        status.textContent = "No saved photos need OCR.";
-        return;
-      }
-
-      let done = 0;
-      let failed = 0;
-      let processed = 0;
-      for (const entry of entries) {
-        try {
-          status.textContent = `Processing ${processed + 1}/${entries.length}... done ${done}, failed ${failed}`;
-          await markEntryProcessingOcr(entry.id);
-          const signedUrl = await getSignedPhotoUrl(entry.photo_path);
-          const ocr = await runOcrOnImage(signedUrl);
-          const foundSomething = !!(ocr?.ro_suggestion || ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
-          if (foundSomething) {
-            await saveOcrResult(entry.id, ocr);
-            done += 1;
-          } else {
-            await markOcrFailed(
-              entry.id,
-              ocr?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
-            );
-            failed += 1;
-          }
-        } catch (err) {
-          console.error("Saved photo OCR failed", entry.id, err);
-          await markOcrFailed(entry.id, err);
-          failed += 1;
-        } finally {
-          processed += 1;
-          status.textContent = `Processed ${processed}/${entries.length}... done ${done}, failed ${failed}`;
-        }
-      }
-
-      status.textContent = failed
-        ? `Batch complete: ${done} processed, ${failed} failed.`
-        : `Batch complete: ${done} photo(s).`;
-    } catch (err) {
-      console.error(err);
-      status.textContent = "OCR batch failed.";
-    } finally {
-      btn.disabled = false;
-    }
-  });
 }
 
 async function saveFlaggedHours(){
@@ -522,9 +462,7 @@ async function wipeLocalOnly(){
 
 async function refreshPayrollUI(){
   const preview = $("payrollPreview");
-  const ocrBox = $("payrollOcrText");
   if (preview) { preview.style.display = "none"; preview.removeAttribute("src"); }
-  if (ocrBox) ocrBox.value = "";
   setPayrollStatus("");
 
   const data = await getWeekPayroll();
@@ -533,9 +471,6 @@ async function refreshPayrollUI(){
   if (preview && data.photoDataUrl) {
     preview.src = data.photoDataUrl;
     preview.style.display = "block";
-  }
-  if (ocrBox && data.ocrText) {
-    ocrBox.value = data.ocrText;
   }
 }
 
@@ -557,14 +492,6 @@ function reviewFocusMatches(entry, focus) {
   switch (focus) {
     case "with-photo":
       return review.hasPhoto;
-    case "ocr-pending":
-      return review.ocrWaiting;
-    case "ocr-suggestions":
-      return review.suggestionsPending && !review.ocrFailed;
-    case "ocr-failed":
-      return review.ocrFailed;
-    case "ocr-mismatch":
-      return review.roMismatch || review.stockMismatch || review.vinMismatch;
     case "needs-review":
       return review.needsReview;
     case "all":
@@ -577,10 +504,6 @@ function buildReviewEntryRow(entry) {
   const facts = getEntryRecordFacts(entry);
   const review = facts.review;
   const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
-  const suggestionStrip = typeof buildOcrSuggestionStripHtml === "function"
-    ? buildOcrSuggestionStripHtml(entry, "data-review-ocr")
-    : { actions: [], html: "" };
-  const applyActions = suggestionStrip.actions;
   const row = document.createElement("div");
   row.className = "item";
   row.innerHTML = `
@@ -589,14 +512,11 @@ function buildReviewEntryRow(entry) {
         <div class="mono">${escapeHtml(refLabel)}: ${escapeHtml(entry.ref || entry.ro || "-")} <span class="muted">(${escapeHtml(entry.type || entry.typeText || "")})</span></div>
         <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
         <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
-        <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
         ${entry.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(entry.notes)}</div>` : ""}
-        ${suggestionStrip.html}
       </div>
       <div class="right">
         <div class="mono">${String(entry.hours)} hrs @ ${formatMoney(entry.rate)}</div>
         <div style="margin-top:6px;font-size:16px;">${formatMoney(entry.earnings)}</div>
-        <div class="small" style="margin-top:8px;">${escapeHtml(review.statusLabel)}</div>
         <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
           ${review.hasPhoto ? `<button class="btn" type="button" data-review-photo="${escapeHtml(String(entry.id ?? ""))}">View Photo</button>` : ""}
           <button class="btn danger" data-del="${entry.id}">Delete</button>
@@ -610,25 +530,6 @@ function buildReviewEntryRow(entry) {
     photoBtn?.addEventListener("click", () => openPhotoViewer(entry));
   }
 
-  const ocrBtns = Array.from(row.querySelectorAll("button[data-review-ocr]"));
-  for (const btn of ocrBtns) {
-    btn.addEventListener("click", async () => {
-      const kind = btn.getAttribute("data-review-ocr") || "";
-      const action = applyActions.find((item) => item.kind === kind);
-      if (!action || typeof applyEntryOcrSuggestion !== "function") return;
-
-      ocrBtns.forEach((el) => { el.disabled = true; });
-      try {
-        await applyEntryOcrSuggestion(entry, action);
-        await renderReview();
-        renderPayStubComparison();
-      } catch (err) {
-        console.error("Review OCR apply failed", entry?.id, kind, err);
-        ocrBtns.forEach((el) => { el.disabled = false; });
-      }
-    });
-  }
-
   return row;
 }
 
@@ -637,8 +538,6 @@ function scoreMissingWorkCandidate(entry) {
   let score = 0;
   if (review.hasPhoto) score += 30;
   if (entry.notes) score += 8;
-  if (review.suggestionsPending) score += 6;
-  if (review.ocrFailed) score += 4;
   score += Math.floor((Date.parse(entry.updatedAt || entry.createdAt || "") || 0) / 86400000);
   return score;
 }
@@ -729,19 +628,9 @@ async function renderReview(){
   if (q) slice = slice.filter(e => matchSearch(e, q));
 
   const totals = computeTotals(slice);
-  const reviewCounts = slice.reduce((acc, entry) => {
-    const review = getEntryReviewState(entry);
-    if (review.needsReview) acc.needsReview += 1;
-    if (review.ocrFailed) acc.failed += 1;
-    if (review.suggestionsPending) acc.suggestions += 1;
-    if (review.roMismatch || review.stockMismatch || review.vinMismatch) acc.mismatches += 1;
-    return acc;
-  }, { needsReview: 0, failed: 0, suggestions: 0, mismatches: 0 });
   const meta = document.getElementById("reviewMeta");
   if (meta) {
-    meta.textContent =
-      `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)} • ` +
-      `${reviewCounts.needsReview} need review • ${reviewCounts.failed} OCR failed • ${reviewCounts.suggestions} suggestion ready • ${reviewCounts.mismatches} mismatch`;
+    meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
   }
 
   const list = document.getElementById("reviewList");
@@ -785,4 +674,3 @@ async function exportAllCsvAdmin() {
 }
 
 window.__FR = window.__FR || {};
-window.__FR.wireOcrReprocessButton = wireOcrReprocessButton;

@@ -74,17 +74,6 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
   return { path, dealer: null };
 }
 
-async function runOCR(photoPath) {
-  if (!photoPath) return "";
-  if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
-
-  const signedUrl = await getSignedPhotoUrl(photoPath);
-  const ocrResult = await runOcrOnImage(signedUrl);
-  const ocrText = ocrResult?.raw_text || "";
-  OCR_TEXT_CACHE.set(photoPath, ocrText);
-  return ocrText;
-}
-
 // --- Photo selection (camera / library / files) ---
 let SELECTED_PHOTO_FILE = null;
 
@@ -175,7 +164,6 @@ async function fileToDataURL(file){
   });
 }
 
-/* -------------------- OCR helpers -------------------- */
 function setPayrollStatus(msgHtml) {
   const status = $("payrollScanStatus");
   if (status) status.innerHTML = msgHtml || "";
@@ -439,74 +427,6 @@ function closePhotoViewer(){
   shell.style.display = "none";
 }
 
-async function _callScanRo(base64, mediaType = "image/jpeg") {
-  const sb = window.__FR?.sb;
-  const { data: { session } } = await sb.auth.getSession();
-  const token = session?.access_token || window.__SUPABASE_CONFIG__.anonKey;
-  const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-ro`;
-  const res = await fetch(fnUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "apikey": window.__SUPABASE_CONFIG__.anonKey,
-    },
-    body: JSON.stringify({ imageBase64: base64, mediaType }),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => res.status);
-    throw new Error(`Scan failed (${res.status}): ${txt}`);
-  }
-  return res.json();
-}
-
-async function autoScanPhotoAndPatch(file, entryId, currentRef, currentVin8) {
-  try {
-    const dataUrl = await compressImageFileToDataUrl(file, 1200, 0.75);
-    const base64 = dataUrl.split(",")[1];
-    const mediaType = dataUrl.match(/data:([^;]+)/)?.[1] || "image/jpeg";
-    const { ro, vin, stk } = await _callScanRo(base64, mediaType);
-
-    const patch = {};
-    const found = [];
-
-    const hasRef = !!String(currentRef || "").trim();
-    if (!hasRef) {
-      if (ro)       { patch.ro_number = ro;  found.push(`RO: ${ro}`);   }
-      else if (stk) { patch.ro_number = stk; found.push(`STK: ${stk}`); }
-    }
-
-    const hasVin = !!String(currentVin8 || "").trim();
-    if (!hasVin && vin) {
-      const vin8 = vin.replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase();
-      if (vin8.length >= 6) { patch.vin8 = vin8; found.push(`VIN: ${vin8}`); }
-    }
-
-    if (!Object.keys(patch).length) return;
-
-    const sb = window.__FR?.sb;
-    const uid = window.CURRENT_UID;
-    if (sb && entryId && uid) {
-      await sb.from("work_logs").update(patch).eq("id", entryId).eq("user_id", uid);
-    }
-
-    if (Array.isArray(window.CURRENT_ENTRIES)) {
-      const idx = window.CURRENT_ENTRIES.findIndex(e => String(e.id) === String(entryId));
-      if (idx >= 0) {
-        const updated = { ...window.CURRENT_ENTRIES[idx] };
-        if (patch.ro_number) { updated.ro_number = patch.ro_number; updated.ref = patch.ro_number; updated.ro = patch.ro_number; }
-        if (patch.vin8) updated.vin8 = patch.vin8;
-        window.CURRENT_ENTRIES[idx] = updated;
-        refreshUI?.(window.CURRENT_ENTRIES);
-      }
-    }
-
-    if (found.length) toast(`Photo scanned — ${found.join(" · ")}`);
-  } catch (e) {
-    console.warn("[OCR]", e?.message || e);
-    toast(`OCR: ${e?.message || "failed"}`);
-  }
-}
 
 function initPhotosUI(){
   document.getElementById("closePhotoViewerBtn")?.addEventListener("click", closePhotoViewer);

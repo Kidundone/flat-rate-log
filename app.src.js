@@ -3,8 +3,6 @@
 const SUPABASE_URL = "https://lfnydhidbwfyfjafazdy.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4";
 const STOCK_PREFIX_RULES = [];
-const OCR_TEXT_CACHE = new Map();
-const OCR_CLASSIFICATION_CACHE = new Map();
 
 function getStockPrefixRules() {
   if (Array.isArray(window.STOCK_PREFIX_RULES)) return window.STOCK_PREFIX_RULES;
@@ -82,76 +80,12 @@ async function classifyEntryUniversal({ ro, stock, vin }) {
   return classification || unmappedClassification();
 }
 
-function extractOcrPatterns(ocrText) {
-  const upper = String(ocrText || "").toUpperCase();
-  const out = [];
-  const seen = new Set();
-  const add = (type, value, matched_on = null) => {
-    const v = String(value || "").toUpperCase().trim();
-    if (!v) return;
-    const key = `${type}:${v}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({ type, value: v, matched_on: matched_on || key });
-  };
-
-  const vinHits = upper.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
-  for (const token of vinHits.slice(0, 3)) {
-    const wmi = token.slice(0, 3);
-    add("VIN", wmi, `OCR:VIN:${wmi}`);
-  }
-
-  const words = upper.match(/[A-Z0-9]{3,}/g) || [];
-  for (const token of words.slice(0, 24)) {
-    const letters = token.replace(/[^A-Z]/g, "");
-    if (letters.length >= 3) {
-      const prefix = letters.slice(0, 3);
-      add("STK", prefix, `OCR:STK:${prefix}`);
-    }
-  }
-
-  return out;
+async function classifyEntryWithFallback({ ro, stock, vin }) {
+  return classifyEntryUniversal({ ro, stock, vin });
 }
 
-async function classifyEntryFromOCR(ocrText) {
-  const patterns = extractOcrPatterns(ocrText);
-  if (!patterns.length) return unmappedClassification();
-  const classification = await lookupPatternMappings(patterns);
-  return classification || unmappedClassification();
-}
-
-async function classifyEntryWithFallback({ ro, stock, vin, photoPath }) {
-  let classification = await classifyEntryUniversal({ ro, stock, vin });
-
-  if (classification.brand !== "Unmapped") {
-    return classification;
-  }
-
-  if (!photoPath) {
-    return classification;
-  }
-
-  if (OCR_CLASSIFICATION_CACHE.has(photoPath)) {
-    return OCR_CLASSIFICATION_CACHE.get(photoPath);
-  }
-
-  try {
-    const ocrText = await runOCR(photoPath);
-    if (!ocrText) return classification;
-    const retry = await classifyEntryFromOCR(ocrText);
-    if (retry.brand !== "Unmapped") {
-      classification = retry;
-      OCR_CLASSIFICATION_CACHE.set(photoPath, classification);
-    }
-  } catch (err) {
-    console.error("OCR fallback classification failed", err);
-  }
-
-  return classification;
-}
-
-async function classifyDealerUniversal({ ro, stock, vin, photoPath }) {
-  const classification = await classifyEntryWithFallback({ ro, stock, vin, photoPath });
+async function classifyDealerUniversal({ ro, stock, vin }) {
+  const classification = await classifyEntryWithFallback({ ro, stock, vin });
   if (!classification || classification.brand === "Unmapped") return "Unknown";
   return classification.brand;
 }
@@ -298,758 +232,10 @@ function detectFromStock(stockNumber) {
   return null;
 }
 
-function detectBrand({ ro = "", stock = "", ocrText = "" }) {
+function detectBrand({ ro = "", stock = "" }) {
   const stockHit = detectFromStock(stock || ro);
   if (stockHit?.brand) return stockHit.brand;
-
-  const textHit = detectBrandFromText(ocrText);
-  if (textHit) return textHit;
-
   return "Unknown";
-}
-
-function normalizeText(s = "") {
-  return String(s)
-    .replace(/\r/g, "\n")
-    .replace(/[|]/g, "I")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[^\S\n]+/g, " ")
-    .trim();
-}
-
-function up(s = "") {
-  return String(s || "").toUpperCase().trim();
-}
-
-function last8(vin = "") {
-  const clean = up(vin).replace(/[^A-Z0-9]/g, "");
-  return clean.length >= 8 ? clean.slice(-8) : "";
-}
-
-const OCR_HEADER_REGION = Object.freeze({ x: 0.03, y: 0.02, width: 0.94, height: 0.18 });
-const OCR_TEMPLATES = Object.freeze({
-  ro: {
-    // `photo` is tuned for live proof shots with table/background in frame.
-    // `scan` is tuned for full-page Notes/PDF exports where the sheet fills
-    // the image and the tag cell sits farther right than the options row.
-    photo: {
-      ro_number: { x: 0.39, y: 0.27, width: 0.20, height: 0.09 },
-      vin: { x: 0.36, y: 0.37, width: 0.33, height: 0.06 },
-      vin_fallback: { x: 0.20, y: 0.34, width: 0.58, height: 0.09 },
-      stock: { x: 0.38, y: 0.42, width: 0.33, height: 0.06 },
-    },
-    scan: {
-      ro_number: { x: 0.40, y: 0.04, width: 0.20, height: 0.10 },
-      vin: { x: 0.37, y: 0.21, width: 0.40, height: 0.05 },
-      vin_fallback: { x: 0.20, y: 0.18, width: 0.62, height: 0.08 },
-      stock: { x: 0.78, y: 0.19, width: 0.15, height: 0.06 },
-    },
-  },
-  get_ready: {
-    stock: { x: 0.22, y: 0.15, width: 0.26, height: 0.09 },
-    vin6: { x: 0.54, y: 0.15, width: 0.26, height: 0.09 },
-  },
-});
-const OCR_MIN_IMAGE_WIDTH = 800;
-const OCR_MIN_BRIGHTNESS = 38;
-const OCR_MIN_EDGE_SCORE = 6;
-const OCR_QUALITY_SAMPLE_MAX = 256;
-let OCR_WORKER_PROMISE = null;
-let OCR_WORKER_QUEUE = Promise.resolve();
-const VIN_CHECKSUM_WEIGHTS = Object.freeze([8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]);
-const VIN_TRANSLITERATION = Object.freeze({
-  A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8,
-  J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9,
-  S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9,
-});
-
-function detectSheetType(text) {
-  const t = up(text);
-  if (t.includes("NEW - PRE-OWNED GET READY") || t.includes("GET READY")) return "get_ready";
-  if (t.includes("WORKORDER") || t.includes("FLOW MOTORS OF WINSTON-SALEM")) return "ro";
-  return "unknown";
-}
-
-function normalizeVinCandidateToken(value) {
-  return up(value)
-    .replace(/[IOQ]/g, (ch) => (ch === "I" ? "1" : "0"))
-    .replace(/[^A-Z0-9]/g, "");
-}
-
-function transliterateVinChar(ch) {
-  if (/\d/.test(ch)) return Number(ch);
-  return VIN_TRANSLITERATION[ch] ?? -1;
-}
-
-function isValidVinChecksum(vin) {
-  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return false;
-  let sum = 0;
-  for (let i = 0; i < vin.length; i += 1) {
-    const value = transliterateVinChar(vin[i]);
-    if (value < 0) return false;
-    sum += value * VIN_CHECKSUM_WEIGHTS[i];
-  }
-  const remainder = sum % 11;
-  const expected = remainder === 10 ? "X" : String(remainder);
-  return vin[8] === expected;
-}
-
-function collectVinCandidates(text) {
-  const upper = up(text);
-  const out = [];
-  const seen = new Set();
-  const add = (rawValue, mode = "token") => {
-    const normalized = normalizeVinCandidateToken(rawValue);
-    if (normalized.length !== 17) return;
-    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(normalized)) return;
-    if (seen.has(normalized)) return;
-    seen.add(normalized);
-    out.push({ value: normalized, mode });
-  };
-  const addWindowed = (rawValue, mode = "token") => {
-    const normalized = normalizeVinCandidateToken(rawValue);
-    if (normalized.length < 17) return;
-    if (normalized.length === 17) {
-      add(normalized, mode);
-      return;
-    }
-    const maxWindows = Math.min(normalized.length - 16, 10);
-    for (let i = 0; i < maxWindows; i += 1) {
-      add(normalized.slice(i, i + 17), mode === "labeled" ? "labeled-window" : "window");
-    }
-  };
-
-  for (const match of upper.matchAll(/\bVIN[:\s#-]*([A-Z0-9]{11,22})\b/g)) {
-    addWindowed(match[1], "labeled");
-  }
-
-  for (const token of upper.match(/[A-Z0-9]{11,22}/g) || []) {
-    addWindowed(token, "token");
-  }
-
-  const compact = upper.replace(/[^A-Z0-9]/g, "");
-  if (compact.length >= 17) {
-    const maxWindows = Math.min(compact.length - 16, 8);
-    for (let i = 0; i < maxWindows; i += 1) {
-      add(compact.slice(i, i + 17), "compact");
-    }
-  }
-
-  return out;
-}
-
-function scoreVinCandidate(candidate, sourceText = "") {
-  if (!candidate?.value || !/[A-Z]/.test(candidate.value) || !/\d/.test(candidate.value)) {
-    return -Infinity;
-  }
-
-  let score = 20;
-  if (candidate.mode === "labeled") score += 8;
-  else if (candidate.mode === "labeled-window") score += 4;
-  else if (candidate.mode === "window") score -= 2;
-  else if (candidate.mode === "compact") score -= 6;
-
-  if (isValidVinChecksum(candidate.value)) score += 24;
-  if (up(sourceText).includes("VIN")) score += 2;
-  if (new Set(candidate.value).size < 8) score -= 6;
-  return score;
-}
-
-function extractBestVinCandidate(text) {
-  const candidates = collectVinCandidates(text);
-  let best = "";
-  let bestScore = -Infinity;
-
-  for (const candidate of candidates) {
-    const score = scoreVinCandidate(candidate, text);
-    if (score > bestScore) {
-      best = candidate.value;
-      bestScore = score;
-    }
-  }
-
-  return bestScore >= 24 ? best : "";
-}
-
-function extractVin(text) {
-  return extractBestVinCandidate(text);
-}
-
-function parseRoNumber(text) {
-  const raw = String(text || "").toUpperCase();
-  const labeled = raw.match(/(?:RO|R\.O\.|WORK\s*ORDER|WORKORDER)[:\s#-]*([0-9]{5,8})\b/);
-  if (labeled?.[1]) return labeled[1];
-
-  const stacked = raw.match(/\b([0-9]{5,8})\b[\s\S]{0,32}(?:WORK\s*ORDER|WORKORDER|R\.O\.)/);
-  if (stacked?.[1]) return stacked[1];
-
-  const match = raw.match(/\b(\d{5,8})\b/);
-  return match?.[1] || "";
-}
-
-function parseVin(text) {
-  return extractBestVinCandidate(text);
-}
-
-function parseStock(text) {
-  const match = String(text || "").toUpperCase().match(/\b(?:STK|STOCK|TAG)[:\s#-]*([A-Z0-9]{4,10})\b/);
-  return match ? match[1] : "";
-}
-
-function extractBareStock(text) {
-  const ignore = new Set([
-    "STK",
-    "STOCK",
-    "VIN",
-    "LAST",
-    "MILES",
-    "SALESPERSON",
-    "GET",
-    "READY",
-    "WORKORDER",
-    "FLOW",
-    "MOTORS",
-    "OF",
-    "WINSTON",
-    "SALEM",
-  ]);
-  const tokens = (up(text).match(/[A-Z0-9]{3,12}/g) || [])
-    .filter((token) => !ignore.has(token))
-    .sort((a, b) => {
-      const score = (token) => {
-        let total = 0;
-        if (/[0-9]/.test(token)) total += 4;
-        if (/[A-Z]/.test(token)) total += 2;
-        if (/^[A-Z0-9]+$/.test(token)) total += 1;
-        return total;
-      };
-      return score(b) - score(a);
-    });
-  return tokens[0] || "";
-}
-
-function cleanAlnumToken(value) {
-  return up(value).replace(/[^A-Z0-9]/g, "");
-}
-
-function isLikelyRoStockValue(value) {
-  const token = cleanAlnumToken(value);
-  if (token.length < 4 || token.length > 8) return false;
-  if (!/[0-9]/.test(token)) return false;
-  if (/^[A-Z]+$/.test(token)) return false;
-  if (/(WORK|FLOW|MOTOR|SALEM|READY|VIN|MILES|SALE)/.test(token)) return false;
-  return true;
-}
-
-function extractLabeledToken(text, patterns, validator) {
-  for (const rx of patterns) {
-    const match = text.match(rx);
-    const token = cleanAlnumToken(match?.[1] || "");
-    if (token && (!validator || validator(token))) {
-      return token;
-    }
-  }
-  return "";
-}
-
-function extractRoStockCandidate(text) {
-  const labeled = extractLabeledToken(text, [
-    /STK[:\s#-]*([A-Z0-9]{3,12})/i,
-    /STOCK[:\s#-]*([A-Z0-9]{3,12})/i,
-    /TAG[:\s#-]*([A-Z0-9]{3,12})/i,
-  ], isLikelyRoStockValue);
-  if (labeled) return { value: labeled, source: "labeled" };
-
-  const bare = cleanAlnumToken(extractBareStock(text));
-  if (isLikelyRoStockValue(bare)) return { value: bare, source: "fallback" };
-
-  return { value: "", source: "none" };
-}
-
-function extractLast6(text) {
-  const compact = up(text).replace(/[^A-Z0-9]/g, "");
-  const matches = compact.match(/[A-Z0-9]{6}/g) || [];
-  return matches[0] || "";
-}
-
-function extractStockFromRo(text) {
-  return extractRoStockCandidate(text).value;
-}
-
-function extractStockFromGetReady(text) {
-  const patterns = [
-    /STOCK\s*#\s*([A-Z0-9]{3,12})/i,
-    /MILES\s+([A-Z0-9]{3,12})\s+SALESPERSON/i,
-  ];
-  for (const rx of patterns) {
-    const m = text.match(rx);
-    if (m?.[1]) return up(m[1]);
-  }
-  return extractBareStock(text);
-}
-
-function extractVinLast6FromGetReady(text) {
-  const patterns = [
-    /VIN\s*\(LAST\s*6\)\s*([A-Z0-9]{6})/i,
-    /VIN\s+LAST\s*6\s+([A-Z0-9]{6})/i,
-  ];
-  for (const rx of patterns) {
-    const m = text.match(rx);
-    if (m?.[1]) return up(m[1]);
-  }
-  return extractLast6(text);
-}
-
-function parseRoText(text) {
-  const roNumber = parseRoNumber(text);
-  const vin = parseVin(text);
-  const stock = parseStock(text);
-  const hasRo = !!roNumber;
-  const hasVin = !!vin;
-  const hasStock = !!stock;
-  let confidence = 0.15;
-
-  if (hasRo && hasVin && hasStock) confidence = 0.98;
-  else if (hasRo && hasVin) confidence = 0.95;
-  else if (hasRo && hasStock) confidence = 0.9;
-  else if (hasVin) confidence = 0.9;
-  else if (hasRo) confidence = 0.84;
-  else if (hasStock) confidence = 0.72;
-
-  return {
-    sheet_type: "ro",
-    ro_suggestion: roNumber || null,
-    stock_suggestion: stock || null,
-    vin_suggestion: vin || null,
-    vin8_suggestion: vin ? last8(vin) : null,
-    work_suggestion: null,
-    confidence,
-  };
-}
-
-function parseGetReadyText(text) {
-  const stock = extractStockFromGetReady(text);
-  const vinLast6 = extractVinLast6FromGetReady(text);
-
-  return {
-    sheet_type: "get_ready",
-    stock_suggestion: stock || null,
-    vin_suggestion: null,
-    vin8_suggestion: vinLast6 || null,
-    work_suggestion: null,
-    confidence: stock || vinLast6 ? 0.85 : 0.2,
-  };
-}
-
-function parseUnknownText(text) {
-  const vin = extractVin(text);
-  const stock = extractStockFromRo(text) || extractStockFromGetReady(text);
-
-  return {
-    sheet_type: "unknown",
-    stock_suggestion: stock || null,
-    vin_suggestion: vin || null,
-    vin8_suggestion: vin ? last8(vin) : null,
-    work_suggestion: null,
-    confidence: vin || stock ? 0.5 : 0.1,
-  };
-}
-
-async function ensureImageBlob(imageUrlOrBlob) {
-  if (!imageUrlOrBlob) throw new Error("OCR image missing");
-  if (imageUrlOrBlob instanceof Blob) {
-    if (!imageUrlOrBlob.size) throw new Error("OCR image missing");
-    return imageUrlOrBlob;
-  }
-  if (typeof imageUrlOrBlob === "string") {
-    try {
-      const res = await fetch(imageUrlOrBlob);
-      if (!res.ok) throw new Error("OCR image missing");
-      const blob = await res.blob();
-      if (!blob?.size) throw new Error("OCR image missing");
-      return blob;
-    } catch (err) {
-      throw new Error("OCR image missing");
-    }
-  }
-  throw new Error("Unsupported OCR image source");
-}
-
-async function assessImageQuality(imageBlob) {
-  if (!(imageBlob instanceof Blob) || !imageBlob.size) {
-    throw new Error("OCR image missing");
-  }
-
-  const bitmap = await createImageBitmap(imageBlob);
-  try {
-    const longest = Math.max(bitmap.width, bitmap.height);
-    const scale = Math.min(1, OCR_QUALITY_SAMPLE_MAX / longest);
-    const sampleWidth = Math.max(32, Math.round(bitmap.width * scale));
-    const sampleHeight = Math.max(32, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = sampleWidth;
-    canvas.height = sampleHeight;
-
-    const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
-    if (!ctx) throw new Error("Image analysis unavailable");
-    ctx.drawImage(bitmap, 0, 0, sampleWidth, sampleHeight);
-
-    const imageData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
-    const px = imageData.data;
-    const luma = new Float32Array(sampleWidth * sampleHeight);
-    let brightnessSum = 0;
-
-    for (let i = 0, p = 0; i < px.length; i += 4, p += 1) {
-      const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-      luma[p] = y;
-      brightnessSum += y;
-    }
-
-    const brightness = brightnessSum / luma.length;
-
-    let edgeSum = 0;
-    let edgeCount = 0;
-    for (let y = 0; y < sampleHeight - 1; y += 1) {
-      for (let x = 0; x < sampleWidth - 1; x += 1) {
-        const idx = y * sampleWidth + x;
-        edgeSum += Math.abs(luma[idx] - luma[idx + 1]);
-        edgeSum += Math.abs(luma[idx] - luma[idx + sampleWidth]);
-        edgeCount += 2;
-      }
-    }
-
-    const edgeScore = edgeCount ? edgeSum / edgeCount : 0;
-    return {
-      width: bitmap.width,
-      height: bitmap.height,
-      brightness,
-      edgeScore,
-      tooSmall: bitmap.width < OCR_MIN_IMAGE_WIDTH,
-      tooDark: brightness < OCR_MIN_BRIGHTNESS,
-      tooBlurry: edgeScore < OCR_MIN_EDGE_SCORE,
-    };
-  } finally {
-    bitmap.close?.();
-  }
-}
-
-function finalizeOcrResult(result, quality) {
-  const foundSomething = !!(
-    result?.ro_suggestion
-    || result?.stock_suggestion
-    || result?.vin_suggestion
-    || result?.vin8_suggestion
-  );
-
-  return {
-    ...result,
-    quality,
-    quality_warning: quality?.tooBlurry ? "low_confidence_image" : null,
-    ocr_status: quality?.tooBlurry && foundSomething ? "needs_review" : "done",
-  };
-}
-
-function resolveCropRegion(region, width, height) {
-  const scale = (value, total) => {
-    if (!Number.isFinite(Number(value))) return 0;
-    const n = Number(value);
-    return n > 0 && n <= 1 ? Math.round(n * total) : Math.round(n);
-  };
-
-  const x = Math.max(0, Math.min(width - 1, scale(region?.x, width)));
-  const y = Math.max(0, Math.min(height - 1, scale(region?.y, height)));
-  const w = Math.max(1, Math.min(width - x, scale(region?.width, width)));
-  const h = Math.max(1, Math.min(height - y, scale(region?.height, height)));
-
-  return { x, y, width: w, height: h };
-}
-
-async function cropBlobToRegion(fileOrBlob, region) {
-  const bitmap = await createImageBitmap(fileOrBlob);
-  try {
-    const rect = resolveCropRegion(region, bitmap.width, bitmap.height);
-    const canvas = document.createElement("canvas");
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Crop canvas unavailable");
-
-    ctx.drawImage(
-      bitmap,
-      rect.x,
-      rect.y,
-      rect.width,
-      rect.height,
-      0,
-      0,
-      rect.width,
-      rect.height
-    );
-
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", 0.85)
-    );
-    if (!blob) throw new Error("Crop blob failed");
-    return blob;
-  } finally {
-    bitmap.close?.();
-  }
-}
-
-async function getOcrWorker() {
-  if (!window.Tesseract?.createWorker) {
-    throw new Error("Tesseract worker unavailable");
-  }
-  if (!OCR_WORKER_PROMISE) {
-    OCR_WORKER_PROMISE = window.Tesseract.createWorker("eng");
-  }
-  return OCR_WORKER_PROMISE;
-}
-
-function enqueueOcrWorkerJob(job) {
-  const next = OCR_WORKER_QUEUE
-    .catch(() => {})
-    .then(job);
-  OCR_WORKER_QUEUE = next.catch(() => {});
-  return next;
-}
-
-async function recognizeCrop(imageBlob, region) {
-  const crop = await cropBlobToRegion(imageBlob, region);
-  const result = await enqueueOcrWorkerJob(async () => {
-    const worker = await getOcrWorker();
-    return worker.recognize(crop);
-  });
-  return normalizeText(result?.data?.text || "");
-}
-
-function combineOcrText(parts) {
-  return normalizeText((parts || []).filter(Boolean).join("\n"));
-}
-
-async function runRoFieldOcr(imageBlob, headerText = "", roTemplate = OCR_TEMPLATES.ro.photo) {
-  const roText = await recognizeCrop(imageBlob, roTemplate.ro_number);
-  const vinText = await recognizeCrop(imageBlob, roTemplate.vin);
-  let vinFallbackText = "";
-  let vin = parseVin(vinText);
-  if (!vin && roTemplate.vin_fallback) {
-    vinFallbackText = await recognizeCrop(imageBlob, roTemplate.vin_fallback);
-    vin = parseVin(vinFallbackText);
-  }
-  const stockText = await recognizeCrop(imageBlob, roTemplate.stock);
-  const combined = combineOcrText([headerText, roText, vinText, vinFallbackText, stockText]);
-  const roNumber = parseRoNumber(roText) || parseRoNumber(combined);
-  vin = vin || parseVin(combined);
-  const stock = parseStock(stockText)
-    || parseStock(combined)
-    || extractRoStockCandidate(stockText).value
-    || extractRoStockCandidate(combined).value;
-  const hasVin = !!vin;
-  const hasRo = !!roNumber;
-  const hasStock = !!stock;
-  let confidence = 0.15;
-
-  if (hasRo && hasVin && hasStock) confidence = 0.98;
-  else if (hasRo && hasVin) confidence = 0.95;
-  else if (hasRo && hasStock) confidence = 0.9;
-  else if (hasVin) confidence = 0.9;
-  else if (hasRo) confidence = 0.84;
-  else if (hasStock) confidence = 0.72;
-
-  return {
-    raw_text: combined,
-    sheet_type: "ro",
-    ro_suggestion: roNumber || null,
-    stock_suggestion: stock || null,
-    vin_suggestion: vin || null,
-    vin8_suggestion: vin ? last8(vin) : null,
-    work_suggestion: null,
-    confidence,
-  };
-}
-
-function scoreRoOcrResult(result) {
-  let score = Number(result?.confidence || 0);
-  if (result?.ro_suggestion) score += 0.08;
-  if (result?.vin_suggestion) score += 0.12;
-  if (result?.stock_suggestion) score += 0.06;
-  if (result?.vin_suggestion && isValidVinChecksum(result.vin_suggestion)) score += 0.1;
-  return score;
-}
-
-async function runBestRoFieldOcr(imageBlob, headerText = "") {
-  let bestResult = null;
-  let bestScore = -Infinity;
-  for (const roTemplate of Object.values(OCR_TEMPLATES.ro)) {
-    const result = await runRoFieldOcr(imageBlob, headerText, roTemplate);
-    const score = scoreRoOcrResult(result);
-    if (!bestResult || score > bestScore) {
-      bestResult = result;
-      bestScore = score;
-    }
-  }
-  return bestResult || await runRoFieldOcr(imageBlob, headerText, OCR_TEMPLATES.ro.photo);
-}
-
-async function runGetReadyFieldOcr(imageBlob, headerText = "") {
-  const stockText = await recognizeCrop(imageBlob, OCR_TEMPLATES.get_ready.stock);
-  const vinLast6Text = await recognizeCrop(imageBlob, OCR_TEMPLATES.get_ready.vin6);
-  const combined = combineOcrText([headerText, `STOCK ${stockText}`, `VIN LAST 6 ${vinLast6Text}`]);
-  const stock = extractStockFromGetReady(stockText) || extractStockFromGetReady(combined);
-  const vinLast6 = extractVinLast6FromGetReady(vinLast6Text) || extractVinLast6FromGetReady(combined);
-
-  return {
-    raw_text: combined,
-    sheet_type: "get_ready",
-    stock_suggestion: stock || null,
-    vin_suggestion: null,
-    vin8_suggestion: vinLast6 || null,
-    work_suggestion: null,
-    confidence: stock || vinLast6 ? 0.85 : 0.2,
-  };
-}
-
-async function runOcrOnImage(imageUrlOrBlob) {
-  const imageBlob = await ensureImageBlob(imageUrlOrBlob);
-  const quality = await assessImageQuality(imageBlob);
-  if (quality.tooSmall) {
-    throw new Error("Image too small");
-  }
-  if (quality.tooDark) {
-    throw new Error("Image too dark");
-  }
-  if (quality.tooBlurry) {
-    console.warn("Low-confidence image, trying OCR anyway", quality);
-  }
-  const headerText = await recognizeCrop(imageBlob, OCR_HEADER_REGION);
-  const sheetType = detectSheetType(headerText);
-
-  if (sheetType === "ro") {
-    return finalizeOcrResult(await runBestRoFieldOcr(imageBlob, headerText), quality);
-  }
-  if (sheetType === "get_ready") {
-    return finalizeOcrResult(await runGetReadyFieldOcr(imageBlob, headerText), quality);
-  }
-
-  const roCandidate = await runBestRoFieldOcr(imageBlob, headerText);
-  if (roCandidate.stock_suggestion || roCandidate.vin_suggestion) {
-    return finalizeOcrResult({
-      ...roCandidate,
-      sheet_type: "unknown",
-      confidence: Math.max(Number(roCandidate.confidence || 0), 0.5),
-    }, quality);
-  }
-
-  const getReadyCandidate = await runGetReadyFieldOcr(imageBlob, headerText);
-  if (getReadyCandidate.stock_suggestion || getReadyCandidate.vin8_suggestion) {
-    return finalizeOcrResult({
-      ...getReadyCandidate,
-      sheet_type: "unknown",
-      confidence: Math.max(Number(getReadyCandidate.confidence || 0), 0.5),
-    }, quality);
-  }
-
-  const raw = combineOcrText([headerText, roCandidate.raw_text, getReadyCandidate.raw_text]);
-  return finalizeOcrResult({ raw_text: raw, ...parseUnknownText(raw) }, quality);
-}
-
-async function runOCR(photoPath) {
-  if (!photoPath) return "";
-  if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
-
-  const signedUrl = await getSignedPhotoUrl(photoPath);
-  const ocrResult = await runOcrOnImage(signedUrl);
-  const ocrText = ocrResult?.raw_text || "";
-  OCR_TEXT_CACHE.set(photoPath, ocrText);
-  return ocrText;
-}
-
-async function runOCRAndClassify(row) {
-  try {
-    if (!row?.id || !row?.photo_path) return;
-    await markEntryProcessingOcr(row.id);
-
-    let payload = { ...(row || {}) };
-    if (!payload.ro_number && !payload.ref && !payload.ro && !payload.stock && !payload.stock_number && !payload.vin8) {
-      const { data: fresh, error } = await sb()
-        .from("work_logs")
-        .select("*")
-        .eq("id", row.id)
-        .maybeSingle();
-      if (error) throw error;
-      payload = {
-        ...payload,
-        ...fresh,
-      };
-    }
-
-    const signedUrl = await getSignedPhotoUrl(payload.photo_path || null);
-    const ocrResult = await runOcrOnImage(signedUrl);
-    const ocrText = ocrResult?.raw_text || "";
-    OCR_TEXT_CACHE.set(payload.photo_path, ocrText);
-    const foundSomething = !!(
-      ocrResult?.ro_suggestion
-      || ocrResult?.stock_suggestion
-      || ocrResult?.vin_suggestion
-      || ocrResult?.vin8_suggestion
-    );
-
-    const classification = await classifyEntryWithFallback({
-      ro: payload.ro_number || ocrResult?.ro_suggestion || null,
-      stock: payload.stock_number || payload.stock || ocrResult?.stock_suggestion || null,
-      vin: payload.vin || payload.vin8 || ocrResult?.vin_suggestion || null,
-      photoPath: payload.photo_path || null,
-    });
-    const dealer = classification.brand !== "Unmapped" ? classification.brand : "UNKNOWN";
-    const updatePatch = {
-      dealer,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (classification.brand !== "Unmapped") {
-      updatePatch.brand = classification.brand;
-      updatePatch.store_code = classification.store;
-      updatePatch.campus = classification.campus;
-    }
-
-    await updateWorkLogWithFallback(sb(), row.id, updatePatch);
-    if (foundSomething) {
-      await saveOcrResult(row.id, {
-        raw_text: ocrResult?.raw_text || "",
-        sheet_type: ocrResult?.sheet_type || null,
-        ro_suggestion: ocrResult?.ro_suggestion || null,
-        stock_suggestion: ocrResult?.stock_suggestion || null,
-        vin_suggestion: ocrResult?.vin_suggestion || null,
-        vin8_suggestion: ocrResult?.vin8_suggestion || null,
-        work_suggestion: ocrResult?.work_suggestion || null,
-        confidence: ocrResult?.confidence ?? null,
-        quality_warning: ocrResult?.quality_warning || null,
-        ocr_status: ocrResult?.ocr_status || null,
-      });
-    } else {
-      await markOcrFailed(
-        row.id,
-        ocrResult?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
-      );
-    }
-
-    console.log("Dealer updated:", dealer);
-
-    if (window.__PAGE__ === "main") {
-      const rows = await safeLoadEntries();
-      await refreshUI(rows);
-    }
-  } catch (err) {
-    if (row?.id) {
-      try {
-        await markOcrFailed(row.id, err);
-      } catch (markErr) {
-        console.error("OCR failure state update failed:", markErr);
-      }
-    }
-    console.error("OCR failed:", err);
-  }
 }
 
 async function resolveDealerForLog(log) {
@@ -1057,7 +243,6 @@ async function resolveDealerForLog(log) {
     ro: log?.ro_number || log?.ref || log?.ro || "",
     stock: log?.stock_number || log?.stock || "",
     vin: log?.vin || log?.vin8 || "",
-    photoPath: log?.photo_path || null,
   });
 
   if (classification.brand !== "Unmapped") return classification.brand;
@@ -1092,7 +277,7 @@ async function backfillDealersFromPhotos(logs) {
       console.error("Failed:", log.id, e);
     }
 
-    await new Promise(r => setTimeout(r, 200)); // small throttle
+    await new Promise(r => setTimeout(r, 200));
   }
 
   await safeLoadEntries();
@@ -1103,8 +288,6 @@ window.__FR = window.__FR || {};
 window.__FR.backfillDealersFromPhotos = backfillDealersFromPhotos;
 window.__FR.resolveDealerForLog = resolveDealerForLog;
 window.__FR.loadUserPrefixRules = loadUserPrefixRules;
-window.__FR.assessImageQuality = assessImageQuality;
-window.__FR.runOcrOnImage = runOcrOnImage;
 
 function sb() {
   const cfg = window.__SUPABASE_CONFIG__;
@@ -1339,75 +522,6 @@ async function getPhotoUrl(photoPath) {
   return getSignedPhotoUrl(photoPath);
 }
 
-async function markEntryQueuedForOcr(entryId) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "queued",
-      ocr_error: null,
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
-}
-
-async function markEntryProcessingOcr(entryId) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "processing",
-      ocr_error: null,
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
-}
-
-async function saveOcrResult(entryId, payload) {
-  const body = {
-    ocr_status: payload.ocr_status || (payload.quality_warning ? "needs_review" : "done"),
-    ocr_text_raw: payload.raw_text || null,
-    ocr_sheet_type: payload.sheet_type || null,
-    ocr_ro_suggestion: payload.ro_suggestion || null,
-    ocr_stock_suggestion: payload.stock_suggestion || null,
-    ocr_vin_suggestion: payload.vin_suggestion || null,
-    ocr_vin8_suggestion: payload.vin8_suggestion || null,
-    ocr_work_suggestion: payload.work_suggestion || null,
-    ocr_confidence: payload.confidence ?? null,
-    ocr_quality_warning: payload.quality_warning || null,
-    ocr_processed_at: new Date().toISOString(),
-    ocr_error: null,
-  };
-  const saved = await updateWorkLogWithFallback(sb(), entryId, body);
-  if (!saved) throw new Error("OCR result save failed");
-}
-
-async function markOcrFailed(entryId, err) {
-  const { error } = await sb()
-    .from("work_logs")
-    .update({
-      ocr_status: "failed",
-      ocr_error: String(err?.message || err || "OCR failed").slice(0, 500),
-      ocr_processed_at: new Date().toISOString(),
-    })
-    .eq("id", entryId);
-
-  if (error) throw error;
-}
-
-async function listEntriesNeedingOcr(limit = 25) {
-  const { data, error } = await sb()
-    .from("work_logs")
-    .select("*")
-    .not("photo_path", "is", null)
-    .in("ocr_status", ["queued", "failed", "none"])
-    .order("id", { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return data || [];
-}
-
 async function listEntriesWithPhotos(limit = 100) {
   const { data, error } = await sb()
     .from("work_logs")
@@ -1420,10 +534,6 @@ async function listEntriesWithPhotos(limit = 100) {
   return data || [];
 }
 
-async function applyOcrSuggestion(entryId, patch) {
-  const saved = await updateWorkLogWithFallback(sb(), entryId, patch);
-  if (!saved) throw new Error("OCR suggestion apply failed");
-}
 
 async function getSignedPhotoUrl(photoPath, expiresIn = 1800) {
   const { data, error } = await sb()
@@ -1683,18 +793,16 @@ function normalizeEntryForApi(entry) {
   };
 }
 
-function normalizeOcrToken(value) {
+function normalizeToken(value) {
   return String(value || "").trim().toUpperCase();
 }
 
 function inferRefTypeFromLog(log) {
-  const explicit = normalizeOcrToken(log?.refType || log?.ref_type);
+  const explicit = normalizeToken(log?.refType || log?.ref_type);
   if (explicit === "STOCK") return "STOCK";
 
-  const currentRef = normalizeOcrToken(log?.ro_number || log?.ref || log?.ro);
-  const stockSuggestion = normalizeOcrToken(log?.ocr_stock_suggestion);
-  const liveStock = normalizeOcrToken(log?.stock);
-  if (stockSuggestion && currentRef && stockSuggestion === currentRef) return "STOCK";
+  const currentRef = normalizeToken(log?.ro_number || log?.ref || log?.ro);
+  const liveStock = normalizeToken(log?.stock);
   if (!currentRef && liveStock) return "STOCK";
 
   return "RO";
@@ -1738,18 +846,6 @@ function normalizeSupabaseLog(r) {
     vin: r.vin ?? "",
     vin8: r.vin8 ?? "",
     photo_path: r.photo_path ?? null,
-    ocr_status: r.ocr_status ?? "none",
-    ocr_error: r.ocr_error ?? null,
-    ocr_quality_warning: r.ocr_quality_warning ?? null,
-    ocr_text_raw: r.ocr_text_raw ?? null,
-    ocr_sheet_type: r.ocr_sheet_type ?? null,
-    ocr_ro_suggestion: r.ocr_ro_suggestion ?? null,
-    ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
-    ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
-    ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
-    ocr_work_suggestion: r.ocr_work_suggestion ?? null,
-    ocr_confidence: r.ocr_confidence ?? null,
-    ocr_processed_at: r.ocr_processed_at ?? null,
 
     owner_key: r.owner_key ?? null,
     employee_number: r.employee_number ?? null,
@@ -1798,18 +894,6 @@ function mapServerLogToEntry(r) {
     photoDataUrl: null,
     photo_path: r.photo_path || null,
     location: r.location || null,
-    ocr_status: r.ocr_status ?? "none",
-    ocr_error: r.ocr_error ?? null,
-    ocr_quality_warning: r.ocr_quality_warning ?? null,
-    ocr_text_raw: r.ocr_text_raw ?? null,
-    ocr_sheet_type: r.ocr_sheet_type ?? null,
-    ocr_ro_suggestion: r.ocr_ro_suggestion ?? null,
-    ocr_stock_suggestion: r.ocr_stock_suggestion ?? null,
-    ocr_vin_suggestion: r.ocr_vin_suggestion ?? null,
-    ocr_vin8_suggestion: r.ocr_vin8_suggestion ?? null,
-    ocr_work_suggestion: r.ocr_work_suggestion ?? null,
-    ocr_confidence: r.ocr_confidence ?? null,
-    ocr_processed_at: r.ocr_processed_at ?? null,
   };
 }
 
@@ -2202,7 +1286,6 @@ function applySearch(entries, q){
   return entries.filter(e => {
     const hay = [
       e.ref, e.ro, e.ro_number, e.stock, e.vin, e.vin8, e.type, e.typeText, e.notes,
-      e.ocr_ro_suggestion, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
     ].map(x => String(x || "").toLowerCase()).join(" ");
     return hay.includes(s);
   });
@@ -2507,7 +1590,6 @@ function matchSearch(e, q){
   const s = q.toLowerCase();
   return [
     e.ref, e.ro, e.ro_number, e.stock, e.vin, e.vin8, e.type, e.typeText, e.notes,
-    e.ocr_status, e.ocr_error, e.ocr_quality_warning, e.ocr_ro_suggestion, e.ocr_stock_suggestion, e.ocr_vin_suggestion, e.ocr_vin8_suggestion
   ].some(v => String(v||"").toLowerCase().includes(s));
 }
 
@@ -2615,88 +1697,19 @@ function entryHasStoredPhoto(entry) {
   return !!(entry?.photo_path || entry?.photoPath || entry?.photoDataUrl);
 }
 
-function entrySuggestedVinValue(entry) {
-  const vin8 = normalizeEntryToken(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
-  if (vin8) return vin8;
-
-  const vin = normalizeEntryToken(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
-  return vin.length >= 8 ? vin.slice(-8) : "";
-}
-
 function getEntryReviewState(entry) {
   const hasPhoto = entryHasStoredPhoto(entry);
-  const ocrStatus = String(entry?.ocr_status || (hasPhoto ? "none" : "none")).toLowerCase();
-  const currentRo = normalizeEntryToken(entry?.ro_number || entry?.ro || (entry?.refType === "RO" ? entry?.ref : ""));
-  const currentStock = normalizeEntryToken(entry?.stock || (entry?.refType === "STOCK" ? entry?.ref : ""));
-  const currentVinFull = normalizeEntryToken(entry?.vin).replace(/[^A-Z0-9]/g, "");
-  const currentVin = normalizeEntryToken(entry?.vin8).replace(/[^A-Z0-9]/g, "");
-  const suggestedRo = normalizeEntryToken(entry?.ocr_ro_suggestion);
-  const suggestedStock = normalizeEntryToken(entry?.ocr_stock_suggestion);
-  const suggestedVinFull = normalizeEntryToken(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
-  const suggestedVin = entrySuggestedVinValue(entry);
-
-  const roMismatch = !!(suggestedRo && currentRo && suggestedRo !== currentRo);
-  const stockMismatch = !!(suggestedStock && currentStock && suggestedStock !== currentStock);
-  const vinMismatch = !!(
-    (suggestedVinFull && currentVinFull && suggestedVinFull !== currentVinFull)
-    || (suggestedVin && currentVin && suggestedVin !== currentVin)
-  );
-  const roPending = !!(suggestedRo && suggestedRo !== currentRo);
-  const stockPending = !!(suggestedStock && suggestedStock !== currentStock);
-  const vinPending = !!(
-    (suggestedVinFull && suggestedVinFull !== currentVinFull)
-    || (suggestedVin && suggestedVin !== currentVin)
-  );
-  const suggestionsPending = roPending || stockPending || vinPending;
-  const ocrFailed = ocrStatus === "failed";
-  const ocrDone = ocrStatus === "done";
-  const ocrNeedsReview = ocrStatus === "needs_review";
-  const ocrWaiting = hasPhoto && (!ocrStatus || ocrStatus === "none" || ocrStatus === "queued" || ocrStatus === "processing");
-  const needsReview = !!(ocrFailed || ocrNeedsReview || suggestionsPending || ocrWaiting);
-
-  let statusLabel = "No photo";
-  if (hasPhoto && ocrFailed) statusLabel = "OCR failed";
-  else if (hasPhoto && ocrNeedsReview) statusLabel = "OCR needs review";
-  else if (hasPhoto && ocrDone && (roMismatch || stockMismatch || vinMismatch)) statusLabel = "OCR mismatch";
-  else if (hasPhoto && ocrDone && suggestionsPending) statusLabel = "OCR suggestion ready";
-  else if (hasPhoto && ocrDone) statusLabel = "OCR done";
-  else if (hasPhoto && ocrStatus === "processing") statusLabel = "OCR processing";
-  else if (hasPhoto && ocrStatus === "queued") statusLabel = "OCR queued";
-  else if (hasPhoto) statusLabel = "OCR not started";
-
-  const reasons = [];
-  if (entry?.ocr_quality_warning) reasons.push(String(entry.ocr_quality_warning).replace(/_/g, " "));
-  if (ocrFailed && entry?.ocr_error) reasons.push(String(entry.ocr_error));
-  if (roMismatch) reasons.push(`manual RO kept over ${suggestedRo}`);
-  else if (roPending) reasons.push(`RO suggestion ${suggestedRo}`);
-  if (stockMismatch) reasons.push(`manual STK kept over ${suggestedStock}`);
-  else if (stockPending) reasons.push(`stock suggestion ${suggestedStock}`);
-  if (vinMismatch) reasons.push(`manual VIN kept over ${suggestedVin}`);
-  else if (vinPending) reasons.push(`VIN suggestion ${suggestedVin}`);
-  if (ocrWaiting) reasons.push("photo needs OCR review");
+  const statusLabel = hasPhoto ? "Photo attached" : "No photo";
 
   return {
     hasPhoto,
-    ocrStatus,
     statusLabel,
-    statusDetail: reasons.join(" • "),
-    currentRef,
-    currentVin,
-    suggestedRo,
-    suggestedStock,
-    suggestedVin,
-    roMismatch,
-    stockMismatch,
-    vinMismatch,
-    roPending,
-    stockPending,
-    vinPending,
-    suggestionsPending,
-    ocrFailed,
-    ocrDone,
-    ocrNeedsReview,
-    ocrWaiting,
-    needsReview,
+    statusDetail: "",
+    needsReview: false,
+    suggestionsPending: false,
+    roMismatch: false,
+    stockMismatch: false,
+    vinMismatch: false,
   };
 }
 
@@ -2708,7 +1721,6 @@ function getEntryRecordFacts(entry) {
     photoText: review.hasPhoto ? "attached" : "none",
     createdText: formatWhen(entry?.createdAt || entry?.created_at || ""),
     updatedText: formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""),
-    ocrText: review.statusDetail ? `${review.statusLabel} - ${review.statusDetail}` : review.statusLabel,
     review,
   };
 }
@@ -2787,17 +1799,6 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
   if (error) throw error;
   await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
   return { path, dealer: null };
-}
-
-async function runOCR(photoPath) {
-  if (!photoPath) return "";
-  if (OCR_TEXT_CACHE.has(photoPath)) return OCR_TEXT_CACHE.get(photoPath);
-
-  const signedUrl = await getSignedPhotoUrl(photoPath);
-  const ocrResult = await runOcrOnImage(signedUrl);
-  const ocrText = ocrResult?.raw_text || "";
-  OCR_TEXT_CACHE.set(photoPath, ocrText);
-  return ocrText;
 }
 
 // --- Photo selection (camera / library / files) ---
@@ -2890,7 +1891,6 @@ async function fileToDataURL(file){
   });
 }
 
-/* -------------------- OCR helpers -------------------- */
 function setPayrollStatus(msgHtml) {
   const status = $("payrollScanStatus");
   if (status) status.innerHTML = msgHtml || "";
@@ -3154,74 +2154,6 @@ function closePhotoViewer(){
   shell.style.display = "none";
 }
 
-async function _callScanRo(base64, mediaType = "image/jpeg") {
-  const sb = window.__FR?.sb;
-  const { data: { session } } = await sb.auth.getSession();
-  const token = session?.access_token || window.__SUPABASE_CONFIG__.anonKey;
-  const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-ro`;
-  const res = await fetch(fnUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "apikey": window.__SUPABASE_CONFIG__.anonKey,
-    },
-    body: JSON.stringify({ imageBase64: base64, mediaType }),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => res.status);
-    throw new Error(`Scan failed (${res.status}): ${txt}`);
-  }
-  return res.json();
-}
-
-async function autoScanPhotoAndPatch(file, entryId, currentRef, currentVin8) {
-  try {
-    const dataUrl = await compressImageFileToDataUrl(file, 1200, 0.75);
-    const base64 = dataUrl.split(",")[1];
-    const mediaType = dataUrl.match(/data:([^;]+)/)?.[1] || "image/jpeg";
-    const { ro, vin, stk } = await _callScanRo(base64, mediaType);
-
-    const patch = {};
-    const found = [];
-
-    const hasRef = !!String(currentRef || "").trim();
-    if (!hasRef) {
-      if (ro)       { patch.ro_number = ro;  found.push(`RO: ${ro}`);   }
-      else if (stk) { patch.ro_number = stk; found.push(`STK: ${stk}`); }
-    }
-
-    const hasVin = !!String(currentVin8 || "").trim();
-    if (!hasVin && vin) {
-      const vin8 = vin.replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase();
-      if (vin8.length >= 6) { patch.vin8 = vin8; found.push(`VIN: ${vin8}`); }
-    }
-
-    if (!Object.keys(patch).length) return;
-
-    const sb = window.__FR?.sb;
-    const uid = window.CURRENT_UID;
-    if (sb && entryId && uid) {
-      await sb.from("work_logs").update(patch).eq("id", entryId).eq("user_id", uid);
-    }
-
-    if (Array.isArray(window.CURRENT_ENTRIES)) {
-      const idx = window.CURRENT_ENTRIES.findIndex(e => String(e.id) === String(entryId));
-      if (idx >= 0) {
-        const updated = { ...window.CURRENT_ENTRIES[idx] };
-        if (patch.ro_number) { updated.ro_number = patch.ro_number; updated.ref = patch.ro_number; updated.ro = patch.ro_number; }
-        if (patch.vin8) updated.vin8 = patch.vin8;
-        window.CURRENT_ENTRIES[idx] = updated;
-        refreshUI?.(window.CURRENT_ENTRIES);
-      }
-    }
-
-    if (found.length) toast(`Photo scanned — ${found.join(" · ")}`);
-  } catch (e) {
-    console.warn("[OCR]", e?.message || e);
-    toast(`OCR: ${e?.message || "failed"}`);
-  }
-}
 
 function initPhotosUI(){
   document.getElementById("closePhotoViewerBtn")?.addEventListener("click", closePhotoViewer);
@@ -3267,7 +2199,6 @@ function initPhotosUI(){
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
-let ocrBusy = false;
 const LS_KEEP_LAST_WORK = "fr_keep_last_work";
 const LS_LAST_WORK_TYPE = "fr_last_work_type";
 
@@ -3471,203 +2402,6 @@ function showToast(msg) {
   toast(msg);
 }
 
-function buildOcrToast(ocr) {
-  const bits = [];
-  if (ocr.ro_suggestion) bits.push(`RO ${ocr.ro_suggestion}`);
-  if (ocr.stock_suggestion) bits.push(`STK ${ocr.stock_suggestion}`);
-  if (ocr.vin_suggestion) bits.push(`VIN ${last8(ocr.vin_suggestion) || ocr.vin_suggestion}`);
-  else if (ocr.vin8_suggestion) bits.push(`VIN ${ocr.vin8_suggestion}`);
-  if (ocr.ocr_status === "needs_review") bits.push("needs review");
-  return bits.length ? `Found ${bits.join(" · ")}` : "Saved. No OCR match found";
-}
-
-async function queueOcrForSavedEntry(entry, refreshEntries) {
-  if (!entry?.id || !entry?.photo_path) return;
-  if (ocrBusy) return;
-
-  ocrBusy = true;
-  try {
-    await markEntryQueuedForOcr(entry.id);
-    showToast("Saved. Reading sheet...");
-
-    await markEntryProcessingOcr(entry.id);
-
-    const signedUrl = await getSignedPhotoUrl(entry.photo_path);
-    if (!signedUrl) throw new Error("Could not open photo for OCR");
-
-    const ocr = await runOcrOnImage(signedUrl);
-    const foundSomething = !!(ocr?.ro_suggestion || ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
-    if (foundSomething) {
-      await saveOcrResult(entry.id, ocr);
-      showToast(buildOcrToast(ocr));
-    } else {
-      await markOcrFailed(
-        entry.id,
-        ocr?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
-      );
-      showToast(ocr?.quality_warning ? "Saved. OCR needs a clearer image" : "Saved. No OCR match found");
-    }
-    if (typeof refreshEntries === "function") await refreshEntries();
-  } catch (err) {
-    console.error("OCR queue failed", err);
-    try { await markOcrFailed(entry.id, err); } catch {}
-    showToast("Saved, but OCR failed");
-  } finally {
-    ocrBusy = false;
-  }
-}
-
-function normalizeSuggestionValue(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-function getDetectedSheetLabel(entry) {
-  const sheetType = String(entry?.ocr_sheet_type || "").trim().toLowerCase();
-  if (sheetType === "ro") return "RO sheet";
-  if (sheetType === "get_ready") return "Get Ready sheet";
-  if (sheetType) return `${sheetType.replace(/_/g, " ")} sheet`;
-  return "OCR";
-}
-
-function getValidDetectedStock(entry) {
-  const stock = normalizeSuggestionValue(entry?.ocr_stock_suggestion).replace(/[^A-Z0-9]/g, "");
-  if (stock.length < 4 || stock.length > 10) return "";
-  if (!/[0-9]/.test(stock)) return "";
-  return stock;
-}
-
-function getValidDetectedRoNumber(entry) {
-  const ro = normalizeSuggestionValue(entry?.ocr_ro_suggestion).replace(/\D/g, "");
-  if (ro.length < 5 || ro.length > 8) return "";
-  return ro;
-}
-
-function getValidDetectedVin(entry) {
-  const vin = normalizeSuggestionValue(entry?.ocr_vin_suggestion).replace(/[^A-Z0-9]/g, "");
-  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return "";
-  return vin;
-}
-
-function getValidDetectedVin8(entry) {
-  const vin = getValidDetectedVin(entry);
-  if (vin) return last8(vin);
-
-  const vin8 = normalizeSuggestionValue(entry?.ocr_vin8_suggestion).replace(/[^A-Z0-9]/g, "");
-  if (vin8.length < 6 || vin8.length > 8) return "";
-  return vin8;
-}
-
-function getOcrDetectedFields(entry) {
-  const roNumber = getValidDetectedRoNumber(entry);
-  const stock = getValidDetectedStock(entry);
-  const vin = getValidDetectedVin(entry);
-  const vin8 = getValidDetectedVin8(entry);
-  const currentRo = normalizeSuggestionValue(entry?.ro_number || entry?.ro || (entry?.refType === "RO" ? entry?.ref : "")).replace(/\D/g, "");
-  const currentStock = normalizeSuggestionValue(entry?.stock || (entry?.refType === "STOCK" ? entry?.ref : "")).replace(/[^A-Z0-9]/g, "");
-  const currentVin = normalizeSuggestionValue(entry?.vin).replace(/[^A-Z0-9]/g, "");
-  const currentVin8 = normalizeSuggestionValue(entry?.vin8).replace(/[^A-Z0-9]/g, "");
-  const patch = {};
-
-  if (roNumber && roNumber !== currentRo) patch.ro_number = roNumber;
-  if (stock && stock !== currentStock) patch.stock = stock;
-  if (vin && vin !== currentVin) patch.vin = vin;
-  if (vin8 && vin8 !== currentVin8) patch.vin8 = vin8;
-
-  return {
-    roNumber,
-    stock,
-    vin,
-    vin8,
-    sheetLabel: getDetectedSheetLabel(entry),
-    patch,
-  };
-}
-
-function getOcrSuggestionActions(entry) {
-  const detected = getOcrDetectedFields(entry);
-  const actions = [];
-
-  if (detected.patch.ro_number || detected.patch.stock || detected.patch.vin || detected.patch.vin8) {
-    actions.push({
-      kind: "all",
-      label: "Apply detected fields",
-      appliedLabel: "Applied detected fields",
-      patch: {
-        ...detected.patch,
-      },
-      primary: true,
-    });
-  }
-
-  if (detected.patch.stock) {
-    actions.push({
-      kind: "stock",
-      label: "Apply STK",
-      appliedLabel: `Applied STK ${detected.stock}`,
-      patch: {
-        stock: detected.stock,
-      },
-    });
-  }
-
-  if (detected.patch.vin || detected.patch.vin8) {
-    actions.push({
-      kind: "vin",
-      label: "Apply VIN",
-      appliedLabel: `Applied VIN ${detected.vin || detected.vin8}`,
-      patch: {
-        ...(detected.patch.vin ? { vin: detected.vin } : {}),
-        ...(detected.patch.vin8 ? { vin8: detected.vin8 } : {}),
-      },
-    });
-  }
-
-  return actions;
-}
-
-function buildOcrSuggestionStripHtml(entry, actionAttrName = "data-ocr-action") {
-  const detected = getOcrDetectedFields(entry);
-  const actions = getOcrSuggestionActions(entry);
-  if (!actions.length) return { actions, html: "" };
-
-  const primaryAction = actions.find((action) => action.primary);
-  const secondaryActions = actions.filter((action) => !action.primary);
-
-  const html = `
-    <div style="margin-top:10px;padding:10px;border:1px dashed rgba(29,78,216,.45);border-radius:12px;background:rgba(29,78,216,.08);">
-      <div class="small" style="margin-bottom:8px;color:rgba(191,219,254,.95);">Detected fields</div>
-      <div class="small">Detected RO: <span class="mono">${escapeHtml(detected.roNumber || "blank")}</span></div>
-      <div class="small">Detected VIN: <span class="mono">${escapeHtml(detected.vin || "blank")}</span></div>
-      <div class="small">Detected STK: <span class="mono">${escapeHtml(detected.stock || "blank")}</span></div>
-      <div class="small" style="margin-bottom:8px;">Detected from ${escapeHtml(detected.sheetLabel)}</div>
-      <div class="small" style="margin-bottom:8px;">Manual values stay in place until you tap Apply.</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        ${primaryAction ? `<button class="btn primary" type="button" ${actionAttrName}="${escapeHtml(primaryAction.kind)}">${escapeHtml(primaryAction.label)}</button>` : ""}
-        ${secondaryActions.map((action) => `<button class="btn" type="button" ${actionAttrName}="${escapeHtml(action.kind)}">${escapeHtml(action.label)}</button>`).join("")}
-      </div>
-    </div>
-  `;
-
-  return { actions, html };
-}
-
-async function applyEntryOcrSuggestion(entry, action) {
-  if (!entry?.id || !action?.patch) return;
-
-  await applyOcrSuggestion(entry.id, {
-    ...action.patch,
-    updated_at: nowISO(),
-  });
-  showToast(action.appliedLabel || "Suggestion applied");
-  await safeLoadEntries();
-
-  if (String(EDITING_ID ?? "") !== String(entry.id ?? "")) return;
-
-  const updated = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])
-    .find((row) => String(row?.id ?? "") === String(entry.id ?? ""));
-  if (updated) startEditEntry(updated);
-}
-
 function buildEntryMetaHtml(entry) {
   const dayKey = entry?.dayKey || dayKeyFromISO(entry?.createdAt) || entry?.work_date || "-";
   const vin8 = String(entry?.vin8 || "").trim();
@@ -3785,7 +2519,6 @@ async function deleteSelectedEntries() {
 }
 
 window.__FR = window.__FR || {};
-window.__FR.queueOcrForSavedEntry = queueOcrForSavedEntry;
 window.__FR.updateEarningsPreview = updateEarningsPreview;
 window.__FR.repeatLastEntry = repeatLastEntry;
 window.__FR.deleteSelectedEntries = deleteSelectedEntries;
@@ -3829,8 +2562,6 @@ async function saveEntry(entry, options = {}) {
         setPhotoUploadTarget(newPath);
         photo_path = newPath;
         photoStatus = "ok";
-        // Fire-and-forget OCR — runs in background, patches DB if it finds something
-        autoScanPhotoAndPatch?.(photoFile, saved.id, payload.ro_number, entry.vin8);
       } catch (err) {
         photoStatus = "fail";
       }
@@ -3851,17 +2582,12 @@ async function saveEntry(entry, options = {}) {
   }
 
   setEditingEntry(null);
-  const savedEntryForOcr = {
-    id: saved?.id || null,
-    photo_path: photo_path || saved?.photo_path || null,
-  };
   const earningsStr = formatMoney(entry.earnings || 0);
   const isEdit = options.__isEdit;
   if (photoStatus === "fail") toast(`${isEdit ? "Updated" : "Saved"} · ${earningsStr} (photo failed)`);
   else if (photoStatus === "ok") toast(`${isEdit ? "Updated" : "Saved"} · ${earningsStr} + Photo`);
   else toast(`${isEdit ? "Updated" : "Saved"} · ${earningsStr}`);
   handleClear(null, { preserveType, typeValue: preservedType });
-  return savedEntryForOcr;
 }
 
 async function handleSave(ev) {
@@ -4864,7 +3590,6 @@ async function refreshUI(entriesOverride){
   const fh = document.getElementById("flaggedHours");
   if (fh && flag) fh.value = String(flagged);
 
-  // Payroll preview/ocr
   await refreshPayrollUI();
 
   const fs = document.getElementById("filterSelect");
@@ -4924,10 +3649,10 @@ async function getWeekPayroll(){
   return await get(STORES.payroll, key);
 }
 
-async function saveWeekPayroll({ photoDataUrl, ocrText }){
+async function saveWeekPayroll({ photoDataUrl }){
   const ws = startOfWeekLocal(new Date());
   const key = dateKey(ws);
-  await put(STORES.payroll, { weekStartKey: key, photoDataUrl: photoDataUrl || null, ocrText: ocrText || "", updatedAt: nowISO() });
+  await put(STORES.payroll, { weekStartKey: key, photoDataUrl: photoDataUrl || null, updatedAt: nowISO() });
 }
 
 function rateForPdfEntry(entry, hours) {
@@ -5058,66 +3783,6 @@ async function exportJSON(){
   const entries = filterEntriesByEmp(all, getEmpId(), true);
   entries.sort((a,b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   downloadText(`flat_rate_log_${todayKeyLocal()}.json`, JSON.stringify(entries, null, 2), "application/json");
-}
-
-function wireOcrReprocessButton() {
-  const btn = document.getElementById("processPhotosBtn");
-  const status = document.getElementById("galleryStatus");
-  if (!btn || !status) return;
-  if (btn.dataset.wired === "1") return;
-  btn.dataset.wired = "1";
-
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    status.textContent = "Looking for saved photos to process...";
-
-    try {
-      const entries = await listEntriesNeedingOcr(10);
-      if (!entries.length) {
-        status.textContent = "No saved photos need OCR.";
-        return;
-      }
-
-      let done = 0;
-      let failed = 0;
-      let processed = 0;
-      for (const entry of entries) {
-        try {
-          status.textContent = `Processing ${processed + 1}/${entries.length}... done ${done}, failed ${failed}`;
-          await markEntryProcessingOcr(entry.id);
-          const signedUrl = await getSignedPhotoUrl(entry.photo_path);
-          const ocr = await runOcrOnImage(signedUrl);
-          const foundSomething = !!(ocr?.ro_suggestion || ocr?.stock_suggestion || ocr?.vin_suggestion || ocr?.vin8_suggestion);
-          if (foundSomething) {
-            await saveOcrResult(entry.id, ocr);
-            done += 1;
-          } else {
-            await markOcrFailed(
-              entry.id,
-              ocr?.quality_warning ? "OCR could not confidently read this image" : "No OCR match found"
-            );
-            failed += 1;
-          }
-        } catch (err) {
-          console.error("Saved photo OCR failed", entry.id, err);
-          await markOcrFailed(entry.id, err);
-          failed += 1;
-        } finally {
-          processed += 1;
-          status.textContent = `Processed ${processed}/${entries.length}... done ${done}, failed ${failed}`;
-        }
-      }
-
-      status.textContent = failed
-        ? `Batch complete: ${done} processed, ${failed} failed.`
-        : `Batch complete: ${done} photo(s).`;
-    } catch (err) {
-      console.error(err);
-      status.textContent = "OCR batch failed.";
-    } finally {
-      btn.disabled = false;
-    }
-  });
 }
 
 async function saveFlaggedHours(){
@@ -5414,9 +4079,7 @@ async function wipeLocalOnly(){
 
 async function refreshPayrollUI(){
   const preview = $("payrollPreview");
-  const ocrBox = $("payrollOcrText");
   if (preview) { preview.style.display = "none"; preview.removeAttribute("src"); }
-  if (ocrBox) ocrBox.value = "";
   setPayrollStatus("");
 
   const data = await getWeekPayroll();
@@ -5425,9 +4088,6 @@ async function refreshPayrollUI(){
   if (preview && data.photoDataUrl) {
     preview.src = data.photoDataUrl;
     preview.style.display = "block";
-  }
-  if (ocrBox && data.ocrText) {
-    ocrBox.value = data.ocrText;
   }
 }
 
@@ -5449,14 +4109,6 @@ function reviewFocusMatches(entry, focus) {
   switch (focus) {
     case "with-photo":
       return review.hasPhoto;
-    case "ocr-pending":
-      return review.ocrWaiting;
-    case "ocr-suggestions":
-      return review.suggestionsPending && !review.ocrFailed;
-    case "ocr-failed":
-      return review.ocrFailed;
-    case "ocr-mismatch":
-      return review.roMismatch || review.stockMismatch || review.vinMismatch;
     case "needs-review":
       return review.needsReview;
     case "all":
@@ -5469,10 +4121,6 @@ function buildReviewEntryRow(entry) {
   const facts = getEntryRecordFacts(entry);
   const review = facts.review;
   const refLabel = entry.refType === "STOCK" ? "STK" : "RO";
-  const suggestionStrip = typeof buildOcrSuggestionStripHtml === "function"
-    ? buildOcrSuggestionStripHtml(entry, "data-review-ocr")
-    : { actions: [], html: "" };
-  const applyActions = suggestionStrip.actions;
   const row = document.createElement("div");
   row.className = "item";
   row.innerHTML = `
@@ -5481,14 +4129,11 @@ function buildReviewEntryRow(entry) {
         <div class="mono">${escapeHtml(refLabel)}: ${escapeHtml(entry.ref || entry.ro || "-")} <span class="muted">(${escapeHtml(entry.type || entry.typeText || "")})</span></div>
         <div class="small">Date: <span class="mono">${escapeHtml(facts.dayKey)}</span> • VIN8: <span class="mono">${escapeHtml(facts.vin8)}</span> • Photo: ${escapeHtml(facts.photoText)}</div>
         <div class="small">Created: ${escapeHtml(facts.createdText)} • Updated: ${escapeHtml(facts.updatedText)}</div>
-        <div class="small">OCR: ${escapeHtml(facts.ocrText)}</div>
         ${entry.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(entry.notes)}</div>` : ""}
-        ${suggestionStrip.html}
       </div>
       <div class="right">
         <div class="mono">${String(entry.hours)} hrs @ ${formatMoney(entry.rate)}</div>
         <div style="margin-top:6px;font-size:16px;">${formatMoney(entry.earnings)}</div>
-        <div class="small" style="margin-top:8px;">${escapeHtml(review.statusLabel)}</div>
         <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
           ${review.hasPhoto ? `<button class="btn" type="button" data-review-photo="${escapeHtml(String(entry.id ?? ""))}">View Photo</button>` : ""}
           <button class="btn danger" data-del="${entry.id}">Delete</button>
@@ -5502,25 +4147,6 @@ function buildReviewEntryRow(entry) {
     photoBtn?.addEventListener("click", () => openPhotoViewer(entry));
   }
 
-  const ocrBtns = Array.from(row.querySelectorAll("button[data-review-ocr]"));
-  for (const btn of ocrBtns) {
-    btn.addEventListener("click", async () => {
-      const kind = btn.getAttribute("data-review-ocr") || "";
-      const action = applyActions.find((item) => item.kind === kind);
-      if (!action || typeof applyEntryOcrSuggestion !== "function") return;
-
-      ocrBtns.forEach((el) => { el.disabled = true; });
-      try {
-        await applyEntryOcrSuggestion(entry, action);
-        await renderReview();
-        renderPayStubComparison();
-      } catch (err) {
-        console.error("Review OCR apply failed", entry?.id, kind, err);
-        ocrBtns.forEach((el) => { el.disabled = false; });
-      }
-    });
-  }
-
   return row;
 }
 
@@ -5529,8 +4155,6 @@ function scoreMissingWorkCandidate(entry) {
   let score = 0;
   if (review.hasPhoto) score += 30;
   if (entry.notes) score += 8;
-  if (review.suggestionsPending) score += 6;
-  if (review.ocrFailed) score += 4;
   score += Math.floor((Date.parse(entry.updatedAt || entry.createdAt || "") || 0) / 86400000);
   return score;
 }
@@ -5621,19 +4245,9 @@ async function renderReview(){
   if (q) slice = slice.filter(e => matchSearch(e, q));
 
   const totals = computeTotals(slice);
-  const reviewCounts = slice.reduce((acc, entry) => {
-    const review = getEntryReviewState(entry);
-    if (review.needsReview) acc.needsReview += 1;
-    if (review.ocrFailed) acc.failed += 1;
-    if (review.suggestionsPending) acc.suggestions += 1;
-    if (review.roMismatch || review.stockMismatch || review.vinMismatch) acc.mismatches += 1;
-    return acc;
-  }, { needsReview: 0, failed: 0, suggestions: 0, mismatches: 0 });
   const meta = document.getElementById("reviewMeta");
   if (meta) {
-    meta.textContent =
-      `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)} • ` +
-      `${reviewCounts.needsReview} need review • ${reviewCounts.failed} OCR failed • ${reviewCounts.suggestions} suggestion ready • ${reviewCounts.mismatches} mismatch`;
+    meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
   }
 
   const list = document.getElementById("reviewList");
@@ -5677,7 +4291,6 @@ async function exportAllCsvAdmin() {
 }
 
 window.__FR = window.__FR || {};
-window.__FR.wireOcrReprocessButton = wireOcrReprocessButton;
 
 window.BUILD = "20260316-weekend-stable";
 const BUILD_TAG = "weekend-stable";
@@ -5963,7 +4576,6 @@ async function runOnce() {
     await safeLoadEntries();
     if (hasGalleryUi) {
       initPhotosUI();
-      wireOcrReprocessButton?.();
     }
     initPayStubUI();
     if (hasReviewUi) {
