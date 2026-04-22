@@ -56,6 +56,42 @@
     </div>
 
     <section class="card">
+      <div class="h">Settings</div>
+      <div class="muted" style="margin-bottom:16px;">Customize how the app works for you.</div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px;">Default Rate ($/hr)</label>
+        <input id="settingsDefaultRate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="15.00" class="input" style="max-width:180px;" />
+        <div class="muted" style="margin-top:6px;font-size:12px;">Used for all new entries unless you change it per job.</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:10px;">Accent Color</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button data-accent="#0095f6" class="accentSwatch" title="Blue"   style="background:#0095f6;"></button>
+          <button data-accent="#8b5cf6" class="accentSwatch" title="Purple" style="background:#8b5cf6;"></button>
+          <button data-accent="#10b981" class="accentSwatch" title="Green"  style="background:#10b981;"></button>
+          <button data-accent="#f59e0b" class="accentSwatch" title="Orange" style="background:#f59e0b;"></button>
+          <button data-accent="#ec4899" class="accentSwatch" title="Pink"   style="background:#ec4899;"></button>
+          <button data-accent="#ef4444" class="accentSwatch" title="Red"    style="background:#ef4444;"></button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px;">
+        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:10px;">List Density</label>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;font-weight:500;color:var(--text);letter-spacing:0;">
+            <input id="settingsCompactList" type="checkbox" style="width:auto;accent-color:var(--primary);" />
+            Compact list view
+          </label>
+        </div>
+        <div class="muted" style="margin-top:6px;font-size:12px;">Shows more entries on screen at once.</div>
+      </div>
+
+      <button id="settingsSaveBtn" class="btn primary" type="button" style="width:100%;min-height:48px;border-radius:12px;">Save Settings</button>
+    </section>
+
+    <section class="card">
       <div class="h">Weekly Goal</div>
       <div class="muted">Set your flagged hours for this week. The goal progress bar on the main page will track your progress.</div>
       <div class="row" style="margin-top:10px;display:flex;gap:10px;align-items:center;">
@@ -178,6 +214,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.88b235c531.js" defer></script>
+  <script src="/flat-rate-log/app.d70e86b918.js" defer></script>
 </body>
 </html>

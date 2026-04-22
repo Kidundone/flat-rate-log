@@ -673,4 +673,36 @@ async function exportAllCsvAdmin() {
   downloadText(`flat_rate_log_ALL_${todayKeyLocal()}.csv`, toCSV(entries), "text/csv");
 }
 
+function initSettingsUI() {
+  const rateInput = document.getElementById("settingsDefaultRate");
+  const compactToggle = document.getElementById("settingsCompactList");
+  const colorSwatches = document.querySelectorAll("[data-accent]");
+  const saveBtn = document.getElementById("settingsSaveBtn");
+
+  if (!rateInput && !compactToggle && !colorSwatches.length) return;
+
+  const s = getSettings();
+
+  if (rateInput) rateInput.value = String(s.defaultRate || 15);
+  if (compactToggle) compactToggle.checked = !!s.compactList;
+
+  colorSwatches.forEach(el => {
+    if (el.dataset.accent === s.accentColor) el.classList.add("accentActive");
+    el.addEventListener("click", () => {
+      colorSwatches.forEach(x => x.classList.remove("accentActive"));
+      el.classList.add("accentActive");
+    });
+  });
+
+  saveBtn?.addEventListener("click", () => {
+    const activeColor = document.querySelector("[data-accent].accentActive")?.dataset.accent
+      || s.accentColor;
+    const rate = parseFloat(rateInput?.value) || 15;
+    const compact = compactToggle?.checked ?? false;
+    saveSettings({ defaultRate: rate, accentColor: activeColor, compactList: compact });
+    saveBtn.textContent = "Saved!";
+    setTimeout(() => { saveBtn.textContent = "Save Settings"; }, 1800);
+  });
+}
+
 window.__FR = window.__FR || {};

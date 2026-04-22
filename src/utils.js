@@ -1,3 +1,46 @@
+/* ── Settings ────────────────────────────────────────────────────────────── */
+const SETTINGS_KEY = "fr_settings";
+const SETTINGS_DEFAULTS = Object.freeze({
+  defaultRate: 15,
+  accentColor: "#0095f6",
+  compactList: false,
+});
+
+const ACCENT_COLORS = Object.freeze([
+  { label: "Blue",   value: "#0095f6" },
+  { label: "Purple", value: "#8b5cf6" },
+  { label: "Green",  value: "#10b981" },
+  { label: "Orange", value: "#f59e0b" },
+  { label: "Pink",   value: "#ec4899" },
+  { label: "Red",    value: "#ef4444" },
+]);
+
+function getSettings() {
+  try {
+    const stored = localStorage.getItem(SETTINGS_KEY);
+    return stored ? { ...SETTINGS_DEFAULTS, ...JSON.parse(stored) } : { ...SETTINGS_DEFAULTS };
+  } catch {
+    return { ...SETTINGS_DEFAULTS };
+  }
+}
+
+function saveSettings(patch) {
+  const updated = { ...getSettings(), ...patch };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+  applySettings(updated);
+  return updated;
+}
+
+function applySettings(s = getSettings()) {
+  document.documentElement.style.setProperty("--primary", s.accentColor || SETTINGS_DEFAULTS.accentColor);
+  document.body.classList.toggle("compact", !!s.compactList);
+}
+
+function getDefaultRate() {
+  return Number(getSettings().defaultRate) || 15;
+}
+
+/* ── Page detect (GLOBAL) ─────────────────────────────────────────────────── */
 // ---- Page detect (GLOBAL) ----
 const PAGE = location.pathname.includes("more") ? "more" : "main";
 window.__PAGE__ = PAGE;
@@ -111,7 +154,7 @@ function setRangeMode(m, opts = {}) {
 
 function getRate(){
   const rateInput = document.querySelector('[name="rate"]');
-  return rateInput ? num(rateInput.value) : 15;
+  return rateInput ? num(rateInput.value) : getDefaultRate();
 }
 
 function getNotes(){

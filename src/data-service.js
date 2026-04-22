@@ -568,7 +568,7 @@ function mapServerLogToEntry(r) {
   const createdAt = r.created_at || new Date().toISOString();
   const dayKey = r.work_date; // already YYYY-MM-DD
   const hours = Number(r.flat_hours ?? r.hours ?? 0);
-  const rate = 15; // or your default
+  const rate = getDefaultRate();
   const ref = r.ro_number || r.stock || r.ref || r.ro || "";
   const refType = inferRefTypeFromLog(r);
 

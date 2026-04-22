@@ -85,7 +85,7 @@ function startEditEntry(entry) {
   if (vinEl) vinEl.value = entry.vin8 || "";
   if (typeEl) typeEl.value = entry.typeText || entry.type || "";
   if (hoursEl) { hoursEl.value = entry.hours != null ? String(entry.hours) : ""; hoursEl.dataset.touched = "1"; }
-  if (rateEl) { rateEl.value = entry.rate != null ? String(entry.rate) : "15"; rateEl.dataset.touched = "1"; }
+  if (rateEl) { rateEl.value = entry.rate != null ? String(entry.rate) : String(getDefaultRate()); rateEl.dataset.touched = "1"; }
   if (notesEl) notesEl.value = entry.notes || "";
   clearPickedPhoto();
   setPhotoLabelFromEntry(entry);
@@ -170,7 +170,7 @@ function handleClear(ev, options = {}) {
   if (vinEl) vinEl.value = "";
   if (typeEl) typeEl.value = preservedType;
   if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
-  if (rateEl) { rateEl.value = "15"; rateEl.dataset.touched = ""; }
+  if (rateEl) { rateEl.value = String(getDefaultRate()); rateEl.dataset.touched = ""; }
   if (notesEl) notesEl.value = "";
   clearPickedPhoto();
   if (empInputEl) empInputEl.value = getEmpId();
@@ -276,7 +276,7 @@ function updateEarningsPreview() {
   const el = document.getElementById("earningsPreview");
   if (!el) return;
   const hours = parseFloat(document.getElementById("hours")?.value) || 0;
-  const rate = parseFloat(document.querySelector('input[name="rate"]')?.value) || 15;
+  const rate = parseFloat(document.querySelector('input[name="rate"]')?.value) || getDefaultRate();
   if (hours > 0 && rate > 0) {
     el.textContent = `= ${formatMoney(round2(hours * rate))}`;
     el.classList.add("hasValue");
@@ -304,7 +304,7 @@ async function repeatLastEntry() {
   const typeEl = document.getElementById("typeText");
   const rateEl = document.querySelector('input[name="rate"]');
   if (typeEl) { typeEl.value = last.type || last.typeText || ""; typeEl.dispatchEvent(new Event("input", { bubbles: true })); }
-  if (rateEl) { rateEl.value = last.rate != null ? String(last.rate) : "15"; rateEl.dispatchEvent(new Event("input", { bubbles: true })); }
+  if (rateEl) { rateEl.value = last.rate != null ? String(last.rate) : String(getDefaultRate()); rateEl.dispatchEvent(new Event("input", { bubbles: true })); }
   updateEarningsPreview();
   showToast("Last job loaded — update hours and save.");
 }
@@ -416,7 +416,7 @@ async function handleSave(ev) {
     const vin8 = (vinEl?.value || "").trim().toUpperCase();
     const typeName = (typeEl?.value || "").trim();
     const hoursVal = num(hoursEl?.value);
-    const rateVal = num(rateEl?.value) || 15;
+    const rateVal = num(rateEl?.value) || getDefaultRate();
     const notes = (notesEl?.value || "").trim();
     const keepLastWork = shouldKeepLastWork() && !isEditing;
 

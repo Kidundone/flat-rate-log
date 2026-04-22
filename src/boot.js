@@ -28,6 +28,8 @@ console.log("__FR_READY_20260316", BUILD_TAG, ACTIVE_DATA_PATH, !!window.__FR.sb
 window.__FR.supabase = window.supabase;
 
 /* -------------------- Boot -------------------- */
+applySettings();
+
 async function runOnce() {
   if (window.__FR_BOOTED__) return;
   window.__FR_BOOTED__ = true;
@@ -279,6 +281,7 @@ async function runOnce() {
       }
     });
 
+    initSettingsUI?.();
     await safeLoadEntries();
     if (hasGalleryUi) {
       initPhotosUI();
