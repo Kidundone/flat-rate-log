@@ -340,9 +340,17 @@ async function bootAuth() {
 }
 
 async function initAuth() {
-  const statusEl = document.getElementById("authStatus");
-  if (!statusEl) return;
-  statusEl.textContent = window.CURRENT_UID ? "Signed in" : "Not signed in";
+  const signedIn = !!window.CURRENT_UID;
+  const statusEl  = document.getElementById("authStatus");
+  const formEl    = document.getElementById("authForm");
+  const signedInEl = document.getElementById("authSignedIn");
+  const outBtn    = document.getElementById("authSignOut");
+
+  if (statusEl) statusEl.textContent = signedIn ? "Signed in" : "";
+
+  if (formEl)      formEl.style.display      = signedIn ? "none" : "";
+  if (signedInEl)  signedInEl.style.display  = signedIn ? ""     : "none";
+  if (outBtn)      outBtn.style.display       = signedIn ? ""     : "none";
 }
 
 async function signIn(email, password) {

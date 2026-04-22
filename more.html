@@ -27,29 +27,40 @@
 
       <div class="moreRow">
         <div class="moreRowLabel">Employee #</div>
-        <input id="empId" inputmode="numeric" placeholder="12345" class="moreInput" />
+        <input id="empId" inputmode="numeric" placeholder="12345" class="moreInput moreInputNarrow" />
       </div>
 
       <div class="moreDivider"></div>
 
-      <div class="authFields">
-        <input id="authEmail" type="email" placeholder="Email" class="moreInput" />
-        <input id="authPassword" type="password" placeholder="Password" class="moreInput" style="margin-top:8px;" />
+      <!-- Shown when NOT signed in -->
+      <div id="authForm">
+        <div class="authFields">
+          <input id="authEmail" type="email" placeholder="Email" class="moreInput" />
+          <input id="authPassword" type="password" placeholder="Password" class="moreInput" style="margin-top:8px;" />
+        </div>
+        <div class="moreAuthActions">
+          <button id="authSignIn" class="btn primary" style="flex:1;">Sign In</button>
+          <button id="authSignUp" class="btn" style="flex:1;">Sign Up</button>
+        </div>
+        <div class="moreAuthSecondary">
+          <button id="authReset" class="btn moreTextBtn">Forgot Password</button>
+        </div>
       </div>
 
-      <div class="moreAuthActions">
-        <button id="authSignIn" class="btn primary" style="flex:1;">Sign In</button>
-        <button id="authSignUp" class="btn" style="flex:1;">Sign Up</button>
-      </div>
-      <div class="moreAuthSecondary">
-        <button id="authReset" class="btn moreTextBtn">Forgot Password</button>
-        <button id="authSignOut" class="btn moreTextBtn danger-ghost">Sign Out</button>
+      <!-- Shown when signed in -->
+      <div id="authSignedIn" style="display:none;">
+        <div class="moreRow">
+          <div class="moreRowLabel">Account</div>
+          <div id="authStatus" class="muted" style="font-size:13px;"></div>
+        </div>
+        <div class="moreRow" style="padding-top:4px;padding-bottom:14px;">
+          <button id="authSignOut" class="btn danger-ghost" style="display:none;">Sign Out</button>
+        </div>
       </div>
 
-      <div id="authStatus" class="moreAuthStatus"></div>
     </section>
 
-    <!-- ── Settings ── -->
+    <!-- ── Preferences ── -->
     <section class="card moreCard">
       <div class="moreCardHeader">Preferences</div>
 
@@ -93,14 +104,13 @@
       </div>
     </section>
 
-    <!-- ── Week Goal ── -->
+    <!-- ── Weekly Goal ── -->
     <section class="card moreCard">
       <div class="moreCardHeader">Weekly Goal</div>
-
       <div class="moreRow">
         <div>
           <div class="moreRowLabel">Target Hours</div>
-          <div class="moreRowSub">Tracks progress on the main page</div>
+          <div class="moreRowSub">Shows progress bar on main page</div>
         </div>
         <div class="moreInputGroup">
           <input id="flaggedHours" inputmode="decimal" type="number" step="0.5" min="0" placeholder="40" class="moreInput moreInputNarrow" />
@@ -112,7 +122,7 @@
     <!-- ── Pay Stub ── -->
     <section class="card moreCard">
       <div class="moreCardHeader">Pay Stub</div>
-      <div class="moreCardSub">Compare your logged hours against what was actually paid.</div>
+      <div class="moreCardSub">Compare logged hours against what was paid.</div>
 
       <div class="moreInputStack">
         <div class="moreRow">
@@ -138,13 +148,12 @@
       <div id="payStubSummary" class="moreResultText"></div>
       <div id="payStubExpected" class="moreResultMono"></div>
       <div id="missingWorkSummary" class="moreResultText"></div>
-      <div id="missingWorkList" class="list" style="margin-top:8px;"></div>
+      <div id="missingWorkList" class="list" style="margin-top:8px;padding:0 16px 16px;"></div>
     </section>
 
     <!-- ── Export & Tools ── -->
     <section class="card moreCard">
       <div class="moreCardHeader">Export & Tools</div>
-
       <div class="exportGrid">
         <button class="exportBtn" type="button" id="exportCsvBtn">
           <div class="exportBtnIcon">CSV</div>
@@ -165,58 +174,6 @@
       </div>
     </section>
 
-    <!-- ── Review ── -->
-    <section class="card moreCard">
-      <div class="moreCardHeader">Review Entries</div>
-
-      <div class="reviewControls">
-        <div class="seg reviewRangeSeg" role="tablist">
-          <button type="button" class="segBtn active" data-review-range="week">This Wk</button>
-          <button type="button" class="segBtn" data-review-range="lastweek">Last Wk</button>
-          <button type="button" class="segBtn" data-review-range="month">Month</button>
-          <button type="button" class="segBtn" data-review-range="all">All</button>
-        </div>
-        <div class="seg reviewFocusSeg" role="tablist">
-          <button type="button" class="segBtn active" data-review-focus="all">All</button>
-          <button type="button" class="segBtn" data-review-focus="with-photo">With Photo</button>
-        </div>
-      </div>
-
-      <input id="reviewSearch" placeholder="Search entries…" class="moreInput" style="margin-top:10px;" />
-      <div id="reviewMeta" class="muted small" style="margin-top:8px;"></div>
-      <div id="reviewList" class="list" style="margin-top:10px;"></div>
-
-      <!-- hidden selects for JS compat -->
-      <select id="reviewRange" style="display:none;">
-        <option value="week">This Week</option>
-        <option value="lastweek">Last Week</option>
-        <option value="month">This Month</option>
-        <option value="all">All Time</option>
-      </select>
-      <select id="reviewFocus" style="display:none;">
-        <option value="all">All Entries</option>
-        <option value="with-photo">With Photo</option>
-      </select>
-      <select id="reviewGroup" style="display:none;">
-        <option value="day">Group by Day</option>
-        <option value="none">No Group</option>
-      </select>
-      <button id="reviewRefreshBtn" style="display:none;" type="button">Refresh</button>
-    </section>
-
-    <!-- ── Saved Work Types ── -->
-    <section class="card moreCard">
-      <div class="moreCardHeader">Saved Work Types</div>
-      <div class="moreCardSub">Your logged types with last-used hours and rate. Tap to delete.</div>
-      <div id="savedTypesList" class="list" style="margin-top:10px;"></div>
-    </section>
-
-    <!-- ── Proof Photos ── -->
-    <section class="card moreCard">
-      <div class="moreCardHeader">Proof Photos</div>
-      <div id="photoGallery" class="gallery" style="margin-top:12px;"></div>
-    </section>
-
     <!-- ── Danger Zone ── -->
     <section class="card moreCard moreDangerCard">
       <div class="moreCardHeader moreDangerHeader">Danger Zone</div>
@@ -227,21 +184,32 @@
       </div>
     </section>
 
-    <!-- Photo viewer modal -->
-    <div id="photoViewer" class="modalShell" style="display:none;">
-      <div class="modalContent" style="max-width:900px;margin:20px auto;padding:0 12px;">
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-            <div class="muted" id="photoMeta"></div>
-            <button class="btn" id="closePhotoViewerBtn" type="button">Close</button>
-          </div>
-          <img id="photoFull" style="width:100%;border-radius:16px;margin-top:10px;" />
-          <div style="display:flex;gap:8px;margin-top:10px;">
-            <a class="btn" id="downloadPhotoBtn" download="proof.jpg">Download</a>
-            <button class="btn" id="copyPhotoBtn">Copy Image</button>
+    <!-- Hidden — needed by JS but not shown in this simplified UI -->
+    <div style="display:none;">
+      <div id="photoViewer" class="modalShell">
+        <div class="modalContent" style="max-width:900px;margin:20px auto;padding:0 12px;">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              <div class="muted" id="photoMeta"></div>
+              <button class="btn" id="closePhotoViewerBtn" type="button">Close</button>
+            </div>
+            <img id="photoFull" style="width:100%;border-radius:16px;margin-top:10px;" />
+            <div style="display:flex;gap:8px;margin-top:10px;">
+              <a class="btn" id="downloadPhotoBtn" download="proof.jpg">Download</a>
+              <button class="btn" id="copyPhotoBtn">Copy Image</button>
+            </div>
           </div>
         </div>
       </div>
+      <select id="reviewRange"><option value="all">All</option></select>
+      <select id="reviewFocus"><option value="all">All</option></select>
+      <select id="reviewGroup"><option value="day">Day</option></select>
+      <button id="reviewRefreshBtn" type="button">Refresh</button>
+      <input id="reviewSearch" />
+      <div id="reviewMeta"></div>
+      <div id="reviewList"></div>
+      <div id="savedTypesList"></div>
+      <div id="photoGallery"></div>
     </div>
 
     <div id="undoBar" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;">
@@ -263,25 +231,7 @@
       url: "https://lfnydhidbwfyfjafazdy.supabase.co",
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
-
-    // Wire review seg buttons to hidden selects
-    document.querySelectorAll("[data-review-range]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll("[data-review-range]").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        const sel = document.getElementById("reviewRange");
-        if (sel) { sel.value = btn.dataset.reviewRange; sel.dispatchEvent(new Event("change")); }
-      });
-    });
-    document.querySelectorAll("[data-review-focus]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll("[data-review-focus]").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        const sel = document.getElementById("reviewFocus");
-        if (sel) { sel.value = btn.dataset.reviewFocus; sel.dispatchEvent(new Event("change")); }
-      });
-    });
   </script>
-  <script src="/flat-rate-log/app.c9a5073a7e.js" defer></script>
+  <script src="/flat-rate-log/app.81fcbc9a42.js" defer></script>
 </body>
 </html>
