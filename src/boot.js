@@ -293,8 +293,20 @@ async function runOnce() {
       }
     });
 
+    const stepPayStubWeek = (days) => {
+      const el = document.getElementById("payStubWeekEnding");
+      if (!el) return;
+      const d = parseDateInputValue?.(el.value) || new Date();
+      d.setDate(d.getDate() + days);
+      el.value = dateKey(d);
+      el.dispatchEvent(new Event("change"));
+    };
+    document.getElementById("payStubPrevWeekBtn")?.addEventListener("click", () => stepPayStubWeek(-7));
+    document.getElementById("payStubNextWeekBtn")?.addEventListener("click", () => stepPayStubWeek(7));
+
     initSettingsUI?.();
     await safeLoadEntries();
+    renderInsights?.();
     if (hasGalleryUi) {
       initPhotosUI();
     }

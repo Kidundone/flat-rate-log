@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Tracker — More</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./app.f7c9ade343.css">
+  <link rel="stylesheet" href="./app.f6357d8e99.css">
 </head>
 <body data-page="more">
 
@@ -104,6 +104,12 @@
       </div>
     </section>
 
+    <!-- ── This Week ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">This Week</div>
+      <div id="insightsCard" style="padding:4px 16px 14px;"></div>
+    </section>
+
     <!-- ── Weekly Goal ── -->
     <section class="card moreCard">
       <div class="moreCardHeader">Weekly Goal</div>
@@ -127,7 +133,11 @@
       <div class="moreInputStack">
         <div class="moreRow">
           <div class="moreRowLabel">Week Ending</div>
-          <input id="payStubWeekEnding" type="date" class="moreInput moreInputNarrow" />
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button class="btn" id="payStubPrevWeekBtn" type="button" style="padding:6px 10px;">‹</button>
+            <input id="payStubWeekEnding" type="date" class="moreInput moreInputNarrow" />
+            <button class="btn" id="payStubNextWeekBtn" type="button" style="padding:6px 10px;">›</button>
+          </div>
         </div>
         <div class="moreDivider"></div>
         <div class="moreRow">
@@ -237,6 +247,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.6885de8cdb.js" defer></script>
+  <script src="/flat-rate-log/app.162f0f25b8.js" defer></script>
 </body>
 </html>

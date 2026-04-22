@@ -701,7 +701,7 @@ function initSettingsUI() {
     const compact = compactToggle?.checked ?? false;
     saveSettings({ defaultRate: rate, accentColor: activeColor, compactList: compact });
     saveBtn.textContent = "Saved!";
-    setTimeout(() => { saveBtn.textContent = "Save Settings"; }, 1800);
+    setTimeout(() => { saveBtn.textContent = "Save Preferences"; }, 1800);
   });
 }
 
@@ -832,4 +832,65 @@ async function exportDisputeThisWeek() {
 
 window.exportDisputeReport = exportDisputeReport;
 window.exportDisputeThisWeek = exportDisputeThisWeek;
+
+function renderInsights() {
+  const card = document.getElementById("insightsCard");
+  if (!card) return;
+
+  const empId = getEmpId();
+  if (!empId) {
+    card.innerHTML = `<div class="muted small" style="padding:12px 0;">Enter Employee # to see insights.</div>`;
+    return;
+  }
+
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const own = filterEntriesByEmp(all, empId);
+  const ws = startOfWeekLocal(new Date());
+  const weekEntries = own.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
+  const totals = computeTotals(weekEntries);
+
+  const effRate = totals.hours > 0 ? round2(totals.dollars / totals.hours) : 0;
+
+  const daysWorked = new Set(weekEntries.map(e => e.dayKey || dayKeyFromISO(e.createdAt)).filter(Boolean)).size;
+  const avgPerDay = daysWorked > 0 ? round2(totals.dollars / daysWorked) : 0;
+  const projected = daysWorked > 0 ? round2((totals.dollars / daysWorked) * 5) : 0;
+
+  const comebacks = weekEntries.filter(e => e.isComeback).length;
+  const comebackRate = totals.count > 0 ? Math.round((comebacks / totals.count) * 100) : 0;
+
+  const typeMap = new Map();
+  for (const e of weekEntries) {
+    const t = e.type || e.typeText || "Unknown";
+    const cur = typeMap.get(t) || { earnings: 0, count: 0 };
+    typeMap.set(t, { earnings: round2(cur.earnings + (e.earnings || 0)), count: cur.count + 1 });
+  }
+  const topType = Array.from(typeMap.entries()).sort((a, b) => b[1].earnings - a[1].earnings)[0];
+
+  const comebackClass = comebacks > 0 ? "insightValue--warn" : "";
+
+  card.innerHTML = `
+    <div class="insightGrid">
+      <div class="insightCell">
+        <div class="insightLabel">Eff. $/hr</div>
+        <div class="insightValue">${effRate > 0 ? formatMoney(effRate) : "—"}</div>
+      </div>
+      <div class="insightCell">
+        <div class="insightLabel">Avg / Day</div>
+        <div class="insightValue">${avgPerDay > 0 ? formatMoney(avgPerDay) : "—"}</div>
+      </div>
+      <div class="insightCell">
+        <div class="insightLabel">Comebacks</div>
+        <div class="insightValue ${comebackClass}">${comebacks > 0 ? `${comebacks} (${comebackRate}%)` : "None ✓"}</div>
+      </div>
+      <div class="insightCell">
+        <div class="insightLabel">Wk Pace</div>
+        <div class="insightValue">${projected > 0 ? formatMoney(projected) : "—"}</div>
+      </div>
+    </div>
+    ${topType ? `<div class="insightTopEarner">Top earner: <strong>${escapeHtml(topType[0])}</strong> · ${formatMoney(topType[1].earnings)} · ${topType[1].count} job${topType[1].count !== 1 ? "s" : ""}</div>` : ""}
+    ${!weekEntries.length ? `<div class="muted small" style="margin-top:8px;">No entries this week yet.</div>` : ""}
+  `;
+}
+
+window.renderInsights = renderInsights;
 window.__FR = window.__FR || {};

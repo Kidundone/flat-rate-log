@@ -1424,6 +1424,27 @@ async function refreshUI(entriesOverride){
     }
   }
 
+  // Pace projection (days worked this week × avg/day)
+  const paceEl = document.getElementById("paceLine");
+  if (paceEl) {
+    const daysWorked = new Set(entries.filter(e => inWeek(e.dayKey, ws)).map(e => e.dayKey).filter(Boolean)).size;
+    if (daysWorked > 0 && week.dollars > 0) {
+      const proj = round2((week.dollars / daysWorked) * 5);
+      paceEl.textContent = `On pace for ${formatMoney(proj)} this week`;
+      paceEl.style.display = "";
+    } else {
+      paceEl.style.display = "none";
+    }
+  }
+
+  // Comeback count for today
+  const todayComebacks = entries.filter(e => (e.dayKey || dayKeyFromISO(e.createdAt)) === dayKey && e.isComeback).length;
+  const cbHint = document.getElementById("stripComebackHint");
+  if (cbHint) {
+    cbHint.style.display = todayComebacks > 0 ? "" : "none";
+    cbHint.textContent = `${todayComebacks} comeback${todayComebacks !== 1 ? "s" : ""}`;
+  }
+
   // More panel input value
   const fh = document.getElementById("flaggedHours");
   if (fh && flag) fh.value = String(flagged);

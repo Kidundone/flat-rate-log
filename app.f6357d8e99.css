@@ -1358,6 +1358,51 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   transition: opacity 300ms;
 }
 
+/* ── Strip comeback hint ─────────────────────────── */
+.stripComebackHint {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-top: 2px;
+}
+
+/* ── Insights card ───────────────────────────────── */
+.insightGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px 0;
+}
+.insightCell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.insightLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+}
+.insightValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -.4px;
+}
+.insightValue--warn { color: #fbbf24; }
+.insightTopEarner {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--stroke);
+  font-size: 13px;
+  color: var(--text2);
+}
+.insightTopEarner strong { color: var(--text); }
+
 /* ── Cloud nudge / install banners ───────────────── */
 .cloudNudge,
 .installBanner {

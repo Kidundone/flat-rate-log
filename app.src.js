@@ -3678,6 +3678,27 @@ async function refreshUI(entriesOverride){
     }
   }
 
+  // Pace projection (days worked this week × avg/day)
+  const paceEl = document.getElementById("paceLine");
+  if (paceEl) {
+    const daysWorked = new Set(entries.filter(e => inWeek(e.dayKey, ws)).map(e => e.dayKey).filter(Boolean)).size;
+    if (daysWorked > 0 && week.dollars > 0) {
+      const proj = round2((week.dollars / daysWorked) * 5);
+      paceEl.textContent = `On pace for ${formatMoney(proj)} this week`;
+      paceEl.style.display = "";
+    } else {
+      paceEl.style.display = "none";
+    }
+  }
+
+  // Comeback count for today
+  const todayComebacks = entries.filter(e => (e.dayKey || dayKeyFromISO(e.createdAt)) === dayKey && e.isComeback).length;
+  const cbHint = document.getElementById("stripComebackHint");
+  if (cbHint) {
+    cbHint.style.display = todayComebacks > 0 ? "" : "none";
+    cbHint.textContent = `${todayComebacks} comeback${todayComebacks !== 1 ? "s" : ""}`;
+  }
+
   // More panel input value
   const fh = document.getElementById("flaggedHours");
   if (fh && flag) fh.value = String(flagged);
@@ -4410,7 +4431,7 @@ function initSettingsUI() {
     const compact = compactToggle?.checked ?? false;
     saveSettings({ defaultRate: rate, accentColor: activeColor, compactList: compact });
     saveBtn.textContent = "Saved!";
-    setTimeout(() => { saveBtn.textContent = "Save Settings"; }, 1800);
+    setTimeout(() => { saveBtn.textContent = "Save Preferences"; }, 1800);
   });
 }
 
@@ -4541,6 +4562,67 @@ async function exportDisputeThisWeek() {
 
 window.exportDisputeReport = exportDisputeReport;
 window.exportDisputeThisWeek = exportDisputeThisWeek;
+
+function renderInsights() {
+  const card = document.getElementById("insightsCard");
+  if (!card) return;
+
+  const empId = getEmpId();
+  if (!empId) {
+    card.innerHTML = `<div class="muted small" style="padding:12px 0;">Enter Employee # to see insights.</div>`;
+    return;
+  }
+
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const own = filterEntriesByEmp(all, empId);
+  const ws = startOfWeekLocal(new Date());
+  const weekEntries = own.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
+  const totals = computeTotals(weekEntries);
+
+  const effRate = totals.hours > 0 ? round2(totals.dollars / totals.hours) : 0;
+
+  const daysWorked = new Set(weekEntries.map(e => e.dayKey || dayKeyFromISO(e.createdAt)).filter(Boolean)).size;
+  const avgPerDay = daysWorked > 0 ? round2(totals.dollars / daysWorked) : 0;
+  const projected = daysWorked > 0 ? round2((totals.dollars / daysWorked) * 5) : 0;
+
+  const comebacks = weekEntries.filter(e => e.isComeback).length;
+  const comebackRate = totals.count > 0 ? Math.round((comebacks / totals.count) * 100) : 0;
+
+  const typeMap = new Map();
+  for (const e of weekEntries) {
+    const t = e.type || e.typeText || "Unknown";
+    const cur = typeMap.get(t) || { earnings: 0, count: 0 };
+    typeMap.set(t, { earnings: round2(cur.earnings + (e.earnings || 0)), count: cur.count + 1 });
+  }
+  const topType = Array.from(typeMap.entries()).sort((a, b) => b[1].earnings - a[1].earnings)[0];
+
+  const comebackClass = comebacks > 0 ? "insightValue--warn" : "";
+
+  card.innerHTML = `
+    <div class="insightGrid">
+      <div class="insightCell">
+        <div class="insightLabel">Eff. $/hr</div>
+        <div class="insightValue">${effRate > 0 ? formatMoney(effRate) : "—"}</div>
+      </div>
+      <div class="insightCell">
+        <div class="insightLabel">Avg / Day</div>
+        <div class="insightValue">${avgPerDay > 0 ? formatMoney(avgPerDay) : "—"}</div>
+      </div>
+      <div class="insightCell">
+        <div class="insightLabel">Comebacks</div>
+        <div class="insightValue ${comebackClass}">${comebacks > 0 ? `${comebacks} (${comebackRate}%)` : "None ✓"}</div>
+      </div>
+      <div class="insightCell">
+        <div class="insightLabel">Wk Pace</div>
+        <div class="insightValue">${projected > 0 ? formatMoney(projected) : "—"}</div>
+      </div>
+    </div>
+    ${topType ? `<div class="insightTopEarner">Top earner: <strong>${escapeHtml(topType[0])}</strong> · ${formatMoney(topType[1].earnings)} · ${topType[1].count} job${topType[1].count !== 1 ? "s" : ""}</div>` : ""}
+    ${!weekEntries.length ? `<div class="muted small" style="margin-top:8px;">No entries this week yet.</div>` : ""}
+  `;
+}
+
+window.renderInsights = renderInsights;
 window.__FR = window.__FR || {};
 
 window.BUILD = "20260316-weekend-stable";
@@ -4838,8 +4920,20 @@ async function runOnce() {
       }
     });
 
+    const stepPayStubWeek = (days) => {
+      const el = document.getElementById("payStubWeekEnding");
+      if (!el) return;
+      const d = parseDateInputValue?.(el.value) || new Date();
+      d.setDate(d.getDate() + days);
+      el.value = dateKey(d);
+      el.dispatchEvent(new Event("change"));
+    };
+    document.getElementById("payStubPrevWeekBtn")?.addEventListener("click", () => stepPayStubWeek(-7));
+    document.getElementById("payStubNextWeekBtn")?.addEventListener("click", () => stepPayStubWeek(7));
+
     initSettingsUI?.();
     await safeLoadEntries();
+    renderInsights?.();
     if (hasGalleryUi) {
       initPhotosUI();
     }
