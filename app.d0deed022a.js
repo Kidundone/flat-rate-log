@@ -351,6 +351,9 @@ async function initAuth() {
   if (formEl)      formEl.style.display      = signedIn ? "none" : "";
   if (signedInEl)  signedInEl.style.display  = signedIn ? ""     : "none";
   if (outBtn)      outBtn.style.display       = signedIn ? ""     : "none";
+
+  const nudge = document.getElementById("cloudNudge");
+  if (nudge) nudge.style.display = signedIn ? "none" : "";
 }
 
 async function signIn(email, password) {
@@ -798,6 +801,7 @@ function normalizeEntryForApi(entry) {
     location: entry.location || null,
     vin8: entry.vin8 || null,
     photo_path: entry.photo_path || entry.photoPath || null,
+    is_comeback: entry.isComeback || false,
   };
 }
 
@@ -858,6 +862,7 @@ function normalizeSupabaseLog(r) {
     owner_key: r.owner_key ?? null,
     employee_number: r.employee_number ?? null,
     is_deleted: r.is_deleted ?? false,
+    isComeback: r.is_comeback ?? false,
   };
 
   return entry;
@@ -2336,6 +2341,8 @@ function startEditEntry(entry) {
   if (hoursEl) { hoursEl.value = entry.hours != null ? String(entry.hours) : ""; hoursEl.dataset.touched = "1"; }
   if (rateEl) { rateEl.value = entry.rate != null ? String(entry.rate) : String(getDefaultRate()); rateEl.dataset.touched = "1"; }
   if (notesEl) notesEl.value = entry.notes || "";
+  const isComebackEl = document.getElementById("isComeback");
+  if (isComebackEl) isComebackEl.checked = !!entry.isComeback;
   clearPickedPhoto();
   setPhotoLabelFromEntry(entry);
 
@@ -2725,6 +2732,7 @@ async function handleSave(ev) {
       rate: round2(rateVal),
       earnings: round2(hoursVal * rateVal),
       notes,
+      isComeback: !!(document.getElementById("isComeback")?.checked),
       photoDataUrl: null,
       location: baseEntry.location ?? null
     };
@@ -2777,7 +2785,7 @@ function buildHistEntryRow(e) {
   row.className = "histEntryRow";
   row.innerHTML = `
     <div class="histEntryLeft">
-      <div class="histEntryType">${typeBadgeHtml(e.type || e.typeText || "—")}</div>
+      <div class="histEntryType">${typeBadgeHtml(e.type || e.typeText || "—")}${e.isComeback ? ` <span class="comebackBadge">Comeback</span>` : ""}</div>
       <div class="histEntryRef">${refLabel}: ${escapeHtml(refVal)}${vin8}</div>
       <div class="histEntryMeta">${escapeHtml(formatTimeAgo(e.updatedAt || e.createdAt))}${photoTag}</div>
       ${notesHtml}
@@ -2863,6 +2871,47 @@ async function renderHistory() {
     }
   }
 }
+
+async function shareDaySummary() {
+  const empId = getEmpId();
+  if (!empId) { toast("Employee # required"); return; }
+  const dk = todayKeyLocal();
+  const all = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
+  const today = all.filter(e => (e.dayKey || dayKeyFromISO(e.createdAt)) === dk);
+  if (!today.length) { toast("No entries today to share."); return; }
+
+  const totals = computeTotals(today);
+  const lines = today.map(e => {
+    const ref = e.ref || e.ro || "—";
+    const type = e.type || e.typeText || "—";
+    return `• ${type} | ${e.refType === "STOCK" ? "STK" : "RO"}: ${ref} | ${e.hours} hrs | ${formatMoney(e.earnings)}`;
+  });
+
+  const text = [
+    `Flat Rate Summary — ${dk}`,
+    `Employee: ${empId}`,
+    "",
+    ...lines,
+    "",
+    `Total: ${formatHours(totals.hours)} hrs | ${formatMoney(totals.dollars)} | ${totals.count} jobs`,
+  ].join("\n");
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: `Shift Summary ${dk}`, text });
+      return;
+    } catch {}
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Summary copied to clipboard.");
+  } catch {
+    toast("Could not share or copy.");
+  }
+}
+
+window.__FR = window.__FR || {};
+window.__FR.shareDaySummary = shareDaySummary;
 
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
 const DEFAULT_TYPES = []; // no presets; the app learns from each employee
@@ -3335,6 +3384,7 @@ function renderList(entries, mode){
           <div class="itemRefRow">
             <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
             ${typeBadgeHtml(typeLabel)}
+            ${e.isComeback ? `<span class="comebackBadge">Comeback</span>` : ""}
             <span class="mono itemRef">${refDisplay}</span>
           </div>
           ${buildEntryMetaHtml(e)}
@@ -4364,6 +4414,86 @@ function initSettingsUI() {
   });
 }
 
+async function exportDisputeReport() {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) { alert("PDF export is not ready. Refresh and try again."); return; }
+
+  const empId = getEmpId();
+  if (!empId) { alert("Enter Employee # first."); return; }
+
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const own = filterEntriesByEmp(all, empId);
+  if (!own.length) { alert("No logged entries found."); return; }
+
+  // Group by week
+  const weekMap = new Map();
+  for (const e of own) {
+    const wk = e.weekStartKey || dateKey(startOfWeekLocal(new Date(e.dayKey || e.createdAt || Date.now())));
+    if (!weekMap.has(wk)) weekMap.set(wk, []);
+    weekMap.get(wk).push(e);
+  }
+  const weekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+
+  const doc = new jsPDF();
+  const left = 20;
+  const pageBottom = doc.internal.pageSize.getHeight() - 16;
+  let y = 20;
+
+  const nl = (step = 6) => {
+    y += step;
+    if (y > pageBottom) { doc.addPage(); y = 20; }
+  };
+
+  const write = (text, size = 11, opts = {}) => {
+    doc.setFontSize(size);
+    if (opts.bold) doc.setFont(undefined, "bold");
+    else doc.setFont(undefined, "normal");
+    doc.text(text, left, y);
+    nl(opts.step || 6);
+  };
+
+  write("Flat Rate Dispute Report", 16, { bold: true, step: 8 });
+  write(`Employee: ${empId}`, 11, { step: 5 });
+  write(`Generated: ${todayKeyLocal()}`, 10, { step: 10 });
+
+  let grandMissingHours = 0;
+  let grandMissingPay = 0;
+
+  for (const wk of weekKeys) {
+    const entries = weekMap.get(wk);
+    const totals = computeTotals(entries);
+    const stub = getPayStubForWeekKey(wk);
+    const hoursPaid = stub ? Number(stub.hoursPaid || 0) : 0;
+    const amountPaid = stub ? Number(stub.amountPaid || 0) : 0;
+    const missingHours = round1(totals.hours - hoursPaid);
+    const missingPay = round2(totals.dollars - amountPaid);
+
+    grandMissingHours = round1(grandMissingHours + missingHours);
+    grandMissingPay = round2(grandMissingPay + missingPay);
+
+    write(`Week: ${wk}`, 12, { bold: true, step: 7 });
+    write(`  Logged: ${formatHours(totals.hours)} hrs | ${formatMoney(totals.dollars)} | ${totals.count} jobs`, 10, { step: 5 });
+    write(`  Paid:   ${formatHours(hoursPaid)} hrs | ${formatMoney(amountPaid)}`, 10, { step: 5 });
+    write(`  Gap:    ${signedHoursLabel(missingHours)} hrs | ${signedMoneyLabel(missingPay)}`, 10, { step: 5 });
+
+    for (const e of entries) {
+      const ro = e.ref || e.ro || "—";
+      const type = (e.type || e.typeText || "—").slice(0, 20);
+      const comeback = e.isComeback ? " [COMEBACK]" : "";
+      write(`    ${e.dayKey}  ${String(ro).padEnd(12)}  ${type}${comeback}  ${e.hours}h  ${formatMoney(e.earnings)}`, 9, { step: 5 });
+    }
+    nl(4);
+  }
+
+  nl(4);
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(12);
+  doc.text(`TOTAL MISSING: ${signedHoursLabel(grandMissingHours)} hrs | ${signedMoneyLabel(grandMissingPay)}`, left, y);
+
+  doc.save(`flat-rate-dispute-${empId}-${todayKeyLocal()}.pdf`);
+}
+
+window.exportDisputeReport = exportDisputeReport;
 window.__FR = window.__FR || {};
 
 window.BUILD = "20260316-weekend-stable";
@@ -4581,6 +4711,8 @@ async function runOnce() {
       });
     });
 
+    document.getElementById("shareTodayBtn")?.addEventListener("click", () => shareDaySummary?.());
+
     document.getElementById("historyBtn")?.addEventListener("click", () => {
       const panel = document.getElementById("historyPanel");
       const isOpen = panel?.classList.contains("open");
@@ -4627,6 +4759,7 @@ async function runOnce() {
     wrapMoreClick("exportCsvBtn", exportCSV);
     wrapMoreClick("exportJsonBtn", exportJSON);
     wrapMoreClick("exportAuditBtn", exportAuditReport);
+    wrapMoreClick("exportDisputeBtn", exportDisputeReport);
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
     wrapMoreClick("savePayStubBtn", savePayStubEntry);
     wrapMoreClick("wipeBtn", wipeLocalOnly);
@@ -4668,6 +4801,32 @@ async function runOnce() {
     }
   }
 }
+
+// PWA install prompt
+let _deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  const banner = document.getElementById("installBanner");
+  if (banner) banner.style.display = "";
+});
+
+document.addEventListener("click", async (e) => {
+  if (!e.target?.closest?.("#installBtn")) return;
+  if (!_deferredInstallPrompt) return;
+  _deferredInstallPrompt.prompt();
+  const { outcome } = await _deferredInstallPrompt.userChoice;
+  if (outcome === "accepted") {
+    const banner = document.getElementById("installBanner");
+    if (banner) banner.style.display = "none";
+  }
+  _deferredInstallPrompt = null;
+});
+
+document.getElementById("installDismissBtn")?.addEventListener("click", () => {
+  const banner = document.getElementById("installBanner");
+  if (banner) banner.style.display = "none";
+});
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {

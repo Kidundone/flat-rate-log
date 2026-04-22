@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.cf3d22ca7e.css">
+  <link rel="stylesheet" href="./app.82400f85a8.css">
 </head>
 <body data-page="main">
 
@@ -23,6 +23,17 @@
 <div id="statusMsg" class="statusMsg muted small"></div>
 <div id="dataWarning" class="warningBanner" style="display:none;max-width:680px;margin:8px auto 0;"></div>
 <div id="offlineBanner" class="offlineBanner" style="display:none;">You're offline — entries may not save</div>
+<div id="cloudNudge" class="cloudNudge" style="display:none;">
+  <span>Sign in for cloud backup &amp; sync across devices</span>
+  <a class="btn" href="./more.html">Sign In</a>
+</div>
+<div id="installBanner" class="installBanner" style="display:none;">
+  <span>Add to Home Screen for quick access</span>
+  <div class="u-row" style="gap:8px;">
+    <button class="btn primary" id="installBtn" type="button">Install</button>
+    <button class="btn" id="installDismissBtn" type="button">Later</button>
+  </div>
+</div>
 
 <div id="statsStrip">
   <div class="stripCell">
@@ -155,6 +166,13 @@
             <textarea id="notesBox" name="notes"
                       placeholder="Anything that will matter later…" class="fr26Textarea"></textarea>
           </div>
+
+          <div class="fr26Row">
+            <label class="fr26Check">
+              <input id="isComeback" type="checkbox" />
+              <span>Comeback / Warranty</span>
+            </label>
+          </div>
         </div>
       </section>
 
@@ -261,6 +279,7 @@
 
     <div class="u-row" style="flex-wrap:wrap;gap:6px;margin-top:10px;">
       <button class="btn" id="historyBtn" type="button">History</button>
+      <button class="btn" id="shareTodayBtn" type="button">Share Today</button>
       <button class="btn" id="exportSelectedBtn" type="button" onclick="exportSelected()">Export Selected</button>
       <button class="btn danger-ghost" id="deleteSelectedBtn" type="button">Delete</button>
       <button class="btn primary" id="exportCsvMainBtn" type="button">Export CSV</button>
@@ -348,6 +367,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.81fcbc9a42.js" defer></script>
+<script src="/flat-rate-log/app.d0deed022a.js" defer></script>
 </body>
 </html>

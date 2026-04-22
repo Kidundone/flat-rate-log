@@ -705,4 +705,84 @@ function initSettingsUI() {
   });
 }
 
+async function exportDisputeReport() {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) { alert("PDF export is not ready. Refresh and try again."); return; }
+
+  const empId = getEmpId();
+  if (!empId) { alert("Enter Employee # first."); return; }
+
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const own = filterEntriesByEmp(all, empId);
+  if (!own.length) { alert("No logged entries found."); return; }
+
+  // Group by week
+  const weekMap = new Map();
+  for (const e of own) {
+    const wk = e.weekStartKey || dateKey(startOfWeekLocal(new Date(e.dayKey || e.createdAt || Date.now())));
+    if (!weekMap.has(wk)) weekMap.set(wk, []);
+    weekMap.get(wk).push(e);
+  }
+  const weekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+
+  const doc = new jsPDF();
+  const left = 20;
+  const pageBottom = doc.internal.pageSize.getHeight() - 16;
+  let y = 20;
+
+  const nl = (step = 6) => {
+    y += step;
+    if (y > pageBottom) { doc.addPage(); y = 20; }
+  };
+
+  const write = (text, size = 11, opts = {}) => {
+    doc.setFontSize(size);
+    if (opts.bold) doc.setFont(undefined, "bold");
+    else doc.setFont(undefined, "normal");
+    doc.text(text, left, y);
+    nl(opts.step || 6);
+  };
+
+  write("Flat Rate Dispute Report", 16, { bold: true, step: 8 });
+  write(`Employee: ${empId}`, 11, { step: 5 });
+  write(`Generated: ${todayKeyLocal()}`, 10, { step: 10 });
+
+  let grandMissingHours = 0;
+  let grandMissingPay = 0;
+
+  for (const wk of weekKeys) {
+    const entries = weekMap.get(wk);
+    const totals = computeTotals(entries);
+    const stub = getPayStubForWeekKey(wk);
+    const hoursPaid = stub ? Number(stub.hoursPaid || 0) : 0;
+    const amountPaid = stub ? Number(stub.amountPaid || 0) : 0;
+    const missingHours = round1(totals.hours - hoursPaid);
+    const missingPay = round2(totals.dollars - amountPaid);
+
+    grandMissingHours = round1(grandMissingHours + missingHours);
+    grandMissingPay = round2(grandMissingPay + missingPay);
+
+    write(`Week: ${wk}`, 12, { bold: true, step: 7 });
+    write(`  Logged: ${formatHours(totals.hours)} hrs | ${formatMoney(totals.dollars)} | ${totals.count} jobs`, 10, { step: 5 });
+    write(`  Paid:   ${formatHours(hoursPaid)} hrs | ${formatMoney(amountPaid)}`, 10, { step: 5 });
+    write(`  Gap:    ${signedHoursLabel(missingHours)} hrs | ${signedMoneyLabel(missingPay)}`, 10, { step: 5 });
+
+    for (const e of entries) {
+      const ro = e.ref || e.ro || "—";
+      const type = (e.type || e.typeText || "—").slice(0, 20);
+      const comeback = e.isComeback ? " [COMEBACK]" : "";
+      write(`    ${e.dayKey}  ${String(ro).padEnd(12)}  ${type}${comeback}  ${e.hours}h  ${formatMoney(e.earnings)}`, 9, { step: 5 });
+    }
+    nl(4);
+  }
+
+  nl(4);
+  doc.setFont(undefined, "bold");
+  doc.setFontSize(12);
+  doc.text(`TOTAL MISSING: ${signedHoursLabel(grandMissingHours)} hrs | ${signedMoneyLabel(grandMissingPay)}`, left, y);
+
+  doc.save(`flat-rate-dispute-${empId}-${todayKeyLocal()}.pdf`);
+}
+
+window.exportDisputeReport = exportDisputeReport;
 window.__FR = window.__FR || {};

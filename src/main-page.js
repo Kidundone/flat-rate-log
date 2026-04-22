@@ -87,6 +87,8 @@ function startEditEntry(entry) {
   if (hoursEl) { hoursEl.value = entry.hours != null ? String(entry.hours) : ""; hoursEl.dataset.touched = "1"; }
   if (rateEl) { rateEl.value = entry.rate != null ? String(entry.rate) : String(getDefaultRate()); rateEl.dataset.touched = "1"; }
   if (notesEl) notesEl.value = entry.notes || "";
+  const isComebackEl = document.getElementById("isComeback");
+  if (isComebackEl) isComebackEl.checked = !!entry.isComeback;
   clearPickedPhoto();
   setPhotoLabelFromEntry(entry);
 
@@ -476,6 +478,7 @@ async function handleSave(ev) {
       rate: round2(rateVal),
       earnings: round2(hoursVal * rateVal),
       notes,
+      isComeback: !!(document.getElementById("isComeback")?.checked),
       photoDataUrl: null,
       location: baseEntry.location ?? null
     };
@@ -528,7 +531,7 @@ function buildHistEntryRow(e) {
   row.className = "histEntryRow";
   row.innerHTML = `
     <div class="histEntryLeft">
-      <div class="histEntryType">${typeBadgeHtml(e.type || e.typeText || "—")}</div>
+      <div class="histEntryType">${typeBadgeHtml(e.type || e.typeText || "—")}${e.isComeback ? ` <span class="comebackBadge">Comeback</span>` : ""}</div>
       <div class="histEntryRef">${refLabel}: ${escapeHtml(refVal)}${vin8}</div>
       <div class="histEntryMeta">${escapeHtml(formatTimeAgo(e.updatedAt || e.createdAt))}${photoTag}</div>
       ${notesHtml}
@@ -614,6 +617,47 @@ async function renderHistory() {
     }
   }
 }
+
+async function shareDaySummary() {
+  const empId = getEmpId();
+  if (!empId) { toast("Employee # required"); return; }
+  const dk = todayKeyLocal();
+  const all = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
+  const today = all.filter(e => (e.dayKey || dayKeyFromISO(e.createdAt)) === dk);
+  if (!today.length) { toast("No entries today to share."); return; }
+
+  const totals = computeTotals(today);
+  const lines = today.map(e => {
+    const ref = e.ref || e.ro || "—";
+    const type = e.type || e.typeText || "—";
+    return `• ${type} | ${e.refType === "STOCK" ? "STK" : "RO"}: ${ref} | ${e.hours} hrs | ${formatMoney(e.earnings)}`;
+  });
+
+  const text = [
+    `Flat Rate Summary — ${dk}`,
+    `Employee: ${empId}`,
+    "",
+    ...lines,
+    "",
+    `Total: ${formatHours(totals.hours)} hrs | ${formatMoney(totals.dollars)} | ${totals.count} jobs`,
+  ].join("\n");
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: `Shift Summary ${dk}`, text });
+      return;
+    } catch {}
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Summary copied to clipboard.");
+  } catch {
+    toast("Could not share or copy.");
+  }
+}
+
+window.__FR = window.__FR || {};
+window.__FR.shareDaySummary = shareDaySummary;
 
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
 const DEFAULT_TYPES = []; // no presets; the app learns from each employee
@@ -1086,6 +1130,7 @@ function renderList(entries, mode){
           <div class="itemRefRow">
             <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
             ${typeBadgeHtml(typeLabel)}
+            ${e.isComeback ? `<span class="comebackBadge">Comeback</span>` : ""}
             <span class="mono itemRef">${refDisplay}</span>
           </div>
           ${buildEntryMetaHtml(e)}

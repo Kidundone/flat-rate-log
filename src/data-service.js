@@ -60,6 +60,9 @@ async function initAuth() {
   if (formEl)      formEl.style.display      = signedIn ? "none" : "";
   if (signedInEl)  signedInEl.style.display  = signedIn ? ""     : "none";
   if (outBtn)      outBtn.style.display       = signedIn ? ""     : "none";
+
+  const nudge = document.getElementById("cloudNudge");
+  if (nudge) nudge.style.display = signedIn ? "none" : "";
 }
 
 async function signIn(email, password) {
@@ -507,6 +510,7 @@ function normalizeEntryForApi(entry) {
     location: entry.location || null,
     vin8: entry.vin8 || null,
     photo_path: entry.photo_path || entry.photoPath || null,
+    is_comeback: entry.isComeback || false,
   };
 }
 
@@ -567,6 +571,7 @@ function normalizeSupabaseLog(r) {
     owner_key: r.owner_key ?? null,
     employee_number: r.employee_number ?? null,
     is_deleted: r.is_deleted ?? false,
+    isComeback: r.is_comeback ?? false,
   };
 
   return entry;

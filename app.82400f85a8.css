@@ -1358,6 +1358,45 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   transition: opacity 300ms;
 }
 
+/* ── Cloud nudge / install banners ───────────────── */
+.cloudNudge,
+.installBanner {
+  max-width: 680px;
+  margin: 8px auto 0;
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cloudNudge {
+  background: rgba(0,149,246,.12);
+  border: 1px solid rgba(0,149,246,.3);
+  color: #60b8ff;
+}
+.installBanner {
+  background: rgba(41,217,165,.12);
+  border: 1px solid rgba(41,217,165,.3);
+  color: var(--accent);
+}
+
+/* ── Comeback badge ───────────────────────────────── */
+.comebackBadge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  background: rgba(250,204,21,.18);
+  color: #fde047;
+  vertical-align: middle;
+}
+
 .entryListHeader {
   display: flex;
   align-items: flex-start;

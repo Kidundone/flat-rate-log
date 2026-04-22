@@ -213,6 +213,8 @@ async function runOnce() {
       });
     });
 
+    document.getElementById("shareTodayBtn")?.addEventListener("click", () => shareDaySummary?.());
+
     document.getElementById("historyBtn")?.addEventListener("click", () => {
       const panel = document.getElementById("historyPanel");
       const isOpen = panel?.classList.contains("open");
@@ -259,6 +261,7 @@ async function runOnce() {
     wrapMoreClick("exportCsvBtn", exportCSV);
     wrapMoreClick("exportJsonBtn", exportJSON);
     wrapMoreClick("exportAuditBtn", exportAuditReport);
+    wrapMoreClick("exportDisputeBtn", exportDisputeReport);
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
     wrapMoreClick("savePayStubBtn", savePayStubEntry);
     wrapMoreClick("wipeBtn", wipeLocalOnly);
@@ -300,6 +303,32 @@ async function runOnce() {
     }
   }
 }
+
+// PWA install prompt
+let _deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  const banner = document.getElementById("installBanner");
+  if (banner) banner.style.display = "";
+});
+
+document.addEventListener("click", async (e) => {
+  if (!e.target?.closest?.("#installBtn")) return;
+  if (!_deferredInstallPrompt) return;
+  _deferredInstallPrompt.prompt();
+  const { outcome } = await _deferredInstallPrompt.userChoice;
+  if (outcome === "accepted") {
+    const banner = document.getElementById("installBanner");
+    if (banner) banner.style.display = "none";
+  }
+  _deferredInstallPrompt = null;
+});
+
+document.getElementById("installDismissBtn")?.addEventListener("click", () => {
+  const banner = document.getElementById("installBanner");
+  if (banner) banner.style.display = "none";
+});
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
