@@ -1,10 +1,10 @@
 :root {
-  --bg: #000;
-  --surface: #121212;
-  --surface2: #1c1c1c;
-  --surface3: #262626;
-  --stroke: rgba(255,255,255,.08);
-  --stroke2: rgba(255,255,255,.14);
+  --bg: #111113;
+  --surface: #1c1c1e;
+  --surface2: #242427;
+  --surface3: #2c2c2f;
+  --stroke: rgba(255,255,255,.09);
+  --stroke2: rgba(255,255,255,.16);
 
   --text: #fff;
   --text2: rgba(255,255,255,.72);
@@ -53,7 +53,7 @@ header {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  background: rgba(0,0,0,.9);
+  background: rgba(17,17,19,.92);
   border-bottom: 1px solid var(--stroke);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -77,7 +77,7 @@ main {
   display: flex;
   align-items: stretch;
   justify-content: space-around;
-  background: var(--surface);
+  background: var(--surface2);
   border-bottom: 1px solid var(--stroke);
   max-width: 680px;
   margin: 0 auto;
@@ -775,7 +775,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(0,0,0,.9);
+  background: rgba(17,17,19,.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 12px 16px;
