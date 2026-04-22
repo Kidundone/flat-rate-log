@@ -261,7 +261,8 @@ async function runOnce() {
     wrapMoreClick("exportCsvBtn", exportCSV);
     wrapMoreClick("exportJsonBtn", exportJSON);
     wrapMoreClick("exportAuditBtn", exportAuditReport);
-    wrapMoreClick("exportDisputeBtn", exportDisputeReport);
+    wrapMoreClick("exportDisputeBtn", () => exportDisputeReport());
+    wrapMoreClick("exportDisputeWeekBtn", exportDisputeThisWeek);
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
     wrapMoreClick("savePayStubBtn", savePayStubEntry);
     wrapMoreClick("wipeBtn", wipeLocalOnly);

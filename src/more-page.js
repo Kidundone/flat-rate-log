@@ -705,7 +705,9 @@ function initSettingsUI() {
   });
 }
 
-async function exportDisputeReport() {
+// weekKey: optional "YYYY-MM-DD" week start. When provided, report covers that week only.
+// When omitted, covers all weeks with logged entries.
+async function exportDisputeReport(weekKey) {
   const { jsPDF } = window.jspdf || {};
   if (!jsPDF) { alert("PDF export is not ready. Refresh and try again."); return; }
 
@@ -716,13 +718,22 @@ async function exportDisputeReport() {
   const own = filterEntriesByEmp(all, empId);
   if (!own.length) { alert("No logged entries found."); return; }
 
-  // Group by week
+  const singleWeek = typeof weekKey === "string" && weekKey.length === 10;
+
+  // Build week map
   const weekMap = new Map();
   for (const e of own) {
     const wk = e.weekStartKey || dateKey(startOfWeekLocal(new Date(e.dayKey || e.createdAt || Date.now())));
+    if (singleWeek && wk !== weekKey) continue;
     if (!weekMap.has(wk)) weekMap.set(wk, []);
     weekMap.get(wk).push(e);
   }
+
+  if (singleWeek && !weekMap.size) {
+    alert(`No entries found for week starting ${weekKey}.`);
+    return;
+  }
+
   const weekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
 
   const doc = new jsPDF();
@@ -737,13 +748,15 @@ async function exportDisputeReport() {
 
   const write = (text, size = 11, opts = {}) => {
     doc.setFontSize(size);
-    if (opts.bold) doc.setFont(undefined, "bold");
-    else doc.setFont(undefined, "normal");
+    doc.setFont(undefined, opts.bold ? "bold" : "normal");
     doc.text(text, left, y);
     nl(opts.step || 6);
   };
 
-  write("Flat Rate Dispute Report", 16, { bold: true, step: 8 });
+  const title = singleWeek
+    ? `Flat Rate Dispute Report — Week of ${weekKey}`
+    : "Flat Rate Dispute Report — All Weeks";
+  write(title, 15, { bold: true, step: 8 });
   write(`Employee: ${empId}`, 11, { step: 5 });
   write(`Generated: ${todayKeyLocal()}`, 10, { step: 10 });
 
@@ -756,33 +769,67 @@ async function exportDisputeReport() {
     const stub = getPayStubForWeekKey(wk);
     const hoursPaid = stub ? Number(stub.hoursPaid || 0) : 0;
     const amountPaid = stub ? Number(stub.amountPaid || 0) : 0;
+    const weekEnd = stub?.weekEnding || weekEndingForWeekStartKey(wk) || "";
     const missingHours = round1(totals.hours - hoursPaid);
     const missingPay = round2(totals.dollars - amountPaid);
 
     grandMissingHours = round1(grandMissingHours + missingHours);
     grandMissingPay = round2(grandMissingPay + missingPay);
 
-    write(`Week: ${wk}`, 12, { bold: true, step: 7 });
+    write(`Week: ${wk}${weekEnd ? ` → ${weekEnd}` : ""}`, 12, { bold: true, step: 7 });
     write(`  Logged: ${formatHours(totals.hours)} hrs | ${formatMoney(totals.dollars)} | ${totals.count} jobs`, 10, { step: 5 });
     write(`  Paid:   ${formatHours(hoursPaid)} hrs | ${formatMoney(amountPaid)}`, 10, { step: 5 });
-    write(`  Gap:    ${signedHoursLabel(missingHours)} hrs | ${signedMoneyLabel(missingPay)}`, 10, { step: 5 });
 
+    const gapLabel = missingHours > 0
+      ? `⚠ ${signedHoursLabel(missingHours)} hrs | ${signedMoneyLabel(missingPay)} owed`
+      : `OK — paid totals cover logged work`;
+    write(`  Gap:    ${gapLabel}`, 10, { step: 6 });
+
+    // Per-day grouping
+    const dayMap = new Map();
     for (const e of entries) {
-      const ro = e.ref || e.ro || "—";
-      const type = (e.type || e.typeText || "—").slice(0, 20);
-      const comeback = e.isComeback ? " [COMEBACK]" : "";
-      write(`    ${e.dayKey}  ${String(ro).padEnd(12)}  ${type}${comeback}  ${e.hours}h  ${formatMoney(e.earnings)}`, 9, { step: 5 });
+      const d = e.dayKey || dayKeyFromISO(e.createdAt) || "?";
+      if (!dayMap.has(d)) dayMap.set(d, []);
+      dayMap.get(d).push(e);
     }
-    nl(4);
+    const dayKeys = Array.from(dayMap.keys()).sort((a, b) => a.localeCompare(b));
+    for (const d of dayKeys) {
+      const dayEntries = dayMap.get(d);
+      const dt = computeTotals(dayEntries);
+      write(`  ${d}  (${formatHours(dt.hours)} hrs | ${formatMoney(dt.dollars)})`, 10, { step: 5 });
+      for (const e of dayEntries) {
+        const ro = e.ref || e.ro || "—";
+        const type = (e.type || e.typeText || "—").slice(0, 18);
+        const comeback = e.isComeback ? " [CB]" : "";
+        write(`      ${String(ro).padEnd(10)}  ${type}${comeback}  ${e.hours}h  ${formatMoney(e.earnings)}`, 9, { step: 5 });
+      }
+    }
+    nl(5);
   }
 
-  nl(4);
+  nl(3);
   doc.setFont(undefined, "bold");
   doc.setFontSize(12);
-  doc.text(`TOTAL MISSING: ${signedHoursLabel(grandMissingHours)} hrs | ${signedMoneyLabel(grandMissingPay)}`, left, y);
+  const totalLabel = grandMissingHours > 0
+    ? `TOTAL MISSING: ${signedHoursLabel(grandMissingHours)} hrs | ${signedMoneyLabel(grandMissingPay)}`
+    : `All weeks accounted for — no missing pay detected`;
+  doc.text(totalLabel, left, y);
 
-  doc.save(`flat-rate-dispute-${empId}-${todayKeyLocal()}.pdf`);
+  const filename = singleWeek
+    ? `dispute-${empId}-${weekKey}.pdf`
+    : `dispute-${empId}-all-${todayKeyLocal()}.pdf`;
+  doc.save(filename);
+}
+
+async function exportDisputeThisWeek() {
+  const weekEl = document.getElementById("payStubWeekEnding");
+  const weekEnding = String(weekEl?.value || "").trim();
+  if (!weekEnding) { alert("Set a Week Ending date in the Pay Stub section first."); return; }
+  const weekStartKey = weekStartKeyFromDateInput(weekEnding);
+  if (!weekStartKey) { alert("Invalid week ending date."); return; }
+  await exportDisputeReport(weekStartKey);
 }
 
 window.exportDisputeReport = exportDisputeReport;
+window.exportDisputeThisWeek = exportDisputeThisWeek;
 window.__FR = window.__FR || {};
