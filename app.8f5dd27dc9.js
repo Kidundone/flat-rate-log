@@ -4450,17 +4450,34 @@ async function exportDisputeReport(weekKey) {
 
   const singleWeek = typeof weekKey === "string" && weekKey.length === 10;
 
-  // Build week map
+  // For single-week mode, compute the exact date range so we don't rely on
+  // stored weekStartKey values (which can be stale, missing, or use a different
+  // week-start convention than the filter key).
+  let rangeStart = "";
+  let rangeEnd = "";
+  if (singleWeek) {
+    const ws = parseDateInputValue(weekKey);
+    if (!ws) { alert("Invalid week key."); return; }
+    rangeStart = weekKey; // "YYYY-MM-DD"
+    rangeEnd = dateKey(endOfWeekLocal(ws));
+  }
+
+  // Build week map — bucket each entry by its week-start key
   const weekMap = new Map();
   for (const e of own) {
-    const wk = e.weekStartKey || dateKey(startOfWeekLocal(new Date(e.dayKey || e.createdAt || Date.now())));
-    if (singleWeek && wk !== weekKey) continue;
+    const entryDay = e.dayKey || dayKeyFromISO(e.createdAt || "");
+    if (!entryDay) continue;
+    if (singleWeek && (entryDay < rangeStart || entryDay > rangeEnd)) continue;
+    // Bucket by week-start derived from the entry's actual day
+    const wk = singleWeek
+      ? weekKey
+      : (e.weekStartKey || dateKey(startOfWeekLocal(new Date(entryDay))));
     if (!weekMap.has(wk)) weekMap.set(wk, []);
     weekMap.get(wk).push(e);
   }
 
   if (singleWeek && !weekMap.size) {
-    alert(`No entries found for week starting ${weekKey}.`);
+    alert(`No entries found for ${rangeStart} → ${rangeEnd}.`);
     return;
   }
 
@@ -4888,7 +4905,6 @@ async function runOnce() {
     wrapMoreClick("exportCsvBtn", exportCSV);
     wrapMoreClick("exportJsonBtn", exportJSON);
     wrapMoreClick("exportAuditBtn", exportAuditReport);
-    wrapMoreClick("exportDisputeBtn", () => exportDisputeReport());
     wrapMoreClick("exportDisputeWeekBtn", exportDisputeThisWeek);
     wrapMoreClick("saveFlaggedBtn", saveFlaggedHours);
     wrapMoreClick("savePayStubBtn", savePayStubEntry);
