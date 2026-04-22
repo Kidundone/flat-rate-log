@@ -215,18 +215,26 @@ async function runOnce() {
 
     document.getElementById("historyBtn")?.addEventListener("click", () => {
       const panel = document.getElementById("historyPanel");
-      const isOpen = panel?.style.display !== "none" && panel?.style.display !== "";
-      if (isOpen) { showHistory(false); document.querySelector("header")?.scrollIntoView({ behavior: "smooth" }); }
+      const isOpen = panel?.classList.contains("open");
+      if (isOpen) { showHistory(false); }
       else { showHistory(true); renderHistory(); }
     });
     document.getElementById("exportCsvMainBtn")?.addEventListener("click", exportCSV);
-    document.getElementById("closeHistoryBtn")?.addEventListener("click", () => {
-      showHistory(false);
-      document.querySelector("header")?.scrollIntoView({ behavior: "smooth" });
+    document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
+    document.getElementById("historyPanel")?.addEventListener("click", (e) => {
+      if (e.target?.id === "historyPanel") showHistory(false);
     });
-    document.getElementById("histRange")?.addEventListener("change", renderHistory);
-    document.getElementById("histGroup")?.addEventListener("change", renderHistory);
-    document.getElementById("historySearchInput")?.addEventListener("input", () => renderHistory());
+    document.querySelectorAll("[data-hist-range]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-hist-range]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        renderHistory();
+      });
+    });
+    document.getElementById("historySearchInput")?.addEventListener("input", () => {
+      clearTimeout(window.__HIST_SEARCH_T__);
+      window.__HIST_SEARCH_T__ = setTimeout(renderHistory, 180);
+    });
 
     initPhotosUI();
     return;

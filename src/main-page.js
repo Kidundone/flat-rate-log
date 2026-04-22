@@ -507,22 +507,60 @@ async function handleSave(ev) {
   }
 }
 
-function showHistory(open=true){
+function showHistory(open = true) {
   const p = $("historyPanel");
   if (!p) return;
-  p.style.display = open ? "block" : "none";
-  if (open) setTimeout(() => p.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  p.classList.toggle("open", open);
+  p.setAttribute("aria-hidden", open ? "false" : "true");
+  document.body.style.overflow = open ? "hidden" : "";
 }
 
-async function renderHistory(){
+function buildHistEntryRow(e) {
+  const refLabel = e.refType === "STOCK" ? "STK" : "RO";
+  const refVal = e.ref || e.ro || "—";
+  const hasPhoto = entryHasPhoto(e);
+  const photoTag = hasPhoto ? ` · Photo` : "";
+  const vin8 = e.vin8 ? ` · VIN ${escapeHtml(e.vin8)}` : "";
+  const notesHtml = e.notes
+    ? `<div class="histEntryMeta">${escapeHtml(e.notes)}</div>` : "";
+
+  const row = document.createElement("div");
+  row.className = "histEntryRow";
+  row.innerHTML = `
+    <div class="histEntryLeft">
+      <div class="histEntryType">${typeBadgeHtml(e.type || e.typeText || "—")}</div>
+      <div class="histEntryRef">${refLabel}: ${escapeHtml(refVal)}${vin8}</div>
+      <div class="histEntryMeta">${escapeHtml(formatTimeAgo(e.updatedAt || e.createdAt))}${photoTag}</div>
+      ${notesHtml}
+      <div class="histEntryActions">
+        <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+        <button class="btn danger-ghost" data-del="${e.id}">Del</button>
+        ${hasPhoto ? `<button class="btn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
+      </div>
+    </div>
+    <div class="histEntryRight">
+      <div class="histEntryPay">${formatMoney(e.earnings)}</div>
+      <div class="histEntryHrs">${String(e.hours)} hrs</div>
+    </div>
+  `;
+
+  const editBtn = row.querySelector("[data-edit-id]");
+  if (editBtn) editBtn.addEventListener("click", () => { showHistory(false); startEditEntry(e); });
+  if (hasPhoto) {
+    const photoBtn = row.querySelector('[data-action="view-photo"]');
+    if (photoBtn) photoBtn.addEventListener("click", () => openPhoto(e));
+  }
+  return row;
+}
+
+async function renderHistory() {
   const empId = getEmpId();
   if (!empId) { toast("Employee # required"); return; }
 
   const q = ($("historySearchInput")?.value || "").trim();
-  const range = $("histRange")?.value || "week";
-  const group = $("histGroup")?.value || "none";
+  const activeRangeBtn = document.querySelector("[data-hist-range].active");
+  const range = activeRangeBtn?.dataset.histRange || "week";
 
-  // Use already-loaded Supabase data instead of local IndexedDB
   const source = Array.isArray(CURRENT_ENTRIES) && CURRENT_ENTRIES.length
     ? CURRENT_ENTRIES
     : normalizeEntries(Array.isArray(window.STATE?.entries) ? window.STATE.entries : []);
@@ -532,7 +570,6 @@ async function renderHistory(){
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   let slice = all;
-
   if (range === "week") {
     const ws = startOfWeekLocal(new Date());
     slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
@@ -544,82 +581,43 @@ async function renderHistory(){
     slice = all.filter(e => inMonth(e.dayKey || dayKeyFromISO(e.createdAt), ms));
   }
 
-  slice = slice.filter(e => matchSearch(e, q));
+  if (q) slice = slice.filter(e => matchSearch(e, q));
   slice.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   const totals = computeTotals(slice);
-  const meta = $("historyMeta");
-  if (meta) meta.textContent = `${slice.length} entries • ${formatHours(totals.hours)} hrs • ${formatMoney(totals.dollars)}`;
+  const avgJob = totals.count > 0 ? round2(totals.dollars / totals.count) : 0;
+
+  const setText = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+  setText("historyMeta", `${slice.length} ${slice.length === 1 ? "entry" : "entries"}`);
+  setText("histSumCount", String(totals.count));
+  setText("histSumHours", formatHours(totals.hours));
+  setText("histSumDollars", formatMoney(totals.dollars));
+  setText("histSumAvg", totals.count > 0 ? formatMoney(avgJob) : "—");
 
   const box = $("historyList");
   if (!box) return;
   box.innerHTML = "";
 
   if (!slice.length) {
-    box.innerHTML = `<div class="muted">No entries match.</div>`;
+    box.innerHTML = `<div class="emptyState"><div class="emptyStateTitle">No entries</div><div class="emptyStateSub">Try a different range or search term</div></div>`;
     return;
   }
 
-  if (group === "day") {
-    const groups = groupByDay(slice);
-    for (const g of groups) {
-      const t = computeTotals(g.entries);
-      const header = document.createElement("div");
-      header.className = "item";
-      header.innerHTML = `
-        <div class="itemTop">
-          <div class="mono">${g.dayKey}</div>
-          <div class="right mono">${formatHours(t.hours)} hrs • ${formatMoney(t.dollars)}</div>
-        </div>
-      `;
-      box.appendChild(header);
+  const groups = groupByDay(slice);
+  for (const g of groups) {
+    const t = computeTotals(g.entries);
 
-      for (const e of g.entries) {
-        const row = document.createElement("div");
-        row.className = "item";
-        row.innerHTML = `
-          <div class="itemTop">
-            <div>
-              <div class="mono">${escapeHtml(e.refType||"RO")}: ${escapeHtml(e.ref||e.ro||"-")} ${typeBadgeHtml(e.type||"")}</div>
-              ${buildEntryMetaHtml(e)}
-              ${e.notes ? `<div class="small" style="margin-top:6px;">${escapeHtml(e.notes)}</div>` : ""}
-            </div>
-            <div class="right">
-              <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-              <div class="itemEarnings">${formatMoney(e.earnings)}</div>
-              <div class="itemActions">
-                <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger-ghost" data-del="${e.id}">Del</button>
-              </div>
-            </div>
-          </div>`;
-        box.appendChild(row);
-      }
-    }
-    return;
-  }
-
-  // no group
-  for (const e of slice.slice(0, 200)) {
-    const row = document.createElement("div");
-    row.className = "item";
-    row.innerHTML = `
-      <div class="itemTop">
-        <div>
-          <div class="mono">${e.refType || "RO"}: ${escapeHtml(e.ref || e.ro || "-")} ${typeBadgeHtml(e.type||"")}</div>
-          ${buildEntryMetaHtml(e)}
-        </div>
-        <div class="right">
-          <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-          <div class="itemEarnings">${formatMoney(e.earnings)}</div>
-          <div class="itemActions">
-            <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger-ghost" data-del="${e.id}">Del</button>
-          </div>
-        </div>
-      </div>
+    const dayHdr = document.createElement("div");
+    dayHdr.className = "histDayHeader";
+    dayHdr.innerHTML = `
+      <div class="histDayKey">${escapeHtml(g.dayKey)}</div>
+      <div class="histDayTotals">${formatHours(t.hours)} hrs · <span class="histDayPay">${formatMoney(t.dollars)}</span></div>
     `;
-    box.appendChild(row);
+    box.appendChild(dayHdr);
+
+    for (const e of g.entries) {
+      box.appendChild(buildHistEntryRow(e));
+    }
   }
 }
 

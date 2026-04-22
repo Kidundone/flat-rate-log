@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.f1e0b95031.css">
+  <link rel="stylesheet" href="./app.73ca0214e5.css">
 </head>
 <body data-page="main">
 
@@ -271,32 +271,50 @@
   </section>
 
   <!-- ── History panel ── -->
-  <section class="card" id="historyPanel" style="display:none;">
-    <div class="u-row" style="justify-content:space-between;margin-bottom:12px;">
-      <div>
-        <div style="font-weight:700;font-size:15px;">Work History</div>
-        <div class="small muted" id="historyMeta"></div>
+  <div id="historyPanel" class="historyOverlay" aria-hidden="true">
+    <div class="historySheet">
+
+      <div class="historyHeader">
+        <div>
+          <div class="historyTitle">Work History</div>
+          <div class="small muted" id="historyMeta"></div>
+        </div>
+        <button class="histCloseBtn" id="closeHistoryBtn" type="button" aria-label="Close">&#x2715;</button>
       </div>
-      <button class="btn" id="closeHistoryBtn" type="button">Close</button>
+
+      <div class="historyControls">
+        <input id="historySearchInput" placeholder="Search RO, type, VIN…" class="fr26Input" />
+        <div class="seg histRangeSeg" role="tablist" aria-label="History range">
+          <button type="button" class="segBtn active" data-hist-range="week">This Wk</button>
+          <button type="button" class="segBtn" data-hist-range="lastweek">Last Wk</button>
+          <button type="button" class="segBtn" data-hist-range="month">Month</button>
+          <button type="button" class="segBtn" data-hist-range="all">All</button>
+        </div>
+      </div>
+
+      <div class="historySummary">
+        <div class="histSumCell">
+          <div class="stripLabel">Jobs</div>
+          <div class="stripValue" id="histSumCount">—</div>
+        </div>
+        <div class="histSumCell">
+          <div class="stripLabel">Hours</div>
+          <div class="stripValue" id="histSumHours">—</div>
+        </div>
+        <div class="histSumCell">
+          <div class="stripLabel">Pay</div>
+          <div class="stripValue stripValue--accent" id="histSumDollars">—</div>
+        </div>
+        <div class="histSumCell">
+          <div class="stripLabel">Avg/Job</div>
+          <div class="stripValue" id="histSumAvg">—</div>
+        </div>
+      </div>
+
+      <div id="historyList" class="historyList"></div>
+
     </div>
-
-    <input id="historySearchInput" placeholder="Search RO, VIN, type…" class="fr26Input" />
-
-    <div class="u-row" style="margin-top:10px;flex-wrap:wrap;gap:8px;">
-      <select id="histRange">
-        <option value="week">This Week</option>
-        <option value="lastweek">Last Week</option>
-        <option value="month">This Month</option>
-        <option value="all">All Time</option>
-      </select>
-      <select id="histGroup">
-        <option value="none">No Group</option>
-        <option value="day">Group by Day</option>
-      </select>
-    </div>
-
-    <div id="historyList" class="list" style="margin-top:12px;"></div>
-  </section>
+  </div>
 
 </main>
 
@@ -332,6 +350,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.48dcc8607e.js" defer></script>
+<script src="/flat-rate-log/app.9a41679389.js" defer></script>
 </body>
 </html>
