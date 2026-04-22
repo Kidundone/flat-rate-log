@@ -72,6 +72,51 @@ main {
   margin: 0 auto;
 }
 
+/* ── Stats strip ─────────────────────────────────── */
+#statsStrip {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  background: var(--surface);
+  border-bottom: 1px solid var(--stroke);
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.stripCell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  min-width: 0;
+  border-right: 1px solid var(--stroke);
+}
+
+.stripCell:last-child { border-right: 0; }
+
+.stripLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+
+.stripValue {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.5px;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.stripValue--accent { color: var(--accent); }
+.stripValue--primary { color: var(--primary); }
+
 /* ── Cards ───────────────────────────────────────── */
 .card {
   background: var(--surface);
@@ -112,6 +157,57 @@ main {
 .item:active { background: var(--surface3); }
 .itemTop { display: flex; justify-content: space-between; gap: 12px; }
 .right   { text-align: right; flex-shrink: 0; }
+
+.itemLeft { flex: 1; min-width: 0; }
+
+.itemRefRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.itemCheck { flex-shrink: 0; }
+
+.itemRef {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.itemNotes {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.itemEarnings {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.5px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.itemHours {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.itemActions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.dayGroupHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 8px 0;
+  padding: 0 2px;
+}
 
 /* ── Inputs ──────────────────────────────────────── */
 label {
@@ -335,13 +431,13 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 }
 
 .fr26HourBtn {
-  height: 40px;
+  height: 56px;
   border: 1px solid var(--stroke2);
   border-radius: var(--r-md);
   background: var(--surface2);
   color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   cursor: pointer;
   transition: background 120ms var(--ease), border-color 120ms var(--ease);
 }

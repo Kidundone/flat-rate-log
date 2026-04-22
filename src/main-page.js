@@ -586,10 +586,10 @@ async function renderHistory(){
             </div>
             <div class="right">
               <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-              <div style="margin-top:6px;font-size:22px;font-weight:800;">${formatMoney(e.earnings)}</div>
-              <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+              <div class="itemEarnings">${formatMoney(e.earnings)}</div>
+              <div class="itemActions">
                 <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-                <button class="btn danger-ghost" data-del="${e.id}">Delete</button>
+                <button class="btn danger-ghost" data-del="${e.id}">Del</button>
               </div>
             </div>
           </div>`;
@@ -611,10 +611,10 @@ async function renderHistory(){
         </div>
         <div class="right">
           <div class="mono">${String(e.hours)} hrs @ ${formatMoney(e.rate)}</div>
-          <div style="margin-top:6px;font-size:16px;">${formatMoney(e.earnings)}</div>
-          <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+          <div class="itemEarnings">${formatMoney(e.earnings)}</div>
+          <div class="itemActions">
             <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-            <button class="btn danger-ghost" data-del="${e.id}">Delete</button>
+            <button class="btn danger-ghost" data-del="${e.id}">Del</button>
           </div>
         </div>
       </div>
@@ -1091,22 +1091,22 @@ function renderList(entries, mode){
       : "";
     const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
     row.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-        <div style="flex:1;min-width:0;">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} style="flex-shrink:0;" />
+      <div class="itemTop">
+        <div class="itemLeft">
+          <div class="itemRefRow">
+            <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
             ${typeBadgeHtml(typeLabel)}
-            <span class="mono" style="font-size:13px;color:var(--muted);">${refDisplay}</span>
+            <span class="mono itemRef">${refDisplay}</span>
           </div>
           ${buildEntryMetaHtml(e)}
-          ${e.notes ? `<div style="margin-top:4px;font-size:12px;color:var(--muted);">${escapeHtml(e.notes)}</div>` : ""}
+          ${e.notes ? `<div class="itemNotes">${escapeHtml(e.notes)}</div>` : ""}
         </div>
-        <div style="text-align:right;flex-shrink:0;">
-          <div style="font-size:22px;font-weight:800;letter-spacing:-.3px;line-height:1;">${formatMoney(e.earnings)}</div>
-          <div class="mono" style="font-size:12px;color:var(--muted);margin-top:3px;">${String(e.hours)} hrs</div>
+        <div class="right">
+          <div class="itemEarnings">${formatMoney(e.earnings)}</div>
+          <div class="mono itemHours">${String(e.hours)} hrs</div>
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">${actionButtons}</div>
+      <div class="itemActions">${actionButtons}</div>
     `;
     const editBtnEl = row.querySelector('button[data-action="edit"]');
     if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
@@ -1134,10 +1134,7 @@ function renderList(entries, mode){
     for (const key of dayKeys) {
       const bucket = groups.get(key) || [];
       const header = document.createElement("div");
-      header.style.display = "flex";
-      header.style.justifyContent = "space-between";
-      header.style.alignItems = "baseline";
-      header.style.margin = "8px 0";
+      header.className = "dayGroupHeader";
       header.innerHTML = `
         <div class="mono">${escapeHtml(key || "Unknown")}</div>
         <div class="muted small">${formatDayLabel(key)}</div>
@@ -1348,6 +1345,8 @@ async function refreshUI(entriesOverride){
   setText("todayHours", round1(today.hours));
   setText("todayDollars", formatMoney(today.dollars));
   setText("todayCount", String(today.count));
+  setText("stripTodayHours", r1(today.hours));
+  setText("stripTodayDollars", formatMoney(today.dollars));
   updateHeaderTodayTotal(today.dollars);
 
   // Week
@@ -1355,6 +1354,7 @@ async function refreshUI(entriesOverride){
 
   setText("weekHours", round1(week.hours));
   setText("weekDollars", formatMoney(week.dollars));
+  setText("stripWeekDollars", formatMoney(week.dollars));
   setText("weekRange", `${dateKey(ws)} → ${dateKey(we)}`);
   if (diffStr) setText("weekDelta", `Diff: ${diffStr} hrs`);
 
