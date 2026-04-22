@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Tracker — More</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./app.css">
+  <link rel="stylesheet" href="./app.6331651bfa.css">
 </head>
 <body data-page="more">
   <header class="top">
     <div class="topRow">
-      <div style="font-weight:900">More</div>
+      <div style="font-weight:700;font-size:18px;">More</div>
       <a class="btn" href="./index.html">Back</a>
     </div>
   </header>
@@ -28,7 +28,7 @@
           id="empId"
           inputmode="numeric"
           placeholder="Employee # (required for export)"
-          style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc"
+          style="flex:1;min-width:180px"
         />
       </div>
       <div class="muted" style="margin-top:8px">
@@ -96,7 +96,7 @@
       <div class="muted">Set your flagged hours for this week. The goal progress bar on the main page will track your progress.</div>
       <div class="row" style="margin-top:10px;display:flex;gap:10px;align-items:center;">
         <input id="flaggedHours" inputmode="decimal" type="number" step="0.5" min="0" placeholder="e.g. 40"
-               style="flex:1;min-width:120px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+               style="flex:1;min-width:120px" />
         <button class="btn primary" id="saveFlaggedBtn" type="button">Save Goal</button>
       </div>
       <div class="muted small" style="margin-top:8px;">Changes take effect immediately on the main page.</div>
@@ -107,11 +107,11 @@
       <div class="muted">Enter your pay-stub week and compare paid values against expected values from your entries.</div>
       <div class="row" style="margin-top:10px; gap:10px; flex-wrap:wrap;">
         <input id="payStubWeekEnding" type="date"
-               style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+               style="flex:1;min-width:180px" />
         <input id="payStubHoursPaid" inputmode="decimal" type="number" step="0.1" min="0" placeholder="Hours Paid (e.g., 35)"
-               style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+               style="flex:1;min-width:180px" />
         <input id="payStubAmountPaid" inputmode="decimal" type="number" step="0.01" min="0" placeholder="Amount Paid (e.g., 525)"
-               style="flex:1;min-width:180px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
+               style="flex:1;min-width:180px" />
       </div>
       <div class="row" style="margin-top:10px;">
         <button class="btn primary" id="savePayStubBtn" type="button">Save Pay Stub</button>
@@ -152,23 +152,23 @@
       <div class="h">Needs Review</div>
       <div class="muted">Browse and review your logged entries.</div>
       <div class="row u-row u-wrap" style="margin-top:10px;gap:8px;">
-        <select id="reviewRange" style="padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;">
+        <select id="reviewRange" >
           <option value="week">This Week</option>
           <option value="lastweek">Last Week</option>
           <option value="month">This Month</option>
           <option value="all">All Time</option>
         </select>
-        <select id="reviewFocus" style="padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;">
+        <select id="reviewFocus" >
           <option value="all">All Entries</option>
           <option value="with-photo">With Photo</option>
         </select>
-        <select id="reviewGroup" style="padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;">
+        <select id="reviewGroup" >
           <option value="day">Group by Day</option>
           <option value="none">No Group</option>
         </select>
         <button class="btn" id="reviewRefreshBtn" type="button">Refresh</button>
       </div>
-      <input id="reviewSearch" placeholder="Search entries…" style="width:100%;margin-top:10px;padding:11px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc;" />
+      <input id="reviewSearch" placeholder="Search entries…" style="width:100%;margin-top:10px" />
       <div id="reviewMeta" class="muted small" style="margin-top:8px;"></div>
       <div id="reviewList" class="list" style="margin-top:10px;"></div>
     </section>

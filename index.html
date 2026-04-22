@@ -7,30 +7,31 @@
   <title>Flat-Rate Tracker</title>
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#0b0b0b" />
-  <link rel="stylesheet" href="./app.css">
+  <meta name="theme-color" content="#000000" />
+  <link rel="stylesheet" href="./app.6331651bfa.css">
 </head>
 <body data-page="main">
+
 <header>
-  <h1>Flat-Rate Tracker</h1>
-  <div style="display:flex;align-items:center;gap:10px;">
-    <span id="headerTodayTotal" style="font-size:14px;font-weight:800;color:#14b8a6;letter-spacing:-.2px;opacity:0;transition:opacity 300ms;"></span>
+  <h1>Flat-Rate</h1>
+  <div class="u-row">
+    <span id="headerTodayTotal" class="headerTotal"></span>
     <a class="btn primary" href="./more.html">More</a>
   </div>
 </header>
 
-<div id="statusMsg" class="muted small" style="max-width:780px;margin:10px auto 0;padding:0 16px;"></div>
-<div id="dataWarning" class="warningBanner" style="display:none;max-width:780px;margin:10px auto 0;"></div>
-<div id="offlineBanner" style="display:none;max-width:780px;margin:8px auto 0;padding:10px 16px;border-radius:12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#ffd1d1;font-size:13px;font-weight:800;text-align:center;">
-  You're offline — entries may not save
-</div>
+<div id="statusMsg" class="statusMsg muted small"></div>
+<div id="dataWarning" class="warningBanner" style="display:none;max-width:680px;margin:8px auto 0;"></div>
+<div id="offlineBanner" class="offlineBanner" style="display:none;">You're offline — entries may not save</div>
 
 <main>
+
+  <!-- ── Entry form ── -->
   <section class="card fr26">
     <form id="logForm" class="fr26Form">
 
       <div class="fr26EmployeeBar">
-        <label class="fr26EmployeeLabel" for="empId">Employee #</label>
+        <label class="fr26EmployeeLabel" for="empId">Emp #</label>
         <input id="empId" inputmode="numeric" placeholder="12345" autocomplete="off" class="fr26Input fr26InputCompact" />
       </div>
 
@@ -38,17 +39,8 @@
 
         <div class="fr26Row">
           <label class="fr26Label" for="hours">Hours</label>
-          <input
-            id="hours"
-            name="hours"
-            type="number"
-            step="0.1"
-            min="0"
-            inputmode="decimal"
-            placeholder="0.5"
-            required
-            class="fr26Input"
-          />
+          <input id="hours" name="hours" type="number" step="0.1" min="0"
+                 inputmode="decimal" placeholder="0.0" required class="fr26Input" />
           <div class="fr26QuickHours" role="group" aria-label="Quick hours">
             <button type="button" class="fr26HourBtn" data-hours-quick="0.5">0.5</button>
             <button type="button" class="fr26HourBtn" data-hours-quick="1.0">1.0</button>
@@ -61,49 +53,41 @@
 
         <div class="fr26Row">
           <label class="fr26Label" for="typeText">Work Done</label>
-          <input
-            name="typeText"
-            id="typeText"
-            list="typeList"
-            placeholder="Describe the work"
-            inputmode="text"
-            autocomplete="off"
-            required
-            class="fr26Input"
-          />
+          <input name="typeText" id="typeText" list="typeList"
+                 placeholder="Describe the work" inputmode="text"
+                 autocomplete="off" required class="fr26Input" />
           <datalist id="typeList"></datalist>
           <label class="fr26Check">
             <input id="keepLastWork" type="checkbox" checked />
             <span>Keep last work</span>
           </label>
         </div>
+
         <div class="fr26PrimaryAction">
           <div id="dupWarnGlobal" aria-live="polite"></div>
-          <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save</button>
+          <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save Entry</button>
           <div id="earningsPreview" aria-live="polite"></div>
         </div>
+
       </section>
 
       <details id="photoPanel" class="fr26Group fr26OptionalGroup">
         <summary class="fr26OptionalSummary">
-          <span>+ Add Photo</span>
+          <span>Add Photo</span>
           <span id="photoSummaryState" class="fr26OptionalMeta">No photo</span>
         </summary>
-
         <div class="fr26OptionalBody">
           <div class="fr26PhotoActions">
             <button id="btnPickPhoto" class="btn" type="button">Library</button>
             <input id="photoPicker" type="file" style="display:none">
-
             <button id="btnTakePhoto" class="btn" type="button">Camera</button>
             <input id="photoCamera" type="file" style="display:none">
-
             <button id="btnPickFile" class="btn" type="button">Files</button>
             <input id="photoFile" type="file" style="display:none">
           </div>
           <div id="photoPickedLabel" class="fr26InlineStatus">No photo</div>
           <div id="photoUploadTarget" class="fr26Hint mono">
-            Bucket: <span id="photoBucketName">proofs</span> · Path: <span id="photoPathPreview">—</span>
+            Bucket: <span id="photoBucketName">proofs</span> · <span id="photoPathPreview">—</span>
           </div>
         </div>
       </details>
@@ -115,13 +99,12 @@
         <button id="cancelEditBtn" class="fr26Chip fr26ChipGhost" type="button" style="display:none;">Cancel Edit</button>
       </div>
 
-      <!-- Details panel (keeps same id) -->
       <section id="detailsPanel" class="fr26Details" style="display:none;">
         <div class="fr26Group">
           <div class="fr26GroupHeader">Details</div>
 
-          <div class="fr26TopRow" style="margin-top:6px;">
-            <div class="fr26Sub">Reference type</div>
+          <div class="fr26TopRow">
+            <span class="fr26Sub">Reference type</span>
             <div class="seg" role="tablist" aria-label="Reference type">
               <button id="refTypeRO" type="button" class="segBtn active">RO</button>
               <button id="refTypeSTK" type="button" class="segBtn">Stock</button>
@@ -130,41 +113,28 @@
 
           <div class="fr26Row">
             <label class="fr26Label" for="ref">RO / Stock #</label>
-            <input
-              id="ref"
-              name="ref"
-              placeholder="Fill this now or later"
-              inputmode="text"
-              autocomplete="off"
-              autocapitalize="characters"
-              spellcheck="false"
-              class="fr26Input"
-            />
+            <input id="ref" name="ref" placeholder="Fill now or later"
+                   inputmode="text" autocomplete="off"
+                   autocapitalize="characters" spellcheck="false" class="fr26Input" />
           </div>
 
           <div class="fr26Row">
             <label class="fr26Label" for="vin8">VIN (last 8)</label>
-            <input
-              id="vin8"
-              name="vin8"
-              placeholder="1A2B3C4D"
-              maxlength="8"
-              inputmode="text"
-              autocomplete="off"
-              autocapitalize="characters"
-              spellcheck="false"
-              class="fr26Input"
-            />
+            <input id="vin8" name="vin8" placeholder="1A2B3C4D" maxlength="8"
+                   inputmode="text" autocomplete="off"
+                   autocapitalize="characters" spellcheck="false" class="fr26Input" />
           </div>
 
           <div class="fr26Row">
-            <label class="fr26Label" for="rateInput">Rate ($)</label>
-            <input id="rateInput" name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="15" class="fr26Input" />
+            <label class="fr26Label" for="rateInput">Rate ($/hr)</label>
+            <input id="rateInput" name="rate" type="number" inputmode="decimal"
+                   min="0" step="0.01" value="15" class="fr26Input" />
           </div>
 
-          <div class="fr26Row fr26RowMultiline">
+          <div class="fr26Row">
             <label class="fr26Label" for="notesBox">Notes</label>
-            <textarea id="notesBox" name="notes" placeholder="Anything that will matter later..." class="fr26Textarea"></textarea>
+            <textarea id="notesBox" name="notes"
+                      placeholder="Anything that will matter later…" class="fr26Textarea"></textarea>
           </div>
         </div>
       </section>
@@ -172,11 +142,12 @@
     </form>
   </section>
 
+  <!-- ── Stats panel ── -->
   <details id="statsPanel" class="card statsCard">
     <summary class="statsSummary">
       <div>
-        <div class="mono">Show Stats</div>
-        <div class="small">Range totals and breakdown</div>
+        <div style="font-weight:700;font-size:15px;">Stats</div>
+        <div class="small">Range totals &amp; breakdown</div>
       </div>
       <div class="statsSummaryMeta">
         <span id="statsSummaryHours">0.0 hrs</span>
@@ -186,9 +157,8 @@
 
     <div class="statsPanelBody">
       <section class="card">
-        <div class="row u-row u-wrap" style="justify-content:space-between;">
-          <div class="mono" style="font-size:13px; opacity:.85;" id="rangeTitle">Today</div>
-
+        <div class="u-row" style="justify-content:space-between;">
+          <div class="mono small" id="rangeTitle">Today</div>
           <div class="seg rangeTabs" role="tablist" aria-label="Range">
             <button id="rangeDayBtn" type="button" class="segBtn active">Day</button>
             <button id="rangeWeekBtn" type="button" class="segBtn">Week</button>
@@ -197,51 +167,50 @@
           </div>
         </div>
 
-        <div id="weekWhichRow" class="seg" style="margin-top:10px; display:none;">
+        <div id="weekWhichRow" class="seg" style="margin-top:10px;display:none;">
           <button id="weekThisBtn" type="button" class="segBtn active">This Week</button>
           <button id="weekLastBtn" type="button" class="segBtn">Last Week</button>
         </div>
 
-        <div class="pillRow" style="margin-top:10px;">
+        <div class="pillRow" style="margin-top:12px;">
           <div class="pill">
             <div class="k">Hours</div>
             <div class="v" id="rangeHours">0.0</div>
             <div class="muted" id="rangeSub">—</div>
           </div>
           <div class="pill">
-            <div class="k">$</div>
-            <div class="v" id="rangeDollars">$0.00</div>
+            <div class="k">Pay</div>
+            <div class="v" id="rangeDollars">$0</div>
           </div>
           <div class="pill">
-            <div class="k">Entries</div>
+            <div class="k">Jobs</div>
             <div class="v" id="rangeCount">0</div>
           </div>
           <div class="pill">
-            <div class="k">Avg/job</div>
-            <div class="v" id="rangeAvgHrs">0.0</div>
+            <div class="k">Avg</div>
+            <div class="v" id="rangeAvgHrs">—</div>
           </div>
           <div class="pill">
-            <div class="k">$/hr eff</div>
+            <div class="k">$/hr</div>
             <div class="v" id="rangeEffRate">—</div>
           </div>
         </div>
       </section>
 
       <section id="weekGoalCard" class="card" style="display:none;">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <div style="font-size:12px;font-weight:800;color:var(--muted);letter-spacing:.3px;">WEEK GOAL</div>
-          <div id="weekGoalLabel" class="mono" style="font-size:13px;font-weight:800;"></div>
+        <div class="u-row" style="justify-content:space-between;">
+          <div class="small" style="text-transform:uppercase;letter-spacing:.4px;font-weight:700;">Week Goal</div>
+          <div id="weekGoalLabel" class="mono" style="font-size:13px;font-weight:700;"></div>
         </div>
         <div class="goalBar"><div id="weekGoalFill" class="goalBarFill"></div></div>
         <div id="weekGoalSub" class="small" style="margin-top:6px;"></div>
       </section>
 
       <section id="weekBreakdownCard" class="card" style="display:none;">
-        <div class="muted">This Week Breakdown (tap a day to filter the list)</div>
-        <div id="weekBreakdownList" class="list" style="margin-top:12px;"></div>
+        <div class="muted">This Week — tap a day to filter</div>
+        <div id="weekBreakdownList" class="list" style="margin-top:10px;"></div>
       </section>
 
-      <!-- hidden sinks so JS setText calls don't error -->
       <span id="todayHours" style="display:none"></span>
       <span id="todayDollars" style="display:none"></span>
       <span id="todayCount" style="display:none"></span>
@@ -253,100 +222,92 @@
     </div>
   </details>
 
-  <div id="toast" class="toast" aria-live="polite"></div>
-
-  <div id="photoModal" class="modalShell">
-    <div class="modalContent" style="max-width:900px; margin:20px auto; padding:0 16px;">
-      <div class="card" style="padding:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-          <div class="mono" id="photoMeta" style="font-size:12px; color:#9aa4b2;"></div>
-          <button class="btn" id="closePhotoBtn" type="button">Close</button>
-        </div>
-        <img id="photoImg" alt="Proof photo" style="width:100%; height:auto; border-radius:14px; margin-top:12px; display:block;" />
-      </div>
-    </div>
-  </div>
-
+  <!-- ── Entry list ── -->
   <section class="card">
-    <div class="itemTop">
+    <div class="entryListHeader">
       <div>
-        <div class="muted">Recent Entries (newest first)</div>
-        <div class="muted">Search works across RO/Stock, VIN8, Type, Notes.</div>
+        <div style="font-weight:700;font-size:15px;">Entries</div>
+        <div class="small">RO, stock, VIN, type, notes</div>
       </div>
-      <div class="right">
-        <div class="muted">Filter</div>
-        <select id="filterSelect" style="margin-top:6px; width:120px;">
-          <option value="today">Today</option>
-          <option value="all">All</option>
-        </select>
-        <div class="row u-row u-wrap" style="justify-content:flex-end; margin-top:6px;">
-          <button class="btn" id="historyBtn" type="button">History</button>
-          <button class="btn" id="exportSelectedBtn" type="button" onclick="exportSelected()">Export Selected</button>
-          <button class="btn danger-ghost" id="deleteSelectedBtn" type="button">Delete Selected</button>
-          <button class="btn primary" id="exportCsvMainBtn" type="button">Export CSV</button>
-        </div>
-      </div>
+      <select id="filterSelect">
+        <option value="today">Today</option>
+        <option value="all">All</option>
+      </select>
     </div>
 
-    <div class="card card--tight" style="margin-top:12px">
-      <div class="row" style="gap:10px; align-items:center">
-        <input id="searchInput" placeholder="Search reference, VIN, type, notes..." 
-          style="flex:1;min-width:220px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:#e7eefc" />
-        <button class="btn" type="button" id="clearSearchBtn">Clear</button>
-      </div>
-      <div class="muted" id="filterStatus" style="margin-top:8px"></div>
+    <div class="searchRow">
+      <input id="searchInput" placeholder="Search…" class="fr26Input" />
+      <button class="btn" type="button" id="clearSearchBtn">Clear</button>
     </div>
 
-    <div class="list" id="entryList" style="margin-top:12px;"></div>
+    <div class="u-row" style="flex-wrap:wrap;gap:6px;margin-top:10px;">
+      <button class="btn" id="historyBtn" type="button">History</button>
+      <button class="btn" id="exportSelectedBtn" type="button" onclick="exportSelected()">Export Selected</button>
+      <button class="btn danger-ghost" id="deleteSelectedBtn" type="button">Delete</button>
+      <button class="btn primary" id="exportCsvMainBtn" type="button">Export CSV</button>
+    </div>
+
+    <div class="muted small" id="filterStatus" style="margin-top:8px;"></div>
+    <div class="list" id="entryList" style="margin-top:10px;"></div>
   </section>
 
+  <!-- ── History panel ── -->
   <section class="card" id="historyPanel" style="display:none;">
-    <div class="itemTop">
+    <div class="u-row" style="justify-content:space-between;margin-bottom:12px;">
       <div>
-        <div class="mono">Work History</div>
-        <div class="muted small" id="historyMeta"></div>
+        <div style="font-weight:700;font-size:15px;">Work History</div>
+        <div class="small muted" id="historyMeta"></div>
       </div>
-      <div class="right">
-        <button class="btn" id="closeHistoryBtn" type="button">Close</button>
-      </div>
+      <button class="btn" id="closeHistoryBtn" type="button">Close</button>
     </div>
 
-    <div class="row" style="margin-top:10px;">
-      <input id="historySearchInput" placeholder="Search RO/Stock, VIN8, Type, Notes…" style="width:100%;" />
-    </div>
+    <input id="historySearchInput" placeholder="Search RO, VIN, type…" class="fr26Input" />
 
-    <div class="row" style="margin-top:10px; gap:10px; flex-wrap:wrap;">
-      <select id="histRange" style="width:160px;">
+    <div class="u-row" style="margin-top:10px;flex-wrap:wrap;gap:8px;">
+      <select id="histRange">
         <option value="week">This Week</option>
         <option value="lastweek">Last Week</option>
         <option value="month">This Month</option>
         <option value="all">All Time</option>
       </select>
-
-      <select id="histGroup" style="width:160px;">
+      <select id="histGroup">
         <option value="none">No Group</option>
         <option value="day">Group by Day</option>
       </select>
     </div>
 
-    <div class="divider"></div>
-    <div id="historyList" class="list"></div>
+    <div id="historyList" class="list" style="margin-top:12px;"></div>
   </section>
-  </main>
 
-  <div id="undoBar" style="display:none; position:fixed; left:12px; right:12px; bottom:12px; z-index:9999;">
-    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px;">
-      <div class="muted" id="undoText">Deleted.</div>
-      <div style="display:flex; gap:10px;">
-        <button class="btn" id="undoBtn" type="button">Undo</button>
-        <button class="btn" id="undoDismissBtn" type="button">Dismiss</button>
+</main>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+
+<div id="photoModal" class="modalShell">
+  <div style="width:100%;max-width:560px;">
+    <div class="card">
+      <div class="u-row" style="justify-content:space-between;margin-bottom:12px;">
+        <div class="mono small" id="photoMeta"></div>
+        <button class="btn" id="closePhotoBtn" type="button">Close</button>
       </div>
+      <img id="photoImg" alt="Proof photo" style="width:100%;border-radius:12px;display:block;" />
     </div>
   </div>
+</div>
+
+<div id="undoBar" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;">
+  <div class="card u-row" style="justify-content:space-between;padding:12px 14px;">
+    <div class="muted" id="undoText">Deleted.</div>
+    <div class="u-row" style="gap:8px;">
+      <button class="btn primary" id="undoBtn" type="button">Undo</button>
+      <button class="btn" id="undoDismissBtn" type="button">Dismiss</button>
+    </div>
+  </div>
+</div>
 
 <script>
-    window.__SUPABASE_CONFIG__ = {
-      url: "https://lfnydhidbwfyfjafazdy.supabase.co",
+  window.__SUPABASE_CONFIG__ = {
+    url: "https://lfnydhidbwfyfjafazdy.supabase.co",
     anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
   };
 </script>

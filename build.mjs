@@ -18,8 +18,11 @@ function hashOf(buf) {
 }
 
 function replaceScriptSrc(html, newJsName) {
-  // replaces any app.*.js reference
   return html.replace(/app\.[a-zA-Z0-9_-]+\.js(\?[^"']*)?/g, newJsName);
+}
+
+function replaceCssSrc(html, newCssName) {
+  return html.replace(/app(\.[a-f0-9]{10})?\.css(\?[^"']*)?/g, newCssName);
 }
 
 for (const f of SOURCE_PARTS) {
@@ -41,21 +44,29 @@ if (!existsSync(SRC_JS)) {
 }
 
 const jsBuf = Buffer.from(bundledSource);
-const h = hashOf(jsBuf);
-const outJs = `app.${h}.js`; // versioned filename
+const jsHash = hashOf(jsBuf);
+const outJs = `app.${jsHash}.js`;
 writeFileSync(outJs, jsBuf);
 
-// Update HTML to point at the new filename
+const cssBuf = readFileSync("app.css");
+const cssHash = hashOf(cssBuf);
+const outCss = `app.${cssHash}.css`;
+writeFileSync(outCss, cssBuf);
+
+// Update HTML to point at the new filenames
 for (const f of HTML_FILES) {
-  const html = readFileSync(f, "utf8");
-  const updated = replaceScriptSrc(html, outJs);
-  if (updated !== html) writeFileSync(f, updated);
+  let html = readFileSync(f, "utf8");
+  html = replaceScriptSrc(html, outJs);
+  html = replaceCssSrc(html, outCss);
+  writeFileSync(f, html);
 }
 
-// Optional: delete old app.<hash>.js files (keep the newest and the source)
-const files = readdirSync(".").filter(n => /^app\.[a-f0-9]{10}\.js$/.test(n));
-for (const f of files) {
-  if (f !== outJs) unlinkSync(f);
-}
+// Clean up old hashed JS files
+const jsFiles = readdirSync(".").filter(n => /^app\.[a-f0-9]{10}\.js$/.test(n));
+for (const f of jsFiles) { if (f !== outJs) unlinkSync(f); }
 
-console.log(`Built: ${outJs}`);
+// Clean up old hashed CSS files
+const cssFiles = readdirSync(".").filter(n => /^app\.[a-f0-9]{10}\.css$/.test(n));
+for (const f of cssFiles) { if (f !== outCss) unlinkSync(f); }
+
+console.log(`Built: ${outJs}  ${outCss}`);
