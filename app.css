@@ -155,51 +155,102 @@ main {
 }
 
 .item:active { background: var(--surface3); }
-.itemTop { display: flex; justify-content: space-between; gap: 12px; }
-.right   { text-align: right; flex-shrink: 0; }
 
+/* ── Entry card layout ───────────────────────────── */
+.itemTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.right { text-align: right; flex-shrink: 0; }
 .itemLeft { flex: 1; min-width: 0; }
 
-.itemRefRow {
+/* Headline row: checkbox + badge + ref */
+.itemHeadline {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 7px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
-.itemCheck { flex-shrink: 0; }
+.itemCheck {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
 
 .itemRef {
   font-size: 13px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Compact meta line below headline */
+.itemMeta {
+  margin-top: 5px;
+  font-size: 12px;
   color: var(--muted);
+  line-height: 1.4;
 }
 
 .itemNotes {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text2);
+  font-style: italic;
+  line-height: 1.4;
 }
 
-.itemEarnings {
-  font-size: 22px;
+/* Right: pay + hours stacked */
+.itemRight {
+  text-align: right;
+  flex-shrink: 0;
+}
+.itemPay {
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: -.5px;
   line-height: 1;
   color: var(--text);
 }
-
-.itemHours {
-  font-size: 12px;
+.itemHrs {
+  font-size: 11px;
   color: var(--muted);
   margin-top: 3px;
 }
 
+/* Backward-compat aliases used by review/more-page items */
+.itemEarnings { font-size: 20px; font-weight: 800; letter-spacing: -.5px; color: var(--text); }
+.itemHours    { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* Action buttons — compact pill style */
 .itemActions {
   margin-top: 8px;
   display: flex;
   gap: 6px;
-  justify-content: flex-end;
+  padding-left: 23px; /* align under itemRef, past checkbox */
 }
+.iBtn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--stroke2);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+  white-space: nowrap;
+}
+.iBtn:active { background: var(--surface3); }
+.iBtn--danger { color: var(--danger); border-color: rgba(237,73,86,.25); }
 
 .dayGroupHeader {
   display: flex;
@@ -1507,7 +1558,10 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .accentSwatch.accentActive { border-color: #fff; transform: scale(1.1); }
 
 /* ── Compact list mode ───────────────────────────── */
-body.compact .item { padding: 9px 12px; }
+body.compact .item    { padding: 9px 12px; }
 body.compact .itemTop { font-size: 13px; }
-body.compact .small  { font-size: 11px; }
-body.compact .list   { gap: 1px; }
+body.compact .itemPay { font-size: 16px; }
+body.compact .itemMeta { margin-top: 3px; }
+body.compact .itemActions { margin-top: 5px; }
+body.compact .small   { font-size: 11px; }
+body.compact .list    { gap: 1px; }

@@ -2461,17 +2461,12 @@ function showToast(msg) {
 }
 
 function buildEntryMetaHtml(entry) {
-  const dayKey = entry?.dayKey || dayKeyFromISO(entry?.createdAt) || entry?.work_date || "-";
   const vin8 = String(entry?.vin8 || "").trim();
-  const meta = [];
-
-  if (vin8) meta.push(`VIN8: <span class="mono">${escapeHtml(vin8)}</span>`);
-  if (entryHasPhoto(entry)) meta.push("Photo attached");
-
   const updatedAt = entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || "";
-  return `
-    <div class="small muted">Date: <span class="mono">${escapeHtml(dayKey)}</span>${meta.length ? ` • ${meta.join(" • ")}` : ""} • ${escapeHtml(formatTimeAgo(updatedAt))}</div>
-  `;
+  const parts = [escapeHtml(formatTimeAgo(updatedAt))];
+  if (vin8) parts.push(`VIN ${escapeHtml(vin8)}`);
+  if (entryHasPhoto(entry)) parts.push("Photo");
+  return `<div class="itemMeta">${parts.join(" · ")}</div>`;
 }
 
 function typeColorClass(type) {
@@ -3368,46 +3363,41 @@ function renderList(entries, mode){
     const row = document.createElement("div");
     row.className = "item";
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
-    const refVal = escapeHtml(e.ref || e.ro || "-");
-    const refDisplay = `${refLabel}: ${refVal}`;
-    const typeLabel = escapeHtml(e.type || e.typeText || "-");
+    const refVal = escapeHtml(e.ref || e.ro || "—");
+    const typeLabel = escapeHtml(e.type || e.typeText || "—");
     const entryId = escapeHtml(String(e.id ?? ""));
-    const editBtn = `<button class="btn" data-action="edit" data-id="${e.id}">Edit</button>`;
-    const deleteBtn = `<button class="btn danger-ghost" data-del="${e.id}">Delete</button>`;
-    const viewPhotoBtn = entryHasPhoto(e)
-      ? `<button class="btn" data-action="view-photo" data-id="${e.id}">View Photo</button>`
-      : "";
-    const actionButtons = [editBtn, deleteBtn, viewPhotoBtn].filter(Boolean).join(" ");
+    const hasPhoto = entryHasPhoto(e);
+
     row.innerHTML = `
       <div class="itemTop">
         <div class="itemLeft">
-          <div class="itemRefRow">
+          <div class="itemHeadline">
             <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
             ${typeBadgeHtml(typeLabel)}
-            ${e.isComeback ? `<span class="comebackBadge">Comeback</span>` : ""}
-            <span class="mono itemRef">${refDisplay}</span>
+            ${e.isComeback ? `<span class="comebackBadge">CB</span>` : ""}
+            <span class="itemRef mono">${refLabel}: ${refVal}</span>
           </div>
           ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div class="itemNotes">${escapeHtml(e.notes)}</div>` : ""}
         </div>
-        <div class="right">
-          <div class="itemEarnings">${formatMoney(e.earnings)}</div>
-          <div class="mono itemHours">${String(e.hours)} hrs</div>
+        <div class="itemRight">
+          <div class="itemPay">${formatMoney(e.earnings)}</div>
+          <div class="itemHrs">${String(e.hours)} hrs</div>
         </div>
       </div>
-      <div class="itemActions">${actionButtons}</div>
+      <div class="itemActions">
+        <button class="iBtn" data-action="edit" data-id="${e.id}">Edit</button>
+        <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
+        ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
+      </div>
     `;
-    const editBtnEl = row.querySelector('button[data-action="edit"]');
-    if (editBtnEl) editBtnEl.addEventListener("click", () => startEditEntry(e));
-    const selectEl = row.querySelector('input[data-select-id]');
-    if (selectEl) {
-      selectEl.addEventListener("change", (ev) => {
-        setEntrySelectedById(e.id, !!ev.target?.checked);
-      });
-    }
-    if (entryHasPhoto(e)) {
-      const btn = row.querySelector('button[data-action="view-photo"]');
-      if (btn) btn.addEventListener("click", () => openPhoto(e));
+
+    row.querySelector('button[data-action="edit"]')?.addEventListener("click", () => startEditEntry(e));
+    row.querySelector('input[data-select-id]')?.addEventListener("change", (ev) => {
+      setEntrySelectedById(e.id, !!ev.target?.checked);
+    });
+    if (hasPhoto) {
+      row.querySelector('button[data-action="view-photo"]')?.addEventListener("click", () => openPhoto(e));
     }
     return row;
   };
