@@ -613,6 +613,43 @@ async function renderHistory() {
   }
 }
 
+// Cache signed URLs so we don't re-request on every render
+const _thumbCache = new Map();
+
+function loadPhotoThumbs() {
+  const imgs = document.querySelectorAll('img.entryThumb[data-photo-path]');
+  if (!imgs.length) return;
+
+  const load = async (img) => {
+    const path = img.getAttribute("data-photo-path");
+    if (!path || img.src) return;
+    try {
+      let url = _thumbCache.get(path);
+      if (!url) {
+        url = await getPhotoUrl(path);
+        if (url) _thumbCache.set(path, url);
+      }
+      if (url) {
+        img.src = url;
+        img.closest(".entryThumbWrap")?.classList.add("loaded");
+      }
+    } catch {}
+  };
+
+  if ("IntersectionObserver" in window) {
+    const obs = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        obs.unobserve(entry.target);
+        load(entry.target);
+      }
+    }, { rootMargin: "300px" });
+    imgs.forEach(img => obs.observe(img));
+  } else {
+    imgs.forEach(load);
+  }
+}
+
 async function shareDaySummary() {
   const empId = getEmpId();
   if (!empId) { toast("Employee # required"); return; }
@@ -1090,7 +1127,7 @@ function renderList(entries, mode){
     const bTs = Date.parse(b.work_date || b.createdAt || "") || 0;
     return bTs - aTs;
   });
-  const capped = visible.slice(0, 60);
+  const capped = visible.slice(0, mode === "all" ? 500 : 60);
 
   if (capped.length === 0) {
     list.innerHTML = q
@@ -1114,6 +1151,7 @@ function renderList(entries, mode){
     const entryId = escapeHtml(String(e.id ?? ""));
     const hasPhoto = entryHasPhoto(e);
 
+    const photoPath = e.photo_path || e.photoPath || "";
     row.innerHTML = `
       <div class="itemTop">
         <div class="itemLeft">
@@ -1125,6 +1163,7 @@ function renderList(entries, mode){
           </div>
           ${buildEntryMetaHtml(e)}
           ${e.notes ? `<div class="itemNotes">${escapeHtml(e.notes)}</div>` : ""}
+          ${hasPhoto ? `<div class="entryThumbWrap"><img class="entryThumb" data-photo-path="${escapeHtml(photoPath)}" alt="Proof" /></div>` : ""}
         </div>
         <div class="itemRight">
           <div class="itemPay">${formatMoney(e.earnings)}</div>
@@ -1148,6 +1187,55 @@ function renderList(entries, mode){
     return row;
   };
 
+  // "All" mode: group by week → group by day within each week
+  if (mode === "all") {
+    const weekMap = new Map();
+    for (const e of capped) {
+      const dk = e.dayKey || dayKeyFromISO(e.createdAt) || "?";
+      const wk = e.weekStartKey || dateKey(startOfWeekLocal(new Date(dk)));
+      if (!weekMap.has(wk)) weekMap.set(wk, new Map());
+      const dayMap = weekMap.get(wk);
+      if (!dayMap.has(dk)) dayMap.set(dk, []);
+      dayMap.get(dk).push(e);
+    }
+
+    const weekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+    for (const wk of weekKeys) {
+      const dayMap = weekMap.get(wk);
+      const allWeekEntries = Array.from(dayMap.values()).flat();
+      const wTotals = computeTotals(allWeekEntries);
+      const ws2 = parseDateInputValue(wk);
+      const we2 = ws2 ? dateKey(endOfWeekLocal(ws2)) : "";
+
+      const whdr = document.createElement("div");
+      whdr.className = "weekGroupHdr";
+      whdr.innerHTML = `
+        <div class="weekGroupRange">${escapeHtml(wk)}${we2 ? ` → ${escapeHtml(we2)}` : ""}</div>
+        <div class="weekGroupTotals">${formatHours(wTotals.hours)} hrs · ${formatMoney(wTotals.dollars)} · ${wTotals.count} jobs</div>
+      `;
+      list.appendChild(whdr);
+
+      const dayKeys = Array.from(dayMap.keys()).sort((a, b) => b.localeCompare(a));
+      for (const dk of dayKeys) {
+        const dEntries = dayMap.get(dk) || [];
+        const dTotals = computeTotals(dEntries);
+
+        const dhdr = document.createElement("div");
+        dhdr.className = "dayGroupHeader";
+        dhdr.innerHTML = `
+          <div class="mono">${escapeHtml(dk)}</div>
+          <div class="muted small">${formatHours(dTotals.hours)} hrs · ${formatMoney(dTotals.dollars)}</div>
+        `;
+        list.appendChild(dhdr);
+        for (const e of dEntries) {
+          list.appendChild(buildEntry(e));
+        }
+      }
+    }
+    return;
+  }
+
+  // "Today" / week-range mode: group by day if isWeekRange, else flat
   if (isWeekRange) {
     const groups = new Map();
     for (const e of capped) {
@@ -1458,7 +1546,9 @@ async function refreshUI(entriesOverride){
     !!document.getElementById("hoursDiff") ||
     !!document.getElementById("rangeLabel");
   if (hasWeekHeader) renderWeekHeader(entries);
-  else renderList(shownEntries, listMode);
+  else renderList(listMode === "all" ? entries : shownEntries, listMode);
+
+  loadPhotoThumbs();
 
   // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };

@@ -252,6 +252,50 @@ main {
 .iBtn:active { background: var(--surface3); }
 .iBtn--danger { color: var(--danger); border-color: rgba(237,73,86,.25); }
 
+/* ── Week group header ───────────────────────────── */
+.weekGroupHdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 16px 0 4px;
+  padding: 0 2px;
+}
+.weekGroupRange {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--primary);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.weekGroupTotals {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+/* ── Entry photo thumbnail ───────────────────────── */
+.entryThumbWrap {
+  margin-top: 8px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface3);
+  min-height: 60px;
+  max-height: 180px;
+}
+.entryThumb {
+  width: 100%;
+  height: 100%;
+  min-height: 60px;
+  max-height: 180px;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transition: opacity 300ms var(--ease);
+}
+.entryThumbWrap.loaded .entryThumb { opacity: 1; }
+
+/* ── Day group header ────────────────────────────── */
 .dayGroupHeader {
   display: flex;
   justify-content: space-between;
