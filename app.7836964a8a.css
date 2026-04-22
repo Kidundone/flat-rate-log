@@ -1282,9 +1282,36 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   min-height: 16px;
 }
 
-/* Accent swatches */
-.moreRowAccent { align-items: flex-start; padding-top: 14px; padding-bottom: 14px; }
-.accentSwatches { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Accent color picker */
+.accentPickerLabel {
+  display: inline-block;
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  overflow: visible;
+}
+.accentPickerLabel input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+.accentColorPreview {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--stroke2);
+  background: var(--primary);
+  pointer-events: none;
+  transition: border-color 150ms, transform 120ms;
+}
+.accentPickerLabel:active .accentColorPreview { transform: scale(.9); }
 
 /* Toggle switch (More page) */
 .moreToggle {
@@ -1586,20 +1613,35 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   color: var(--muted);
 }
 
-/* ── Settings swatches ───────────────────────────── */
-.accentSwatch {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--r-pill);
-  border: 3px solid transparent;
-  cursor: pointer;
-  transition: transform 120ms var(--ease), border-color 120ms var(--ease);
-  flex-shrink: 0;
-  padding: 0;
+/* ── Light theme ─────────────────────────────────── */
+[data-theme="light"] {
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --surface2: #f2f2f7;
+  --surface3: #e5e5ea;
+  --stroke: rgba(0,0,0,.09);
+  --stroke2: rgba(0,0,0,.18);
+
+  --text: #1c1c1e;
+  --text2: rgba(0,0,0,.72);
+  --muted: #636366;
+  --muted2: #aeaeb2;
+
+  --danger: #ff3b30;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.10);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.12);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,.16);
 }
 
-.accentSwatch:active { transform: scale(.9); }
-.accentSwatch.accentActive { border-color: #fff; transform: scale(1.1); }
+[data-theme="light"] header {
+  background: rgba(242,242,247,.92);
+}
+
+[data-theme="light"] .moreToggleTrack {
+  background: var(--surface3);
+  border-color: var(--stroke2);
+}
 
 /* ── Compact list mode ───────────────────────────── */
 body.compact .item    { padding: 9px 12px; }

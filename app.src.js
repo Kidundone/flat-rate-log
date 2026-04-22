@@ -1041,16 +1041,8 @@ const SETTINGS_DEFAULTS = Object.freeze({
   defaultRate: 15,
   accentColor: "#0095f6",
   compactList: false,
+  darkMode: true,
 });
-
-const ACCENT_COLORS = Object.freeze([
-  { label: "Blue",   value: "#0095f6" },
-  { label: "Purple", value: "#8b5cf6" },
-  { label: "Green",  value: "#10b981" },
-  { label: "Orange", value: "#f59e0b" },
-  { label: "Pink",   value: "#ec4899" },
-  { label: "Red",    value: "#ef4444" },
-]);
 
 function getSettings() {
   try {
@@ -1069,8 +1061,13 @@ function saveSettings(patch) {
 }
 
 function applySettings(s = getSettings()) {
-  document.documentElement.style.setProperty("--primary", s.accentColor || SETTINGS_DEFAULTS.accentColor);
+  const color = s.accentColor || SETTINGS_DEFAULTS.accentColor;
+  document.documentElement.style.setProperty("--primary", color);
+  document.documentElement.style.setProperty("--accent", color);
   document.body.classList.toggle("compact", !!s.compactList);
+  // darkMode: true = dark (default), false = light
+  const isDark = s.darkMode !== false;
+  document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
 }
 
 function getDefaultRate() {
@@ -4484,32 +4481,41 @@ async function exportAllCsvAdmin() {
 }
 
 function initSettingsUI() {
-  const rateInput = document.getElementById("settingsDefaultRate");
+  const rateInput     = document.getElementById("settingsDefaultRate");
   const compactToggle = document.getElementById("settingsCompactList");
-  const colorSwatches = document.querySelectorAll("[data-accent]");
-  const saveBtn = document.getElementById("settingsSaveBtn");
-
-  if (!rateInput && !compactToggle && !colorSwatches.length) return;
+  const darkToggle    = document.getElementById("settingsDarkMode");
+  const colorPicker   = document.getElementById("accentColorInput");
+  const colorPreview  = document.getElementById("accentColorPreview");
+  const saveBtn       = document.getElementById("settingsSaveBtn");
 
   const s = getSettings();
 
-  if (rateInput) rateInput.value = String(s.defaultRate || 15);
+  if (rateInput)   rateInput.value      = String(s.defaultRate || 15);
   if (compactToggle) compactToggle.checked = !!s.compactList;
+  if (darkToggle)  darkToggle.checked   = s.darkMode !== false;
+  if (colorPicker) colorPicker.value    = s.accentColor || "#0095f6";
+  if (colorPreview) colorPreview.style.background = s.accentColor || "#0095f6";
 
-  colorSwatches.forEach(el => {
-    if (el.dataset.accent === s.accentColor) el.classList.add("accentActive");
-    el.addEventListener("click", () => {
-      colorSwatches.forEach(x => x.classList.remove("accentActive"));
-      el.classList.add("accentActive");
-    });
+  // Live preview as user drags the color wheel
+  colorPicker?.addEventListener("input", (e) => {
+    const c = e.target.value;
+    if (colorPreview) colorPreview.style.background = c;
+    document.documentElement.style.setProperty("--primary", c);
+    document.documentElement.style.setProperty("--accent", c);
+  });
+
+  // Live dark/light toggle
+  darkToggle?.addEventListener("change", () => {
+    const isDark = !!darkToggle.checked;
+    document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
   });
 
   saveBtn?.addEventListener("click", () => {
-    const activeColor = document.querySelector("[data-accent].accentActive")?.dataset.accent
-      || s.accentColor;
-    const rate = parseFloat(rateInput?.value) || 15;
+    const color   = colorPicker?.value   || s.accentColor;
+    const rate    = parseFloat(rateInput?.value) || 15;
     const compact = compactToggle?.checked ?? false;
-    saveSettings({ defaultRate: rate, accentColor: activeColor, compactList: compact });
+    const dark    = darkToggle?.checked !== false;
+    saveSettings({ defaultRate: rate, accentColor: color, compactList: compact, darkMode: dark });
     saveBtn.textContent = "Saved!";
     setTimeout(() => { saveBtn.textContent = "Save Preferences"; }, 1800);
   });

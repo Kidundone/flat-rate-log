@@ -4,16 +4,8 @@ const SETTINGS_DEFAULTS = Object.freeze({
   defaultRate: 15,
   accentColor: "#0095f6",
   compactList: false,
+  darkMode: true,
 });
-
-const ACCENT_COLORS = Object.freeze([
-  { label: "Blue",   value: "#0095f6" },
-  { label: "Purple", value: "#8b5cf6" },
-  { label: "Green",  value: "#10b981" },
-  { label: "Orange", value: "#f59e0b" },
-  { label: "Pink",   value: "#ec4899" },
-  { label: "Red",    value: "#ef4444" },
-]);
 
 function getSettings() {
   try {
@@ -32,8 +24,13 @@ function saveSettings(patch) {
 }
 
 function applySettings(s = getSettings()) {
-  document.documentElement.style.setProperty("--primary", s.accentColor || SETTINGS_DEFAULTS.accentColor);
+  const color = s.accentColor || SETTINGS_DEFAULTS.accentColor;
+  document.documentElement.style.setProperty("--primary", color);
+  document.documentElement.style.setProperty("--accent", color);
   document.body.classList.toggle("compact", !!s.compactList);
+  // darkMode: true = dark (default), false = light
+  const isDark = s.darkMode !== false;
+  document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
 }
 
 function getDefaultRate() {

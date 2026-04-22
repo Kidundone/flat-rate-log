@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Tracker — More</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./app.a659d366bb.css">
+  <link rel="stylesheet" href="./app.7836964a8a.css">
 </head>
 <body data-page="more">
 
@@ -74,16 +74,25 @@
 
       <div class="moreDivider"></div>
 
-      <div class="moreRow moreRowAccent">
+      <div class="moreRow">
         <div class="moreRowLabel">Accent Color</div>
-        <div class="accentSwatches">
-          <button data-accent="#0095f6" class="accentSwatch" title="Blue"   style="background:#0095f6;"></button>
-          <button data-accent="#8b5cf6" class="accentSwatch" title="Purple" style="background:#8b5cf6;"></button>
-          <button data-accent="#10b981" class="accentSwatch" title="Green"  style="background:#10b981;"></button>
-          <button data-accent="#f59e0b" class="accentSwatch" title="Orange" style="background:#f59e0b;"></button>
-          <button data-accent="#ec4899" class="accentSwatch" title="Pink"   style="background:#ec4899;"></button>
-          <button data-accent="#ef4444" class="accentSwatch" title="Red"    style="background:#ef4444;"></button>
+        <label class="accentPickerLabel" title="Choose accent color">
+          <input type="color" id="accentColorInput" />
+          <div id="accentColorPreview" class="accentColorPreview"></div>
+        </label>
+      </div>
+
+      <div class="moreDivider"></div>
+
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">Dark Mode</div>
+          <div class="moreRowSub">Switch between dark and light theme</div>
         </div>
+        <label class="moreToggle">
+          <input id="settingsDarkMode" type="checkbox" />
+          <span class="moreToggleTrack"></span>
+        </label>
       </div>
 
       <div class="moreDivider"></div>
@@ -243,6 +252,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.5ff278749b.js" defer></script>
+  <script src="/flat-rate-log/app.19721d70e1.js" defer></script>
 </body>
 </html>
