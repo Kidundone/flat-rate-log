@@ -1077,6 +1077,258 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   box-shadow: 0 0 0 3px rgba(0,149,246,.2);
 }
 
+/* ── More page cards ─────────────────────────────── */
+.topTitle {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.3px;
+}
+
+.moreCard { padding: 0; overflow: hidden; }
+
+.moreCardHeader {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 14px 16px 10px;
+}
+
+.moreCardSub {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 16px 12px;
+  margin-top: -4px;
+}
+
+.moreDivider {
+  height: 1px;
+  background: var(--stroke);
+  margin: 0 16px;
+}
+
+.moreRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+}
+
+.moreRowLabel {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.moreRowSub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.moreInput {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--stroke2);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+
+.moreInput:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(var(--primary-rgb, 0,149,246),.2);
+}
+
+.moreInputNarrow { width: auto; min-width: 90px; max-width: 140px; text-align: right; }
+
+.moreInputGroup {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.moreInputStack { border-top: 1px solid var(--stroke); }
+
+/* Auth */
+.authFields { padding: 0 16px; }
+
+.moreAuthActions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.moreAuthSecondary {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+
+.moreTextBtn {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.moreAuthStatus {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 8px 16px 14px;
+  min-height: 16px;
+}
+
+/* Accent swatches */
+.moreRowAccent { align-items: flex-start; padding-top: 14px; padding-bottom: 14px; }
+.accentSwatches { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Toggle switch (More page) */
+.moreToggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.moreToggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+
+.moreToggleTrack {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--surface3);
+  border: 1px solid var(--stroke2);
+  transition: background 200ms, border-color 200ms;
+}
+
+.moreToggleTrack::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 200ms var(--ease-bounce), background 200ms;
+}
+
+.moreToggle input:checked ~ .moreToggleTrack {
+  background: var(--primary);
+  border-color: transparent;
+}
+
+.moreToggle input:checked ~ .moreToggleTrack::after {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+/* Save row */
+.moreSaveRow { padding: 12px 16px 16px; }
+.moreSaveBtn { width: 100%; min-height: 48px; }
+
+/* Export grid */
+.exportGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--stroke);
+  border-top: 1px solid var(--stroke);
+}
+
+.exportBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 12px;
+  background: var(--surface);
+  border: 0;
+  cursor: pointer;
+  transition: background 150ms var(--ease);
+}
+
+.exportBtn:active { background: var(--surface2); }
+
+.exportBtnIcon {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  color: var(--primary);
+  background: rgba(0,149,246,.12);
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+}
+
+.exportBtnLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+/* Review controls */
+.reviewControls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.reviewRangeSeg,
+.reviewFocusSeg { width: 100%; }
+
+.reviewRangeSeg .segBtn,
+.reviewFocusSeg .segBtn { flex: 1; }
+
+/* Pay stub result */
+.moreResultText {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 8px 16px 0;
+}
+
+.moreResultMono {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 4px 16px 0;
+}
+
+/* Danger */
+.moreDangerCard { border-color: rgba(237,73,86,.2); background: rgba(237,73,86,.04); }
+.moreDangerHeader { color: var(--danger); }
+
+.dangerActions {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.dangerBtn {
+  flex: 1;
+  background: rgba(237,73,86,.1);
+  border-color: rgba(237,73,86,.25);
+  color: var(--danger);
+}
+
+.dangerBtnStrong {
+  background: rgba(237,73,86,.18);
+  border-color: rgba(237,73,86,.35);
+  color: var(--danger);
+}
+
 /* ── Page-level helpers ──────────────────────────── */
 .statusMsg {
   max-width: 680px;

@@ -570,15 +570,9 @@ async function renderHistory() {
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
   let slice = all;
-  if (range === "week") {
-    const ws = startOfWeekLocal(new Date());
-    slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
-  } else if (range === "lastweek") {
-    const { ws } = getLastWeekRange();
-    slice = all.filter(e => inWeek(e.dayKey || dayKeyFromISO(e.createdAt), ws));
-  } else if (range === "month") {
-    const ms = startOfMonthLocal(new Date());
-    slice = all.filter(e => inMonth(e.dayKey || dayKeyFromISO(e.createdAt), ms));
+  if (range === "today") {
+    const dk = todayKeyLocal();
+    slice = all.filter(e => (e.dayKey || dayKeyFromISO(e.createdAt)) === dk);
   }
 
   if (q) slice = slice.filter(e => matchSearch(e, q));

@@ -5,69 +5,67 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Tracker — More</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./app.73ca0214e5.css">
+  <link rel="stylesheet" href="./app.cf3d22ca7e.css">
 </head>
 <body data-page="more">
+
   <header class="top">
     <div class="topRow">
-      <div style="font-weight:700;font-size:18px;">More</div>
-      <a class="btn" href="./index.html">Back</a>
+      <div class="topTitle">Settings</div>
+      <a class="btn" href="./index.html">Done</a>
     </div>
   </header>
 
   <main class="wrap">
 
     <div class="muted small" id="statusMsg" style="padding:0 4px;"></div>
-    <div id="dataWarning" class="warningBanner" style="display:none; margin:10px 0 0;"></div>
+    <div id="dataWarning" class="warningBanner" style="display:none;margin:10px 0 0;"></div>
 
-    <section class="card">
-      <div class="h">Employee</div>
-      <div class="muted">Required to load your saved entries on this device.</div>
-      <div class="row" style="margin-top:10px">
-        <input
-          id="empId"
-          inputmode="numeric"
-          placeholder="Employee # (required for export)"
-          style="flex:1;min-width:180px"
-        />
+    <!-- ── Profile ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Profile</div>
+
+      <div class="moreRow">
+        <div class="moreRowLabel">Employee #</div>
+        <input id="empId" inputmode="numeric" placeholder="12345" class="moreInput" />
       </div>
-      <div class="muted" style="margin-top:8px">
-        Tip: enter it once — it saves on this device.
+
+      <div class="moreDivider"></div>
+
+      <div class="authFields">
+        <input id="authEmail" type="email" placeholder="Email" class="moreInput" />
+        <input id="authPassword" type="password" placeholder="Password" class="moreInput" style="margin-top:8px;" />
       </div>
+
+      <div class="moreAuthActions">
+        <button id="authSignIn" class="btn primary" style="flex:1;">Sign In</button>
+        <button id="authSignUp" class="btn" style="flex:1;">Sign Up</button>
+      </div>
+      <div class="moreAuthSecondary">
+        <button id="authReset" class="btn moreTextBtn">Forgot Password</button>
+        <button id="authSignOut" class="btn moreTextBtn danger-ghost">Sign Out</button>
+      </div>
+
+      <div id="authStatus" class="moreAuthStatus"></div>
     </section>
 
-    <div class="card">
-      <h3>Account</h3>
+    <!-- ── Settings ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Preferences</div>
 
-      <input id="authEmail" type="email" placeholder="Email" class="input" />
-      <input id="authPassword" type="password" placeholder="Password" class="input" />
-
-      <div class="row" style="gap:10px; margin-top:10px;">
-        <button id="authSignUp" class="btn">Sign Up</button>
-        <button id="authSignIn" class="btn primary">Sign In</button>
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">Default Rate ($/hr)</div>
+          <div class="moreRowSub">Applied to all new entries</div>
+        </div>
+        <input id="settingsDefaultRate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="15.00" class="moreInput moreInputNarrow" />
       </div>
 
-      <div class="row" style="gap:10px; margin-top:10px;">
-        <button id="authReset" class="btn">Forgot Password</button>
-        <button id="authSignOut" class="btn danger">Sign Out</button>
-      </div>
+      <div class="moreDivider"></div>
 
-      <div id="authStatus" class="muted" style="margin-top:10px;"></div>
-    </div>
-
-    <section class="card">
-      <div class="h">Settings</div>
-      <div class="muted" style="margin-bottom:16px;">Customize how the app works for you.</div>
-
-      <div style="margin-bottom:16px;">
-        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px;">Default Rate ($/hr)</label>
-        <input id="settingsDefaultRate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="15.00" class="input" style="max-width:180px;" />
-        <div class="muted" style="margin-top:6px;font-size:12px;">Used for all new entries unless you change it per job.</div>
-      </div>
-
-      <div style="margin-bottom:16px;">
-        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:10px;">Accent Color</label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <div class="moreRow moreRowAccent">
+        <div class="moreRowLabel">Accent Color</div>
+        <div class="accentSwatches">
           <button data-accent="#0095f6" class="accentSwatch" title="Blue"   style="background:#0095f6;"></button>
           <button data-accent="#8b5cf6" class="accentSwatch" title="Purple" style="background:#8b5cf6;"></button>
           <button data-accent="#10b981" class="accentSwatch" title="Green"  style="background:#10b981;"></button>
@@ -77,70 +75,168 @@
         </div>
       </div>
 
-      <div style="margin-bottom:20px;">
-        <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:10px;">List Density</label>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;font-weight:500;color:var(--text);letter-spacing:0;">
-            <input id="settingsCompactList" type="checkbox" style="width:auto;accent-color:var(--primary);" />
-            Compact list view
-          </label>
+      <div class="moreDivider"></div>
+
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">Compact List</div>
+          <div class="moreRowSub">More entries on screen at once</div>
         </div>
-        <div class="muted" style="margin-top:6px;font-size:12px;">Shows more entries on screen at once.</div>
+        <label class="moreToggle">
+          <input id="settingsCompactList" type="checkbox" />
+          <span class="moreToggleTrack"></span>
+        </label>
       </div>
 
-      <button id="settingsSaveBtn" class="btn primary" type="button" style="width:100%;min-height:48px;border-radius:12px;">Save Settings</button>
-    </section>
-
-    <section class="card">
-      <div class="h">Weekly Goal</div>
-      <div class="muted">Set your flagged hours for this week. The goal progress bar on the main page will track your progress.</div>
-      <div class="row" style="margin-top:10px;display:flex;gap:10px;align-items:center;">
-        <input id="flaggedHours" inputmode="decimal" type="number" step="0.5" min="0" placeholder="e.g. 40"
-               style="flex:1;min-width:120px" />
-        <button class="btn primary" id="saveFlaggedBtn" type="button">Save Goal</button>
-      </div>
-      <div class="muted small" style="margin-top:8px;">Changes take effect immediately on the main page.</div>
-    </section>
-
-    <section class="card">
-      <div class="h">Pay Stub Entry</div>
-      <div class="muted">Enter your pay-stub week and compare paid values against expected values from your entries.</div>
-      <div class="row" style="margin-top:10px; gap:10px; flex-wrap:wrap;">
-        <input id="payStubWeekEnding" type="date"
-               style="flex:1;min-width:180px" />
-        <input id="payStubHoursPaid" inputmode="decimal" type="number" step="0.1" min="0" placeholder="Hours Paid (e.g., 35)"
-               style="flex:1;min-width:180px" />
-        <input id="payStubAmountPaid" inputmode="decimal" type="number" step="0.01" min="0" placeholder="Amount Paid (e.g., 525)"
-               style="flex:1;min-width:180px" />
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button class="btn primary" id="savePayStubBtn" type="button">Save Pay Stub</button>
-      </div>
-      <div id="payStubSummary" class="muted" style="margin-top:10px"></div>
-      <div id="payStubExpected" class="small mono" style="margin-top:6px"></div>
-      <div id="missingWorkSummary" class="muted" style="margin-top:12px"></div>
-      <div id="missingWorkList" class="list" style="margin-top:10px"></div>
-    </section>
-
-    <section class="card">
-      <div class="h">Export</div>
-      <div class="row">
-        <button class="btn" type="button" id="exportCsvBtn">Export CSV</button>
-        <button class="btn" type="button" id="exportJsonBtn">Export JSON</button>
-        <button class="btn" type="button" id="exportAuditBtn">Audit Report (PDF)</button>
-        <button class="btn" type="button" id="repairBtn">Repair / Reindex Data</button>
+      <div class="moreSaveRow">
+        <button id="settingsSaveBtn" class="btn primary moreSaveBtn" type="button">Save Preferences</button>
       </div>
     </section>
 
+    <!-- ── Week Goal ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Weekly Goal</div>
+
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">Target Hours</div>
+          <div class="moreRowSub">Tracks progress on the main page</div>
+        </div>
+        <div class="moreInputGroup">
+          <input id="flaggedHours" inputmode="decimal" type="number" step="0.5" min="0" placeholder="40" class="moreInput moreInputNarrow" />
+          <button class="btn primary" id="saveFlaggedBtn" type="button">Set</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Pay Stub ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Pay Stub</div>
+      <div class="moreCardSub">Compare your logged hours against what was actually paid.</div>
+
+      <div class="moreInputStack">
+        <div class="moreRow">
+          <div class="moreRowLabel">Week Ending</div>
+          <input id="payStubWeekEnding" type="date" class="moreInput moreInputNarrow" />
+        </div>
+        <div class="moreDivider"></div>
+        <div class="moreRow">
+          <div class="moreRowLabel">Hours Paid</div>
+          <input id="payStubHoursPaid" inputmode="decimal" type="number" step="0.1" min="0" placeholder="35.0" class="moreInput moreInputNarrow" />
+        </div>
+        <div class="moreDivider"></div>
+        <div class="moreRow">
+          <div class="moreRowLabel">Amount Paid</div>
+          <input id="payStubAmountPaid" inputmode="decimal" type="number" step="0.01" min="0" placeholder="525.00" class="moreInput moreInputNarrow" />
+        </div>
+      </div>
+
+      <div class="moreSaveRow">
+        <button class="btn primary moreSaveBtn" id="savePayStubBtn" type="button">Save Pay Stub</button>
+      </div>
+
+      <div id="payStubSummary" class="moreResultText"></div>
+      <div id="payStubExpected" class="moreResultMono"></div>
+      <div id="missingWorkSummary" class="moreResultText"></div>
+      <div id="missingWorkList" class="list" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- ── Export & Tools ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Export & Tools</div>
+
+      <div class="exportGrid">
+        <button class="exportBtn" type="button" id="exportCsvBtn">
+          <div class="exportBtnIcon">CSV</div>
+          <div class="exportBtnLabel">Export CSV</div>
+        </button>
+        <button class="exportBtn" type="button" id="exportJsonBtn">
+          <div class="exportBtnIcon">JSON</div>
+          <div class="exportBtnLabel">Export JSON</div>
+        </button>
+        <button class="exportBtn" type="button" id="exportAuditBtn">
+          <div class="exportBtnIcon">PDF</div>
+          <div class="exportBtnLabel">Audit Report</div>
+        </button>
+        <button class="exportBtn" type="button" id="repairBtn">
+          <div class="exportBtnIcon">Fix</div>
+          <div class="exportBtnLabel">Repair Data</div>
+        </button>
+      </div>
+    </section>
+
+    <!-- ── Review ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Review Entries</div>
+
+      <div class="reviewControls">
+        <div class="seg reviewRangeSeg" role="tablist">
+          <button type="button" class="segBtn active" data-review-range="week">This Wk</button>
+          <button type="button" class="segBtn" data-review-range="lastweek">Last Wk</button>
+          <button type="button" class="segBtn" data-review-range="month">Month</button>
+          <button type="button" class="segBtn" data-review-range="all">All</button>
+        </div>
+        <div class="seg reviewFocusSeg" role="tablist">
+          <button type="button" class="segBtn active" data-review-focus="all">All</button>
+          <button type="button" class="segBtn" data-review-focus="with-photo">With Photo</button>
+        </div>
+      </div>
+
+      <input id="reviewSearch" placeholder="Search entries…" class="moreInput" style="margin-top:10px;" />
+      <div id="reviewMeta" class="muted small" style="margin-top:8px;"></div>
+      <div id="reviewList" class="list" style="margin-top:10px;"></div>
+
+      <!-- hidden selects for JS compat -->
+      <select id="reviewRange" style="display:none;">
+        <option value="week">This Week</option>
+        <option value="lastweek">Last Week</option>
+        <option value="month">This Month</option>
+        <option value="all">All Time</option>
+      </select>
+      <select id="reviewFocus" style="display:none;">
+        <option value="all">All Entries</option>
+        <option value="with-photo">With Photo</option>
+      </select>
+      <select id="reviewGroup" style="display:none;">
+        <option value="day">Group by Day</option>
+        <option value="none">No Group</option>
+      </select>
+      <button id="reviewRefreshBtn" style="display:none;" type="button">Refresh</button>
+    </section>
+
+    <!-- ── Saved Work Types ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Saved Work Types</div>
+      <div class="moreCardSub">Your logged types with last-used hours and rate. Tap to delete.</div>
+      <div id="savedTypesList" class="list" style="margin-top:10px;"></div>
+    </section>
+
+    <!-- ── Proof Photos ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Proof Photos</div>
+      <div id="photoGallery" class="gallery" style="margin-top:12px;"></div>
+    </section>
+
+    <!-- ── Danger Zone ── -->
+    <section class="card moreCard moreDangerCard">
+      <div class="moreCardHeader moreDangerHeader">Danger Zone</div>
+      <div class="moreCardSub">Permanently removes data stored on this device.</div>
+      <div class="dangerActions">
+        <button class="btn dangerBtn" type="button" id="wipeBtn">Wipe My Data</button>
+        <button class="btn dangerBtnStrong" type="button" id="wipeAllBtn">Wipe All Local Data</button>
+      </div>
+    </section>
+
+    <!-- Photo viewer modal -->
     <div id="photoViewer" class="modalShell" style="display:none;">
-      <div class="modalContent" style="max-width:900px; margin:20px auto; padding:0 12px;">
+      <div class="modalContent" style="max-width:900px;margin:20px auto;padding:0 12px;">
         <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <div class="muted" id="photoMeta"></div>
             <button class="btn" id="closePhotoViewerBtn" type="button">Close</button>
           </div>
-          <img id="photoFull" style="width:100%; border-radius:16px; margin-top:10px;" />
-          <div class="row" style="margin-top:10px;">
+          <img id="photoFull" style="width:100%;border-radius:16px;margin-top:10px;" />
+          <div style="display:flex;gap:8px;margin-top:10px;">
             <a class="btn" id="downloadPhotoBtn" download="proof.jpg">Download</a>
             <button class="btn" id="copyPhotoBtn">Copy Image</button>
           </div>
@@ -148,57 +244,11 @@
       </div>
     </div>
 
-    <section class="card">
-      <div class="h">Needs Review</div>
-      <div class="muted">Browse and review your logged entries.</div>
-      <div class="row u-row u-wrap" style="margin-top:10px;gap:8px;">
-        <select id="reviewRange" >
-          <option value="week">This Week</option>
-          <option value="lastweek">Last Week</option>
-          <option value="month">This Month</option>
-          <option value="all">All Time</option>
-        </select>
-        <select id="reviewFocus" >
-          <option value="all">All Entries</option>
-          <option value="with-photo">With Photo</option>
-        </select>
-        <select id="reviewGroup" >
-          <option value="day">Group by Day</option>
-          <option value="none">No Group</option>
-        </select>
-        <button class="btn" id="reviewRefreshBtn" type="button">Refresh</button>
-      </div>
-      <input id="reviewSearch" placeholder="Search entries…" style="width:100%;margin-top:10px" />
-      <div id="reviewMeta" class="muted small" style="margin-top:8px;"></div>
-      <div id="reviewList" class="list" style="margin-top:10px;"></div>
-    </section>
-
-    <section class="card">
-      <div class="h">Saved Work Types</div>
-      <div class="muted">Your logged work types with their last-used hours and rate. Tap to delete.</div>
-      <div id="savedTypesList" class="list" style="margin-top:10px;"></div>
-    </section>
-
-    <section class="card">
-      <div class="h">Proof Photos</div>
-      <div class="muted">All photos attached to your entries.</div>
-      <div id="photoGallery" class="gallery" style="margin-top:14px;"></div>
-    </section>
-
-    <section class="card danger">
-      <div class="h">Danger Zone</div>
-      <div class="muted">This wipes everything stored on this device for this app.</div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" type="button" id="wipeBtn" style="flex:1;background:rgba(255,77,77,.12);border-color:rgba(255,77,77,.3)">Wipe Local Data</button>
-        <button class="btn" type="button" id="wipeAllBtn" style="background:rgba(255,77,77,.16);border-color:rgba(255,77,77,.35)">Wipe All Local Data</button>
-      </div>
-    </section>
-
-    <div id="undoBar" style="display:none; position:fixed; left:12px; right:12px; bottom:12px; z-index:9999;">
-      <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px;">
+    <div id="undoBar" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;">
+      <div class="card u-row" style="justify-content:space-between;padding:12px 14px;">
         <div class="muted" id="undoText">Deleted.</div>
-        <div style="display:flex; gap:10px;">
-          <button class="btn" id="undoBtn" type="button">Undo</button>
+        <div class="u-row" style="gap:8px;">
+          <button class="btn primary" id="undoBtn" type="button">Undo</button>
           <button class="btn" id="undoDismissBtn" type="button">Dismiss</button>
         </div>
       </div>
@@ -213,7 +263,25 @@
       url: "https://lfnydhidbwfyfjafazdy.supabase.co",
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
+
+    // Wire review seg buttons to hidden selects
+    document.querySelectorAll("[data-review-range]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-review-range]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const sel = document.getElementById("reviewRange");
+        if (sel) { sel.value = btn.dataset.reviewRange; sel.dispatchEvent(new Event("change")); }
+      });
+    });
+    document.querySelectorAll("[data-review-focus]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-review-focus]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const sel = document.getElementById("reviewFocus");
+        if (sel) { sel.value = btn.dataset.reviewFocus; sel.dispatchEvent(new Event("change")); }
+      });
+    });
   </script>
-  <script src="/flat-rate-log/app.9a41679389.js" defer></script>
+  <script src="/flat-rate-log/app.c9a5073a7e.js" defer></script>
 </body>
 </html>
