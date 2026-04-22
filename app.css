@@ -123,7 +123,7 @@ main {
   border: 1px solid var(--stroke);
   border-radius: var(--r-xl);
   padding: 16px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .card--tight { padding: 12px; }
@@ -453,13 +453,49 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .fr26Check {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 500;
+  cursor: pointer;
+  user-select: none;
 }
 
-.fr26Check input { accent-color: var(--primary); width: auto; }
+.fr26Check input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 42px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--surface3);
+  border: 1px solid var(--stroke2);
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 200ms, border-color 200ms;
+}
+
+.fr26Check input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 200ms var(--ease-bounce), background 200ms;
+}
+
+.fr26Check input[type="checkbox"]:checked {
+  background: var(--primary);
+  border-color: transparent;
+}
+
+.fr26Check input[type="checkbox"]:checked::after {
+  transform: translateX(16px);
+  background: #fff;
+}
 
 .fr26Textarea { min-height: 88px; resize: vertical; }
 
@@ -892,6 +928,38 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 }
 
 .searchRow .fr26Input { flex: 1; }
+
+/* ── Filter select pill ──────────────────────────── */
+#filterSelect {
+  width: auto;
+  padding: 8px 12px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--surface2);
+  border: 1px solid var(--stroke2);
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+
+/* ── Empty state ─────────────────────────────────── */
+.emptyState {
+  text-align: center;
+  padding: 32px 16px;
+}
+
+.emptyStateTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+
+.emptyStateSub {
+  font-size: 13px;
+  color: var(--muted);
+}
 
 /* ── Settings swatches ───────────────────────────── */
 .accentSwatch {

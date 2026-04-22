@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.d4740d561c.css">
+  <link rel="stylesheet" href="./app.f1e0b95031.css">
 </head>
 <body data-page="main">
 
@@ -28,6 +28,10 @@
   <div class="stripCell">
     <div class="stripLabel">Today Hrs</div>
     <div class="stripValue" id="stripTodayHours">—</div>
+  </div>
+  <div class="stripCell">
+    <div class="stripLabel">Jobs</div>
+    <div class="stripValue" id="stripTodayCount">—</div>
   </div>
   <div class="stripCell">
     <div class="stripLabel">Today Pay</div>
@@ -109,7 +113,7 @@
 
       <div class="fr26QuickTools">
         <button id="toggleDetailsBtn" class="fr26Chip" type="button">Add Details</button>
-        <button id="repeatLastBtn" class="fr26Chip" type="button">↩ Repeat Last</button>
+        <button id="repeatLastBtn" class="fr26Chip" type="button">Repeat Last</button>
         <button id="clearBtn" class="fr26Chip fr26ChipGhost" type="button">Clear</button>
         <button id="cancelEditBtn" class="fr26Chip fr26ChipGhost" type="button" style="display:none;">Cancel Edit</button>
       </div>
@@ -158,7 +162,7 @@
   </section>
 
   <!-- ── Stats panel ── -->
-  <details id="statsPanel" class="card statsCard">
+  <details id="statsPanel" class="card statsCard" open>
     <summary class="statsSummary">
       <div>
         <div style="font-weight:700;font-size:15px;">Stats</div>
@@ -328,6 +332,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.58bfe6bd04.js" defer></script>
+<script src="/flat-rate-log/app.48dcc8607e.js" defer></script>
 </body>
 </html>

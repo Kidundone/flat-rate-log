@@ -3304,15 +3304,13 @@ function renderList(entries, mode){
 
   if (capped.length === 0) {
     list.innerHTML = q
-      ? `<div style="text-align:center;padding:28px 16px;">
-           <div style="font-size:28px;margin-bottom:8px;">🔍</div>
-           <div style="font-weight:800;color:var(--text);">No results for "${escapeHtml(q)}"</div>
-           <div class="small" style="margin-top:4px;">Try a different RO, VIN, or work type</div>
+      ? `<div class="emptyState">
+           <div class="emptyStateTitle">No results for "${escapeHtml(q)}"</div>
+           <div class="emptyStateSub">Try a different RO, VIN, or work type</div>
          </div>`
-      : `<div style="text-align:center;padding:28px 16px;">
-           <div style="font-size:32px;margin-bottom:8px;">📋</div>
-           <div style="font-weight:800;color:var(--text);">No entries yet</div>
-           <div class="small" style="margin-top:4px;">Select hours above and tap Save to start logging</div>
+      : `<div class="emptyState">
+           <div class="emptyStateTitle">No entries yet</div>
+           <div class="emptyStateSub">Select hours above and tap Save to start logging</div>
          </div>`;
     return;
   }
@@ -3587,6 +3585,7 @@ async function refreshUI(entriesOverride){
   setText("todayDollars", formatMoney(today.dollars));
   setText("todayCount", String(today.count));
   setText("stripTodayHours", r1(today.hours));
+  setText("stripTodayCount", String(today.count));
   setText("stripTodayDollars", formatMoney(today.dollars));
   updateHeaderTodayTotal(today.dollars);
 
