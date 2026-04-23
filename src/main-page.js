@@ -345,7 +345,20 @@ async function saveEntry(entry, options = {}) {
     photo_path = saved?.photo_path || null;
     if (photoFile) photoStatus = "ok";
   } else {
-    saved = await apiCreateLog(payload, entry);
+    try {
+      saved = await apiCreateLog(payload, entry);
+    } catch (err) {
+      if (!navigator.onLine) {
+        const localEntry = { ...entry, _pending: true };
+        CURRENT_ENTRIES = syncStateEntries([localEntry, ...(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])]);
+        queuePendingEntry(entry, payload);
+        setEditingEntry(null);
+        toast("Saved offline — syncs when back online");
+        handleClear(null, { preserveType: options.preserveType, typeValue: options.preservedType });
+        return;
+      }
+      throw err;
+    }
     photo_path = saved?.photo_path || payload.photo_path || null;
     if (photoFile) {
       toast("Uploading photo...");
@@ -510,7 +523,7 @@ function showHistory(open = true) {
   if (!p) return;
   p.classList.toggle("open", open);
   p.setAttribute("aria-hidden", open ? "false" : "true");
-  document.body.style.overflow = open ? "hidden" : "";
+  if (open) lockBodyScroll(); else unlockBodyScroll();
 }
 
 function buildHistEntryRow(e) {
@@ -690,6 +703,24 @@ async function shareDaySummary() {
 
 window.__FR = window.__FR || {};
 window.__FR.shareDaySummary = shareDaySummary;
+
+async function flushPendingSync() {
+  const q = getPendingQueue();
+  if (!q.length) return;
+  let synced = 0;
+  for (const item of [...q]) {
+    try {
+      await apiCreateLog(item.payload, item.entry);
+      removePendingById(item.id);
+      synced++;
+    } catch { break; }
+  }
+  if (synced > 0) {
+    toast(`${synced} offline entr${synced === 1 ? "y" : "ies"} synced`);
+    await safeLoadEntries();
+  }
+  updatePendingBadge();
+}
 
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
 const DEFAULT_TYPES = []; // no presets; the app learns from each employee
@@ -1339,8 +1370,8 @@ function openPhotoModal(url, pathLabel) {
   applyPhotoLoadGuard(img, pathLabel);
   img.src = url;
 
-  modal.classList.add("open"); // use your existing show logic
-  document.body.classList.add("modal-open");
+  modal.classList.add("open");
+  lockBodyScroll();
 }
 
 async function openPhoto(row) {
@@ -1358,7 +1389,7 @@ function closePhotoModal(){
     shell.classList.remove("open");
     shell.style.display = "";
   }
-  document.body.classList.remove("modal-open");
+  unlockBodyScroll();
 }
 
 async function refreshUI(entriesOverride){

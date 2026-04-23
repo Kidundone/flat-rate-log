@@ -142,6 +142,7 @@ async function runOnce() {
 
     const detailsBtn = document.getElementById("toggleDetailsBtn");
     const detailsPanel = document.getElementById("detailsPanel");
+    const detailsSaveBar = document.getElementById("detailsSaveBar");
     if (detailsBtn && detailsPanel) {
       detailsPanel.style.display = "none";
       detailsBtn.textContent = "Add Details";
@@ -149,8 +150,16 @@ async function runOnce() {
         const isOpen = detailsPanel.style.display !== "none";
         detailsPanel.style.display = isOpen ? "none" : "block";
         detailsBtn.textContent = isOpen ? "Add Details" : "Less";
+        if (detailsSaveBar) detailsSaveBar.style.display = isOpen ? "none" : "";
       });
     }
+
+    document.getElementById("detailsSaveFloatBtn")?.addEventListener("click", () => {
+      document.getElementById("saveBtn")?.click();
+    });
+
+    window.addEventListener("online", () => { flushPendingSync?.().catch(() => {}); });
+    updatePendingBadge?.();
 
     ["empId", "ref", "typeText", "hours"].forEach((id) => {
       const el = document.getElementById(id);

@@ -743,3 +743,41 @@ async function loadEntries() {
   const rows = (res.data || []).map(normalizeSupabaseLog);
   return await renderEntries(rows);
 }
+
+/* ── Offline pending sync queue ──────────────────────────────────── */
+const LS_PENDING = "fr_pending_sync";
+
+function getPendingQueue() {
+  try { return JSON.parse(localStorage.getItem(LS_PENDING) || "[]"); } catch { return []; }
+}
+
+function setPendingQueue(q) {
+  localStorage.setItem(LS_PENDING, JSON.stringify(q || []));
+}
+
+function queuePendingEntry(entry, payload) {
+  const q = getPendingQueue();
+  q.push({ id: String(entry.id), entry, payload, queuedAt: new Date().toISOString() });
+  setPendingQueue(q);
+  updatePendingBadge();
+}
+
+function removePendingById(id) {
+  setPendingQueue(getPendingQueue().filter(x => x.id !== String(id)));
+  updatePendingBadge();
+}
+
+function updatePendingBadge() {
+  const count = getPendingQueue().length;
+  const el = document.getElementById("offlineBanner");
+  if (!el) return;
+  if (count > 0) {
+    el.textContent = `${count} offline entr${count === 1 ? "y" : "ies"} waiting to sync`;
+    el.style.display = "";
+  } else if (!navigator.onLine) {
+    el.textContent = "You're offline — entries may not save";
+    el.style.display = "";
+  } else {
+    el.style.display = "none";
+  }
+}

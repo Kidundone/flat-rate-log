@@ -41,6 +41,45 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* iOS-safe body scroll lock when overlay is open */
+body.modal-open {
+  position: fixed;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+}
+
+button, a, [role="button"], summary, label { touch-action: manipulation; }
+
+/* ── Floating details save bar ───────────────────── */
+.detailsSaveBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--stroke2);
+  z-index: 150;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: slideUpBar 180ms var(--ease);
+}
+
+.detailsSaveFloatBtn {
+  width: 100%;
+  font-size: 15px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+}
+
+@keyframes slideUpBar {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
 
 /* ── Header ─────────────────────────────────────── */
@@ -359,7 +398,7 @@ a.btn {
   -webkit-appearance: none;
 }
 
-.btn:active { transform: scale(.97); opacity: .85; }
+.btn:active { transform: scale(.95); opacity: .8; transition-duration: 60ms; }
 
 .btn.primary {
   background: var(--primary);
@@ -837,6 +876,8 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   display: none;
   z-index: 200;
   padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   align-items: center;
   justify-content: center;
 }
@@ -921,6 +962,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   background: var(--surface);
   border-radius: var(--r-xl) var(--r-xl) 0 0;
   border-top: 1px solid var(--stroke2);
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1000,6 +1042,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .historyList {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 8px 16px 32px;
 }

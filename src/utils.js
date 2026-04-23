@@ -740,3 +740,20 @@ function getEntryRecordFacts(entry) {
     review,
   };
 }
+
+/* ── Body scroll lock (iOS-safe) ─────────────────────────────────── */
+let _scrollLockY = 0;
+
+function lockBodyScroll() {
+  if (document.body.classList.contains("modal-open")) return;
+  _scrollLockY = window.scrollY;
+  document.body.style.top = `-${_scrollLockY}px`;
+  document.body.classList.add("modal-open");
+}
+
+function unlockBodyScroll() {
+  if (!document.body.classList.contains("modal-open")) return;
+  document.body.classList.remove("modal-open");
+  document.body.style.top = "";
+  window.scrollTo(0, _scrollLockY);
+}

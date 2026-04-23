@@ -1035,6 +1035,44 @@ async function loadEntries() {
   return await renderEntries(rows);
 }
 
+/* ── Offline pending sync queue ──────────────────────────────────── */
+const LS_PENDING = "fr_pending_sync";
+
+function getPendingQueue() {
+  try { return JSON.parse(localStorage.getItem(LS_PENDING) || "[]"); } catch { return []; }
+}
+
+function setPendingQueue(q) {
+  localStorage.setItem(LS_PENDING, JSON.stringify(q || []));
+}
+
+function queuePendingEntry(entry, payload) {
+  const q = getPendingQueue();
+  q.push({ id: String(entry.id), entry, payload, queuedAt: new Date().toISOString() });
+  setPendingQueue(q);
+  updatePendingBadge();
+}
+
+function removePendingById(id) {
+  setPendingQueue(getPendingQueue().filter(x => x.id !== String(id)));
+  updatePendingBadge();
+}
+
+function updatePendingBadge() {
+  const count = getPendingQueue().length;
+  const el = document.getElementById("offlineBanner");
+  if (!el) return;
+  if (count > 0) {
+    el.textContent = `${count} offline entr${count === 1 ? "y" : "ies"} waiting to sync`;
+    el.style.display = "";
+  } else if (!navigator.onLine) {
+    el.textContent = "You're offline — entries may not save";
+    el.style.display = "";
+  } else {
+    el.style.display = "none";
+  }
+}
+
 /* ── Settings ────────────────────────────────────────────────────────────── */
 const SETTINGS_KEY = "fr_settings";
 const SETTINGS_DEFAULTS = Object.freeze({
@@ -1776,6 +1814,23 @@ function getEntryRecordFacts(entry) {
     updatedText: formatWhen(entry?.updatedAt || entry?.updated_at || entry?.createdAt || entry?.created_at || ""),
     review,
   };
+}
+
+/* ── Body scroll lock (iOS-safe) ─────────────────────────────────── */
+let _scrollLockY = 0;
+
+function lockBodyScroll() {
+  if (document.body.classList.contains("modal-open")) return;
+  _scrollLockY = window.scrollY;
+  document.body.style.top = `-${_scrollLockY}px`;
+  document.body.classList.add("modal-open");
+}
+
+function unlockBodyScroll() {
+  if (!document.body.classList.contains("modal-open")) return;
+  document.body.classList.remove("modal-open");
+  document.body.style.top = "";
+  window.scrollTo(0, _scrollLockY);
 }
 
 const PHOTO_BUCKET = "proofs"; // private
@@ -2596,7 +2651,20 @@ async function saveEntry(entry, options = {}) {
     photo_path = saved?.photo_path || null;
     if (photoFile) photoStatus = "ok";
   } else {
-    saved = await apiCreateLog(payload, entry);
+    try {
+      saved = await apiCreateLog(payload, entry);
+    } catch (err) {
+      if (!navigator.onLine) {
+        const localEntry = { ...entry, _pending: true };
+        CURRENT_ENTRIES = syncStateEntries([localEntry, ...(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])]);
+        queuePendingEntry(entry, payload);
+        setEditingEntry(null);
+        toast("Saved offline — syncs when back online");
+        handleClear(null, { preserveType: options.preserveType, typeValue: options.preservedType });
+        return;
+      }
+      throw err;
+    }
     photo_path = saved?.photo_path || payload.photo_path || null;
     if (photoFile) {
       toast("Uploading photo...");
@@ -2761,7 +2829,7 @@ function showHistory(open = true) {
   if (!p) return;
   p.classList.toggle("open", open);
   p.setAttribute("aria-hidden", open ? "false" : "true");
-  document.body.style.overflow = open ? "hidden" : "";
+  if (open) lockBodyScroll(); else unlockBodyScroll();
 }
 
 function buildHistEntryRow(e) {
@@ -2941,6 +3009,24 @@ async function shareDaySummary() {
 
 window.__FR = window.__FR || {};
 window.__FR.shareDaySummary = shareDaySummary;
+
+async function flushPendingSync() {
+  const q = getPendingQueue();
+  if (!q.length) return;
+  let synced = 0;
+  for (const item of [...q]) {
+    try {
+      await apiCreateLog(item.payload, item.entry);
+      removePendingById(item.id);
+      synced++;
+    } catch { break; }
+  }
+  if (synced > 0) {
+    toast(`${synced} offline entr${synced === 1 ? "y" : "ies"} synced`);
+    await safeLoadEntries();
+  }
+  updatePendingBadge();
+}
 
 /* -------------------- Types: autocomplete + remembered defaults -------------------- */
 const DEFAULT_TYPES = []; // no presets; the app learns from each employee
@@ -3590,8 +3676,8 @@ function openPhotoModal(url, pathLabel) {
   applyPhotoLoadGuard(img, pathLabel);
   img.src = url;
 
-  modal.classList.add("open"); // use your existing show logic
-  document.body.classList.add("modal-open");
+  modal.classList.add("open");
+  lockBodyScroll();
 }
 
 async function openPhoto(row) {
@@ -3609,7 +3695,7 @@ function closePhotoModal(){
     shell.classList.remove("open");
     shell.style.display = "";
   }
-  document.body.classList.remove("modal-open");
+  unlockBodyScroll();
 }
 
 async function refreshUI(entriesOverride){
@@ -4872,6 +4958,7 @@ async function runOnce() {
 
     const detailsBtn = document.getElementById("toggleDetailsBtn");
     const detailsPanel = document.getElementById("detailsPanel");
+    const detailsSaveBar = document.getElementById("detailsSaveBar");
     if (detailsBtn && detailsPanel) {
       detailsPanel.style.display = "none";
       detailsBtn.textContent = "Add Details";
@@ -4879,8 +4966,16 @@ async function runOnce() {
         const isOpen = detailsPanel.style.display !== "none";
         detailsPanel.style.display = isOpen ? "none" : "block";
         detailsBtn.textContent = isOpen ? "Add Details" : "Less";
+        if (detailsSaveBar) detailsSaveBar.style.display = isOpen ? "none" : "";
       });
     }
+
+    document.getElementById("detailsSaveFloatBtn")?.addEventListener("click", () => {
+      document.getElementById("saveBtn")?.click();
+    });
+
+    window.addEventListener("online", () => { flushPendingSync?.().catch(() => {}); });
+    updatePendingBadge?.();
 
     ["empId", "ref", "typeText", "hours"].forEach((id) => {
       const el = document.getElementById(id);
