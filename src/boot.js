@@ -215,8 +215,18 @@ async function runOnce() {
       typeEl.focus();
     };
     document.getElementById("clearTypeBtn")?.addEventListener("click", clearTypeInput);
-    document.getElementById("typeText")?.addEventListener("input", () => { syncClearTypeBtn(); renderTypeDatalist?.(); });
+    document.getElementById("typeText")?.addEventListener("input", syncClearTypeBtn);
     document.getElementById("typeText")?.addEventListener("change", syncClearTypeBtn);
+
+    // Show type chips on focus, hide on blur — no DOM changes while typing
+    const typeStrip = document.getElementById("typeSuggestStrip");
+    document.getElementById("typeText")?.addEventListener("focus", () => {
+      if (typeStrip && !typeStrip.hidden) return;
+      renderTypeDatalist?.();
+    });
+    document.getElementById("typeText")?.addEventListener("blur", () => {
+      if (typeStrip) typeStrip.hidden = true;
+    });
 
     restoreLastWorkType?.();
     syncClearTypeBtn();

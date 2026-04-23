@@ -914,10 +914,7 @@ async function renderTypeDatalist(){
   }
 
   if (strip) {
-    const query = String($("typeText")?.value || "").trim().toLowerCase();
-    const shown = query
-      ? types.filter(t => t.name.toLowerCase().includes(query)).slice(0, 8)
-      : types.slice(0, 6);
+    const shown = types.slice(0, 8);
     strip.innerHTML = "";
     if (shown.length === 0) { strip.hidden = true; return; }
     strip.hidden = false;
@@ -926,13 +923,16 @@ async function renderTypeDatalist(){
       chip.type = "button";
       chip.className = "typeSuggestChip";
       chip.textContent = t.name;
-      chip.addEventListener("click", () => {
+      chip.addEventListener("mousedown", (e) => {
+        // mousedown before blur so the value is set before focus leaves
+        e.preventDefault();
         const typeEl = $("typeText");
         if (!typeEl) return;
         typeEl.value = t.name;
         typeEl.dispatchEvent(new Event("input", { bubbles: true }));
         typeEl.dispatchEvent(new Event("change", { bubbles: true }));
         strip.hidden = true;
+        typeEl.focus();
       });
       strip.appendChild(chip);
     }
