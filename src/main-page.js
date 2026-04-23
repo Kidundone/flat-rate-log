@@ -435,6 +435,7 @@ async function handleSave(ev) {
 
     if (!typeName) { toast("Type required"); return; }
     if (!hoursVal || hoursVal <= 0) { toast("Hours must be > 0"); return; }
+    if (hoursVal > 24 && !confirm(`${hoursVal} hours is unusually high — save anyway?`)) return;
 
     if (!isEditing) {
       const todayKey = dayKeyFromISO(nowISO());
@@ -632,8 +633,10 @@ async function renderHistory() {
 
 // Cache signed URLs so we don't re-request on every render
 const _thumbCache = new Map();
+let _thumbObs = null;
 
 function loadPhotoThumbs() {
+  if (_thumbObs) { _thumbObs.disconnect(); _thumbObs = null; }
   const imgs = document.querySelectorAll('img.entryThumb[data-photo-path]');
   if (!imgs.length) return;
 
@@ -654,14 +657,14 @@ function loadPhotoThumbs() {
   };
 
   if ("IntersectionObserver" in window) {
-    const obs = new IntersectionObserver((entries) => {
+    _thumbObs = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
-        obs.unobserve(entry.target);
+        _thumbObs.unobserve(entry.target);
         load(entry.target);
       }
     }, { rootMargin: "300px" });
-    imgs.forEach(img => obs.observe(img));
+    imgs.forEach(img => _thumbObs.observe(img));
   } else {
     imgs.forEach(load);
   }
@@ -916,7 +919,11 @@ async function renderTypeDatalist(){
   if (strip) {
     const shown = types.slice(0, 8);
     strip.innerHTML = "";
-    if (shown.length === 0) { strip.hidden = true; return; }
+    if (shown.length === 0) {
+      strip.hidden = false;
+      strip.innerHTML = `<span class="typeSuggestHint">Type anything — saved types appear here after you log entries</span>`;
+      return;
+    }
     strip.hidden = false;
     for (const t of shown) {
       const chip = document.createElement("button");
@@ -1447,7 +1454,7 @@ function renderList(entries, mode){
   const pickedDay = (mode === "week") ? (window.__WEEK_DAY_PICK__ || "") : "";
   const ranged = pickedDay ? byRange.filter(e => e.dayKey === pickedDay) : byRange;
 
-  const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
+  const searchInput = document.getElementById("searchInput");
   const q = (searchInput?.value || "").trim().toLowerCase();
 
   const visible = applySearch(ranged, q).slice();
@@ -1580,7 +1587,7 @@ function renderList(entries, mode){
         `;
         list.appendChild(dhdr);
         for (const e of dEntries) {
-          list.appendChild(buildEntry(e));
+          try { list.appendChild(buildEntry(e)); } catch {}
         }
       }
     }
@@ -1606,14 +1613,14 @@ function renderList(entries, mode){
       `;
       list.appendChild(header);
       for (const e of bucket) {
-        list.appendChild(buildEntry(e));
+        try { list.appendChild(buildEntry(e)); } catch {}
       }
     }
     return;
   }
 
   for (const e of capped) {
-    list.appendChild(buildEntry(e));
+    try { list.appendChild(buildEntry(e)); } catch {}
   }
 }
 
@@ -1790,7 +1797,7 @@ async function refreshUI(entriesOverride){
     window.__WEEK_DAY_PICK__ = ""; // reset when leaving week mode
   }
 
-  const searchInput = document.getElementById("searchInput") || document.getElementById("searchBox");
+  const searchInput = document.getElementById("searchInput");
   const q = searchInput?.value || "";
   const searched = applySearch(shownEntries, q);
 

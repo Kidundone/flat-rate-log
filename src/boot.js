@@ -59,12 +59,25 @@ async function runOnce() {
     await renderTypesListInMore();
 
     document.getElementById("filterSelect")?.addEventListener("change", () => refreshUI(CURRENT_ENTRIES));
-    document.getElementById("refreshBtn")?.addEventListener("click", () => refreshUI(CURRENT_ENTRIES));
 
     const sIn = document.getElementById("searchInput");
     const sClr = document.getElementById("clearSearchBtn");
-    if (sIn) sIn.addEventListener("input", () => refreshUI(CURRENT_ENTRIES));
-    if (sClr) sClr.addEventListener("click", () => { if (sIn) sIn.value = ""; refreshUI(CURRENT_ENTRIES); });
+    if (sIn) {
+      sIn.addEventListener("input", () => {
+        if (sClr) sClr.hidden = !sIn.value.trim();
+        refreshUI(CURRENT_ENTRIES);
+      });
+    }
+    if (sClr) {
+      sClr.addEventListener("click", () => {
+        if (sIn) sIn.value = "";
+        sClr.hidden = true;
+        refreshUI(CURRENT_ENTRIES);
+        sIn?.focus();
+      });
+    }
+
+    document.getElementById("exportSelectedBtn")?.addEventListener("click", () => exportSelected?.());
 
     const resetNavOffset = () => { window.__NAV_OFFSET__ = 0; };
     document.getElementById("rangeDayBtn")?.addEventListener("click", () => { resetNavOffset(); setRangeMode("day"); });
