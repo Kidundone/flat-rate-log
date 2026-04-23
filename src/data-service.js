@@ -581,7 +581,10 @@ function mapServerLogToEntry(r) {
   const createdAt = r.created_at || new Date().toISOString();
   const dayKey = r.work_date; // already YYYY-MM-DD
   const hours = Number(r.flat_hours ?? r.hours ?? 0);
-  const rate = getDefaultRate();
+  const cashAmount = Number(r.cash_amount ?? r.earnings ?? 0);
+  const rate = hours > 0 && Number.isFinite(cashAmount) && cashAmount > 0
+    ? round2(cashAmount / hours)
+    : getDefaultRate();
   const ref = r.ro_number || r.stock || r.ref || r.ro || "";
   const refType = inferRefTypeFromLog(r);
 
@@ -610,12 +613,13 @@ function mapServerLogToEntry(r) {
     typeText: r.category || "work",
     hours: round1(hours),
     rate: round2(rate),
-    earnings: round2(hours * rate),
+    earnings: round2(cashAmount),
     notes: r.description || "",
-    cash_amount: Number(r.cash_amount || 0),
+    cash_amount: cashAmount,
     photoDataUrl: null,
     photo_path: r.photo_path || null,
     location: r.location || null,
+    isComeback: r.is_comeback ?? r.isComeback ?? false,
   };
 }
 
@@ -710,7 +714,9 @@ async function renderLogs(logs) {
 async function renderEntries(rows) {
   const mapped = (rows || []).map(mapServerLogToEntry);
   CURRENT_ENTRIES = syncStateEntries(mapped);
+  await syncTypesFromEntries?.(mapped, getEmpId());
   await renderLogs(mapped);
+  await refreshMorePagePanels?.();
   return mapped;
 }
 

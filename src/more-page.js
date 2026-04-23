@@ -559,6 +559,21 @@ function renderPayTrend() {
 
 window.renderPayTrend = renderPayTrend;
 
+async function refreshMorePagePanels() {
+  if (window.__PAGE__ !== "more") return;
+
+  renderInsights?.();
+  renderEarningsChart?.();
+  renderPayTrend?.();
+  renderPayStubComparison?.();
+  renderMissingWorkReview?.();
+  await renderTypesListInMore?.();
+  await refreshPayrollUI?.();
+  if (document.getElementById("reviewList")) await renderReview?.();
+}
+
+window.refreshMorePagePanels = refreshMorePagePanels;
+
 async function _callScanPayStub(base64, mediaType = "image/jpeg") {
   const sbInstance = window.__FR?.sb;
   const { data: { session } } = await sbInstance.auth.getSession();

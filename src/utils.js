@@ -222,12 +222,57 @@ const MEMORY_STORES = {
   [STORES.weekflags]: new Map(),
   [STORES.payroll]: new Map(),
 };
+const PERSISTED_STORE_KEYS = {
+  [STORES.types]: "fr_store_types_v2",
+  [STORES.weekflags]: "fr_store_weekflags",
+  [STORES.payroll]: "fr_store_payroll",
+};
+const HYDRATED_STORES = new Set();
 
 function cloneStoreValue(v) {
   return v == null ? v : JSON.parse(JSON.stringify(v));
 }
 
+function getPersistedStoreKey(storeName) {
+  return PERSISTED_STORE_KEYS[storeName] || "";
+}
+
+function hydrateStoreMap(storeName) {
+  const storageKey = getPersistedStoreKey(storeName);
+  if (!storageKey || HYDRATED_STORES.has(storeName)) return;
+
+  HYDRATED_STORES.add(storeName);
+  try {
+    const raw = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    const map = MEMORY_STORES[storeName] || new Map();
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        const key = item?.id ?? item?.weekStartKey;
+        if (key == null) continue;
+        map.set(key, item);
+      }
+    }
+    MEMORY_STORES[storeName] = map;
+  } catch {}
+}
+
+function persistStoreMap(storeName) {
+  const storageKey = getPersistedStoreKey(storeName);
+  if (!storageKey) return;
+
+  const map = MEMORY_STORES[storeName] || new Map();
+  if (!map.size) {
+    localStorage.removeItem(storageKey);
+    return;
+  }
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(map.values())));
+  } catch {}
+}
+
 function getStoreMap(storeName) {
+  hydrateStoreMap(storeName);
   if (!MEMORY_STORES[storeName]) MEMORY_STORES[storeName] = new Map();
   return MEMORY_STORES[storeName];
 }
@@ -288,6 +333,7 @@ async function put(storeName, item) {
   const map = getStoreMap(storeName);
   const key = item?.id ?? item?.weekStartKey ?? crypto.randomUUID?.() ?? String(Date.now());
   map.set(key, cloneStoreValue(item));
+  persistStoreMap(storeName);
 }
 
 async function del(storeName, key) {
@@ -299,11 +345,13 @@ async function del(storeName, key) {
     return;
   }
   getStoreMap(storeName).delete(key);
+  persistStoreMap(storeName);
 }
 
 async function clearStore(storeName) {
   if (storeName === STORES.entries) CURRENT_ENTRIES = syncStateEntries([]);
   getStoreMap(storeName).clear();
+  persistStoreMap(storeName);
 }
 
 function applySearch(entries, q){

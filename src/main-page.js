@@ -573,7 +573,7 @@ async function renderHistory() {
 
   const q = ($("historySearchInput")?.value || "").trim();
   const activeRangeBtn = document.querySelector("[data-hist-range].active");
-  const range = activeRangeBtn?.dataset.histRange || "week";
+  const range = activeRangeBtn?.dataset.histRange || "today";
 
   const source = Array.isArray(CURRENT_ENTRIES) && CURRENT_ENTRIES.length
     ? CURRENT_ENTRIES
@@ -585,7 +585,7 @@ async function renderHistory() {
 
   let slice = all;
   if (range === "today") {
-    const dk = todayKeyLocal();
+    const dk = selectedHistoryDayKey();
     slice = all.filter(e => (e.dayKey || dayKeyFromISO(e.createdAt)) === dk);
   }
 
@@ -851,6 +851,52 @@ async function loadTypesSorted(empId){
   return types;
 }
 
+async function syncTypesFromEntries(entriesRaw, empIdRaw = getEmpId()) {
+  const empId = cleanEmpId(empIdRaw);
+  if (!empId) return 0;
+
+  const entries = filterEntriesByEmp(normalizeEntries(entriesRaw), empId)
+    .slice()
+    .sort((a, b) => (b.updatedAt || b.createdAt || "").localeCompare(a.updatedAt || a.createdAt || ""));
+  if (!entries.length) return 0;
+
+  const existing = await loadTypesSorted(empId);
+  const existingNames = new Set(existing.map((t) => normalizeTypeLower(t.name)));
+  let added = 0;
+
+  for (const entry of entries) {
+    const name = normalizeTypeName(entry.type || entry.typeText);
+    const nameLower = normalizeTypeLower(name);
+    if (!name || existingNames.has(nameLower)) continue;
+
+    const hours = round1(Number(entry.hours ?? entry.flat_hours ?? 0) || 0.5);
+    const pay = Number(entry.earnings ?? entry.cash_amount ?? 0);
+    const fallbackRate = Number(entry.rate) > 0 ? Number(entry.rate) : getDefaultRate();
+    const rate = hours > 0 && Number.isFinite(pay) && pay > 0
+      ? round2(pay / hours)
+      : round2(fallbackRate);
+
+    await put(STORES.types, {
+      id: uuid(),
+      empId,
+      name,
+      nameLower,
+      lastHours: hours,
+      lastRate: rate,
+      updatedAt: entry.updatedAt || entry.createdAt || nowISO(),
+    });
+    existingNames.add(nameLower);
+    added++;
+  }
+
+  if (added > 0) {
+    await renderTypeDatalist();
+    await renderTypesListInMore();
+  }
+
+  return added;
+}
+
 async function renderTypeDatalist(){
   const list = $("typeList");
   if (!list) return;
@@ -1059,6 +1105,22 @@ function navRefDate() {
   const d = new Date();
   d.setDate(d.getDate() + offset);
   return d;
+}
+
+function selectedHistoryDayKey() {
+  const mode = window.__RANGE_MODE__ || rangeMode || "day";
+  if (mode === "week" && window.__WEEK_DAY_PICK__) return String(window.__WEEK_DAY_PICK__);
+  if (mode === "day") return dateKey(navRefDate());
+  return todayKeyLocal();
+}
+
+function selectedListWeekRange() {
+  const mode = window.__RANGE_MODE__ || rangeMode || "day";
+  const anchor = (mode === "day" || mode === "week") ? navRefDate() : new Date();
+  return {
+    start: dateKey(startOfWeekLocal(anchor)),
+    end: dateKey(endOfWeekLocal(anchor)),
+  };
 }
 
 function filterByMode(entries, mode){
@@ -1347,9 +1409,8 @@ function renderList(entries, mode){
   if (!list) return;
   list.innerHTML = "";
 
-  const dayKey = todayKeyLocal();
-  const weekStart = dateKey(startOfWeekLocal(new Date()));
-  const weekEnd   = dateKey(endOfWeekLocal(new Date()));
+  const dayKey = selectedHistoryDayKey();
+  const { start: weekStart, end: weekEnd } = selectedListWeekRange();
   const byRange = mode === "today" ? entries.filter(e => e.dayKey === dayKey)
     : mode === "week" ? entries.filter(e => e.dayKey >= weekStart && e.dayKey <= weekEnd)
     : entries;

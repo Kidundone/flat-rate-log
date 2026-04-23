@@ -44,7 +44,7 @@ async function runOnce() {
     console.warn("App already booted.");
   } else {
     window.__APP_BOOTED__ = true;
-    bootAuth().catch(console.error);
+    await bootAuth().catch(console.error);
   }
 
   await ensureDefaultTypes();
@@ -352,17 +352,11 @@ async function runOnce() {
     initSettingsUI?.();
     scheduleShiftReminder?.();
     schedulePaydayReminder?.();
+    initPayStubUI();
     await safeLoadEntries();
-    await renderTypesListInMore?.();
-    renderInsights?.();
-    renderEarningsChart?.();
-    renderPayTrend?.();
+    await refreshMorePagePanels?.();
     if (hasGalleryUi) {
       initPhotosUI();
-    }
-    initPayStubUI();
-    if (hasReviewUi) {
-      await renderReview();
     }
   }
 }
