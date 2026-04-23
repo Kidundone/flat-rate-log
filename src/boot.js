@@ -313,8 +313,10 @@ async function runOnce() {
     document.getElementById("payStubNextWeekBtn")?.addEventListener("click", () => stepPayStubWeek(7));
 
     initSettingsUI?.();
+    scheduleShiftReminder?.();
     await safeLoadEntries();
     renderInsights?.();
+    renderEarningsChart?.();
     if (hasGalleryUi) {
       initPhotosUI();
     }

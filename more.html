@@ -108,6 +108,24 @@
         </label>
       </div>
 
+      <div class="moreDivider"></div>
+
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">Shift Reminder</div>
+          <div class="moreRowSub">Notification to log at end of shift</div>
+        </div>
+        <label class="moreToggle">
+          <input id="reminderEnabled" type="checkbox" />
+          <span class="moreToggleTrack"></span>
+        </label>
+      </div>
+
+      <div id="reminderTimeRow" class="moreRow" style="display:none;">
+        <div class="moreRowLabel">Reminder Time</div>
+        <input id="reminderTime" type="time" class="moreInput moreInputNarrow" value="16:30" />
+      </div>
+
       <div class="moreSaveRow">
         <button id="settingsSaveBtn" class="btn primary moreSaveBtn" type="button">Save Preferences</button>
       </div>
@@ -117,6 +135,12 @@
     <section class="card moreCard">
       <div class="moreCardHeader">This Week</div>
       <div id="insightsCard" style="padding:4px 16px 14px;"></div>
+    </section>
+
+    <!-- ── Earnings History ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Earnings History</div>
+      <div id="earningsChart" style="padding:12px 16px 8px;"></div>
     </section>
 
     <!-- ── Weekly Goal ── -->
@@ -252,6 +276,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.abbab606ef.js" defer></script>
+  <script src="/flat-rate-log/app.c6990a040e.js" defer></script>
 </body>
 </html>

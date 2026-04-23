@@ -4613,6 +4613,35 @@ function initSettingsUI() {
     saveBtn.textContent = "Saved!";
     setTimeout(() => { saveBtn.textContent = "Save Preferences"; }, 1800);
   });
+
+  // Shift reminder
+  const reminderEnabled = document.getElementById("reminderEnabled");
+  const reminderTimeRow = document.getElementById("reminderTimeRow");
+  const reminderTimeEl  = document.getElementById("reminderTime");
+  const rs = getReminderSettings();
+  if (reminderEnabled) reminderEnabled.checked = !!rs.enabled;
+  if (reminderTimeEl && rs.time) reminderTimeEl.value = rs.time;
+  if (reminderTimeRow) reminderTimeRow.style.display = rs.enabled ? "" : "none";
+
+  reminderEnabled?.addEventListener("change", async () => {
+    const enabled = !!reminderEnabled.checked;
+    if (enabled && "Notification" in window && Notification.permission === "default") {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        reminderEnabled.checked = false;
+        toast("Notifications blocked — enable them in browser settings.");
+        return;
+      }
+    }
+    if (reminderTimeRow) reminderTimeRow.style.display = enabled ? "" : "none";
+    saveReminderSettings({ enabled, time: reminderTimeEl?.value || "16:30" });
+    scheduleShiftReminder();
+  });
+
+  reminderTimeEl?.addEventListener("change", () => {
+    saveReminderSettings({ enabled: !!reminderEnabled?.checked, time: reminderTimeEl.value });
+    scheduleShiftReminder();
+  });
 }
 
 // weekKey: optional "YYYY-MM-DD" week start. When provided, report covers that week only.
@@ -4793,6 +4822,16 @@ function renderInsights() {
   }
   const topType = Array.from(typeMap.entries()).sort((a, b) => b[1].earnings - a[1].earnings)[0];
 
+  // Comeback breakdown by job type (all-time)
+  const allOwn = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const allComebacks = filterEntriesByEmp(allOwn, empId).filter(e => e.isComeback);
+  const cbTypeMap = new Map();
+  for (const e of allComebacks) {
+    const t = e.type || e.typeText || "Unknown";
+    cbTypeMap.set(t, (cbTypeMap.get(t) || 0) + 1);
+  }
+  const topCbType = Array.from(cbTypeMap.entries()).sort((a, b) => b[1] - a[1])[0];
+
   const comebackClass = comebacks > 0 ? "insightValue--warn" : "";
 
   card.innerHTML = `
@@ -4815,11 +4854,95 @@ function renderInsights() {
       </div>
     </div>
     ${topType ? `<div class="insightTopEarner">Top earner: <strong>${escapeHtml(topType[0])}</strong> · ${formatMoney(topType[1].earnings)} · ${topType[1].count} job${topType[1].count !== 1 ? "s" : ""}</div>` : ""}
+    ${topCbType ? `<div class="insightTopEarner" style="color:var(--danger);margin-top:4px;">Most comebacks: <strong>${escapeHtml(topCbType[0])}</strong> · ${topCbType[1]}× all-time</div>` : ""}
     ${!weekEntries.length ? `<div class="muted small" style="margin-top:8px;">No entries this week yet.</div>` : ""}
   `;
 }
 
 window.renderInsights = renderInsights;
+
+function renderEarningsChart() {
+  const container = document.getElementById("earningsChart");
+  if (!container) return;
+
+  const empId = getEmpId();
+  if (!empId) { container.innerHTML = `<div class="muted small">Enter Employee # to see chart.</div>`; return; }
+
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const own = filterEntriesByEmp(all, empId);
+
+  const now = new Date();
+  const weeks = [];
+  for (let i = 11; i >= 0; i--) {
+    const ws = startOfWeekLocal(new Date());
+    ws.setDate(ws.getDate() - i * 7);
+    const we = endOfWeekLocal(ws);
+    const wsKey = dateKey(ws);
+    const weKey = dateKey(we);
+    const weekEntries = own.filter(e => e.dayKey && e.dayKey >= wsKey && e.dayKey <= weKey);
+    const pay = round2(weekEntries.reduce((s, e) => s + Number(e.earnings || 0), 0));
+    const hrs = round1(weekEntries.reduce((s, e) => s + Number(e.hours || 0), 0));
+    weeks.push({ wsKey, pay, hrs, isCurrent: i === 0 });
+  }
+
+  const maxPay = Math.max(...weeks.map(w => w.pay), 1);
+  const chartH = 90;
+  const barW = 18;
+  const gap = 5;
+  const totalW = weeks.length * (barW + gap) - gap;
+
+  const bars = weeks.map((w, i) => {
+    const x = i * (barW + gap);
+    const barH = w.pay > 0 ? Math.max(Math.round((w.pay / maxPay) * chartH), 3) : 0;
+    const y = chartH - barH;
+    const fill = w.isCurrent ? "var(--primary)" : "var(--surface3)";
+    const label = w.wsKey.slice(5).replace("-", "/");
+    const valText = w.pay >= 1000 ? `$${Math.round(w.pay / 1000 * 10) / 10}k`
+                  : w.pay > 0    ? `$${Math.round(w.pay)}` : "";
+    return `<g>
+      <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${fill}"/>
+      ${barH > 14 && valText ? `<text x="${x + barW / 2}" y="${y - 3}" text-anchor="middle" font-size="7" fill="${w.isCurrent ? "var(--primary)" : "var(--muted)"}" font-weight="700">${valText}</text>` : ""}
+      <text x="${x + barW / 2}" y="${chartH + 11}" text-anchor="middle" font-size="7" fill="var(--muted2)">${label}</text>
+    </g>`;
+  }).join("");
+
+  container.innerHTML = `
+    <svg width="100%" viewBox="-2 -16 ${totalW + 4} ${chartH + 28}" preserveAspectRatio="xMidYMid meet" style="display:block;overflow:visible">${bars}</svg>
+  `;
+}
+
+window.renderEarningsChart = renderEarningsChart;
+
+/* ── Shift reminder ──────────────────────────────── */
+const LS_REMINDER = "fr_shift_reminder";
+
+function getReminderSettings() {
+  try { return JSON.parse(localStorage.getItem(LS_REMINDER) || "{}"); } catch { return {}; }
+}
+
+function saveReminderSettings(patch) {
+  localStorage.setItem(LS_REMINDER, JSON.stringify({ ...getReminderSettings(), ...patch }));
+}
+
+function scheduleShiftReminder() {
+  clearTimeout(window.__FR_REMINDER__);
+  const s = getReminderSettings();
+  if (!s.enabled || !s.time) return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const [h, m] = String(s.time).split(":").map(Number);
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+  if (target <= now) return;
+  window.__FR_REMINDER__ = setTimeout(() => {
+    new Notification("Flat-Rate Tracker", {
+      body: "End of shift — log your hours before you leave!",
+      icon: "/flat-rate-log/icon-192.png",
+    });
+  }, target.getTime() - now.getTime());
+}
+
+window.scheduleShiftReminder = scheduleShiftReminder;
+
 window.__FR = window.__FR || {};
 
 window.BUILD = "20260316-weekend-stable";
@@ -5137,8 +5260,10 @@ async function runOnce() {
     document.getElementById("payStubNextWeekBtn")?.addEventListener("click", () => stepPayStubWeek(7));
 
     initSettingsUI?.();
+    scheduleShiftReminder?.();
     await safeLoadEntries();
     renderInsights?.();
+    renderEarningsChart?.();
     if (hasGalleryUi) {
       initPhotosUI();
     }
