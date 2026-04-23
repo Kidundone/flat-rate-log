@@ -422,9 +422,100 @@ async function savePayStubEntry() {
   }
 
   renderPayStubComparison();
+  renderPayTrend();
   if (typeof refreshUI === "function") await refreshUI(CURRENT_ENTRIES);
   alert("Pay stub saved.");
 }
+
+function renderPayTrend() {
+  const container = document.getElementById("payTrendCard");
+  if (!container) return;
+
+  const empId = getEmpId();
+  if (!empId) {
+    container.innerHTML = `<div class="muted small" style="padding:14px 16px;">Enter Employee # to see pay trend.</div>`;
+    return;
+  }
+
+  const stubMap = loadPayStubMap();
+  const stubs = Object.values(stubMap)
+    .filter(s => s.weekStartKey)
+    .sort((a, b) => b.weekStartKey.localeCompare(a.weekStartKey));
+
+  if (!stubs.length) {
+    container.innerHTML = `<div class="muted small" style="padding:14px 16px;">No pay stubs recorded yet. Log what you were paid each week in the Pay Stub section above.</div>`;
+    return;
+  }
+
+  const all = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const own = filterEntriesByEmp(all, empId);
+
+  let totalShort = 0;
+  let weeksShort = 0;
+
+  const rows = stubs.map(stub => {
+    const ws = parseDateInputValue(stub.weekStartKey);
+    if (!ws) return null;
+    const we = endOfWeekLocal(ws);
+    const wsKey = dateKey(ws);
+    const weKey = dateKey(we);
+
+    const weekEntries = own.filter(e => e.dayKey && e.dayKey >= wsKey && e.dayKey <= weKey);
+    const loggedPay  = round2(weekEntries.reduce((s, e) => s + Number(e.earnings || 0), 0));
+    const loggedHrs  = round1(weekEntries.reduce((s, e) => s + Number(e.hours   || 0), 0));
+    const paidAmt    = round2(Number(stub.amountPaid || 0));
+    const paidHrs    = round1(Number(stub.hoursPaid  || 0));
+    const delta      = round2(paidAmt - loggedPay);
+
+    if (delta < -0.01) { weeksShort++; totalShort = round2(totalShort + Math.abs(delta)); }
+
+    const wsDate = ws;
+    const weDate = we;
+    const mo = (d) => d.toLocaleDateString("en-US", { month: "short" });
+    const dy = (d) => d.getDate();
+    const weekLabel = mo(wsDate) === mo(weDate)
+      ? `${mo(wsDate)} ${dy(wsDate)}–${dy(weDate)}`
+      : `${mo(wsDate)} ${dy(wsDate)} – ${mo(weDate)} ${dy(weDate)}`;
+
+    return { loggedPay, loggedHrs, paidAmt, paidHrs, delta, weekLabel, isShort: delta < -0.01, isOver: delta > 0.01 };
+  }).filter(Boolean);
+
+  const allOk = weeksShort === 0;
+  const summaryText = allOk
+    ? `All ${stubs.length} recorded week${stubs.length !== 1 ? "s" : ""} paid correctly ✓`
+    : `Underpaid ${weeksShort} of ${stubs.length} week${stubs.length !== 1 ? "s" : ""} · ${formatMoney(totalShort)} short total`;
+
+  const rowsHtml = rows.map(r => {
+    const deltaText  = r.isShort ? `−${formatMoney(Math.abs(r.delta))}` : r.isOver ? `+${formatMoney(r.delta)}` : "Even";
+    const deltaClass = r.isShort ? "ptDeltaShort" : r.isOver ? "ptDeltaOver" : "ptDeltaEven";
+    return `
+      <div class="ptRow${r.isShort ? " ptRow--short" : ""}">
+        <div class="ptWeek">${r.weekLabel}</div>
+        <div class="ptCols">
+          <div class="ptCol">
+            <div class="ptColLabel">Logged</div>
+            <div class="ptColVal">${formatMoney(r.loggedPay)}</div>
+            <div class="ptColSub">${r.loggedHrs} hrs</div>
+          </div>
+          <div class="ptCol">
+            <div class="ptColLabel">Paid</div>
+            <div class="ptColVal">${r.paidAmt > 0 ? formatMoney(r.paidAmt) : "—"}</div>
+            <div class="ptColSub">${r.paidHrs > 0 ? `${r.paidHrs} hrs` : "—"}</div>
+          </div>
+          <div class="ptCol ptColRight">
+            <div class="ptColLabel">Delta</div>
+            <div class="ptColVal ${deltaClass}">${deltaText}</div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="ptSummary ${allOk ? "ptSummaryOk" : "ptSummaryWarn"}">${summaryText}</div>
+    <div class="ptList">${rowsHtml}</div>`;
+}
+
+window.renderPayTrend = renderPayTrend;
 
 function initPayStubUI() {
   const weekEl = document.getElementById("payStubWeekEnding");

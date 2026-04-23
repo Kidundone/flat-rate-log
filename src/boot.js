@@ -317,6 +317,7 @@ async function runOnce() {
     await safeLoadEntries();
     renderInsights?.();
     renderEarningsChart?.();
+    renderPayTrend?.();
     if (hasGalleryUi) {
       initPhotosUI();
     }

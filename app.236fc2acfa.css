@@ -1710,6 +1710,67 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   border-color: var(--stroke2);
 }
 
+/* ── Short-pay trend ─────────────────────────────── */
+.ptSummary {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--stroke);
+}
+.ptSummaryWarn { color: var(--danger); background: rgba(237,73,86,.07); }
+.ptSummaryOk   { color: #10b981; }
+
+.ptList { }
+
+.ptRow {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--stroke);
+}
+.ptRow:last-child { border-bottom: 0; }
+.ptRow--short { background: rgba(237,73,86,.05); }
+
+.ptWeek {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+
+.ptCols {
+  display: flex;
+  gap: 0;
+}
+
+.ptCol { flex: 1; }
+.ptColRight { text-align: right; }
+
+.ptColLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+
+.ptColVal {
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 2px;
+  letter-spacing: -.3px;
+}
+
+.ptColSub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.ptDeltaShort { color: var(--danger); }
+.ptDeltaOver  { color: #10b981; }
+.ptDeltaEven  { color: var(--muted); }
+
 /* ── Compact list mode ───────────────────────────── */
 body.compact .item    { padding: 9px 12px; }
 body.compact .itemTop { font-size: 13px; }
