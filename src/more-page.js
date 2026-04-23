@@ -218,9 +218,8 @@ function comparePayroll(expected, actual){
 
 function getPayStubAuditContext() {
   const weekEl = document.getElementById("payStubWeekEnding");
-  const hoursEl = document.getElementById("payStubHoursPaid");
   const amountEl = document.getElementById("payStubAmountPaid");
-  if (!weekEl || !hoursEl || !amountEl) {
+  if (!weekEl || !amountEl) {
     return { error: "Pay stub fields are not available on this page." };
   }
 
@@ -230,10 +229,8 @@ function getPayStubAuditContext() {
   const weekStartKey = weekStartKeyFromDateInput(weekEnding);
   if (!weekStartKey) return { error: "Week ending date is invalid." };
 
-  const hoursPaid = Number(hoursEl.value || 0);
   const amountPaid = Number(amountEl.value || 0);
-  if (!Number.isFinite(hoursPaid) || hoursPaid < 0) return { error: "Hours paid must be a number >= 0." };
-  if (!Number.isFinite(amountPaid) || amountPaid < 0) return { error: "Amount paid must be a number >= 0." };
+  if (!Number.isFinite(amountPaid) || amountPaid < 0) return { error: "Check amount must be a number >= 0." };
 
   const { totals, entries } = expectedTotalsForWeekKey(weekStartKey);
   const expected = {
@@ -241,7 +238,7 @@ function getPayStubAuditContext() {
     pay: Number(totals?.dollars || 0),
   };
   const actual = {
-    hours: hoursPaid,
+    hours: expected.hours,
     pay: amountPaid,
   };
   const comparison = comparePayroll(expected, actual);
@@ -262,35 +259,27 @@ function getPayStubAuditContext() {
 
 function hydratePayStubFormForWeek(weekStartKey) {
   const weekEl = document.getElementById("payStubWeekEnding");
-  const hoursEl = document.getElementById("payStubHoursPaid");
   const amountEl = document.getElementById("payStubAmountPaid");
-  if (!weekEl || !hoursEl || !amountEl) return;
+  if (!weekEl || !amountEl) return;
 
   const key = String(weekStartKey || "").trim();
   const stub = getPayStubForWeekKey(key);
   if (stub) {
     weekEl.value = stub.weekEnding || weekEndingForWeekStartKey(key);
-    hoursEl.value = String(Number(stub.hoursPaid || 0));
-    amountEl.value = String(Number(stub.amountPaid || 0));
+    amountEl.value = stub.amountPaid > 0 ? String(Number(stub.amountPaid)) : "";
     return;
   }
 
   const weekEnd = weekEndingForWeekStartKey(key);
   if (weekEnd) weekEl.value = weekEnd;
-
-  const startDate = parseDateInputValue(key);
-  const paid = startDate ? getPaidRecordForWeekStart(startDate) : null;
-  hoursEl.value = paid != null && Number(paid || 0) > 0 ? String(Number(paid)) : "";
   amountEl.value = "";
 }
 
 function renderPayStubComparison() {
   const weekEl = document.getElementById("payStubWeekEnding");
-  const hoursEl = document.getElementById("payStubHoursPaid");
-  const amountEl = document.getElementById("payStubAmountPaid");
   const summaryEl = document.getElementById("payStubSummary");
   const detailsEl = document.getElementById("payStubExpected");
-  if (!weekEl || !hoursEl || !amountEl || !summaryEl || !detailsEl) return;
+  if (!weekEl || !summaryEl || !detailsEl) return;
 
   if (!weekEl.value) {
     weekEl.value = dateKey(endOfWeekLocal(new Date()));
@@ -300,16 +289,29 @@ function renderPayStubComparison() {
   if (ctx.error) {
     summaryEl.textContent = ctx.error;
     detailsEl.textContent = "";
-    renderMissingWorkReview();
     return;
   }
 
-  summaryEl.textContent = `Week: ${ctx.weekStartKey}${ctx.weekEnd ? ` → ${ctx.weekEnd}` : ""}`;
+  const checkAmt = ctx.actual.pay;
+  const loggedPay = ctx.expected.pay;
+  const loggedHrs = ctx.expected.hours;
+  const delta = round2(checkAmt - loggedPay);
+
+  summaryEl.textContent = `Week of ${ctx.weekStartKey}${ctx.weekEnd ? ` → ${ctx.weekEnd}` : ""}`;
+
+  if (checkAmt <= 0) {
+    detailsEl.textContent = `Logged: ${formatHours(loggedHrs)} hrs • ${formatMoney(loggedPay)}`;
+    return;
+  }
+
+  const deltaLabel = delta > 0.01
+    ? `+${formatMoney(delta)} (overpaid)`
+    : delta < -0.01
+      ? `−${formatMoney(Math.abs(delta))} short`
+      : "Even";
+
   detailsEl.textContent =
-    `Paid: ${formatHours(ctx.actual.hours)} hrs • ${formatMoney(ctx.actual.pay)} | ` +
-    `Expected: ${formatHours(ctx.expected.hours)} hrs • ${formatMoney(ctx.expected.pay)} | ` +
-    `Missing (expected-actual): ${signedHoursLabel(ctx.comparison.missingHours)} hrs • ${signedMoneyLabel(ctx.comparison.missingPay)}`;
-  renderMissingWorkReview();
+    `Logged: ${formatHours(loggedHrs)} hrs • ${formatMoney(loggedPay)} | Check: ${formatMoney(checkAmt)} | ${deltaLabel}`;
 }
 
 function drawAuditLines(doc, rows, left, startY) {
@@ -357,12 +359,10 @@ async function exportAuditReport() {
     `Week Ending: ${ctx.weekEnding}`,
     `Week Range: ${ctx.weekStartKey}${ctx.weekEnd ? ` -> ${ctx.weekEnd}` : ""}`,
     "",
-    `Actual Paid Hours: ${formatHours(ctx.actual.hours)}`,
-    `Actual Amount Paid: ${formatMoney(ctx.actual.pay)}`,
-    `Expected Hours: ${formatHours(ctx.expected.hours)}`,
-    `Expected Pay: ${formatMoney(ctx.expected.pay)}`,
-    `Missing Hours (expected-actual): ${signedHoursLabel(ctx.comparison.missingHours)}`,
-    `Missing Pay (expected-actual): ${signedMoneyLabel(ctx.comparison.missingPay)}`,
+    `Check Amount: ${ctx.actual.pay > 0 ? formatMoney(ctx.actual.pay) : "Not entered"}`,
+    `Logged Hours: ${formatHours(ctx.expected.hours)}`,
+    `Logged Pay: ${formatMoney(ctx.expected.pay)}`,
+    `Delta (check - logged): ${signedMoneyLabel(ctx.comparison.missingPay * -1)}`,
     "",
     `Entries used in expected totals: ${ctx.entries.length}`,
     "RO      Type      Day      Hours      Pay",
@@ -394,17 +394,14 @@ async function exportAuditReport() {
 
 async function savePayStubEntry() {
   const weekEl = document.getElementById("payStubWeekEnding");
-  const hoursEl = document.getElementById("payStubHoursPaid");
   const amountEl = document.getElementById("payStubAmountPaid");
-  if (!weekEl || !hoursEl || !amountEl) return;
+  if (!weekEl || !amountEl) return;
 
   const weekEnding = String(weekEl.value || "").trim();
-  const hoursPaid = Number(hoursEl.value || 0);
   const amountPaid = Number(amountEl.value || 0);
 
   if (!weekEnding) return alert("Week ending is required.");
-  if (!Number.isFinite(hoursPaid) || hoursPaid < 0) return alert("Hours paid must be a number >= 0.");
-  if (!Number.isFinite(amountPaid) || amountPaid < 0) return alert("Amount paid must be a number >= 0.");
+  if (!Number.isFinite(amountPaid) || amountPaid <= 0) return alert("Enter a check amount greater than 0.");
 
   const weekStartKey = weekStartKeyFromDateInput(weekEnding);
   if (!weekStartKey) return alert("Week ending date is invalid.");
@@ -412,19 +409,14 @@ async function savePayStubEntry() {
   upsertPayStubEntry({
     weekStartKey,
     weekEnding,
-    hoursPaid,
+    hoursPaid: 0,
     amountPaid,
   });
-
-  const thisWeekKey = dateKey(startOfWeekLocal(new Date()));
-  if (weekStartKey === thisWeekKey) {
-    await setThisWeekFlag(hoursPaid);
-  }
 
   renderPayStubComparison();
   renderPayTrend();
   if (typeof refreshUI === "function") await refreshUI(CURRENT_ENTRIES);
-  alert("Pay stub saved.");
+  toast("Pay stub saved.");
 }
 
 function renderPayTrend() {
@@ -464,7 +456,6 @@ function renderPayTrend() {
     const loggedPay  = round2(weekEntries.reduce((s, e) => s + Number(e.earnings || 0), 0));
     const loggedHrs  = round1(weekEntries.reduce((s, e) => s + Number(e.hours   || 0), 0));
     const paidAmt    = round2(Number(stub.amountPaid || 0));
-    const paidHrs    = round1(Number(stub.hoursPaid  || 0));
     const delta      = round2(paidAmt - loggedPay);
 
     if (delta < -0.01) { weeksShort++; totalShort = round2(totalShort + Math.abs(delta)); }
@@ -477,7 +468,7 @@ function renderPayTrend() {
       ? `${mo(wsDate)} ${dy(wsDate)}–${dy(weDate)}`
       : `${mo(wsDate)} ${dy(wsDate)} – ${mo(weDate)} ${dy(weDate)}`;
 
-    return { loggedPay, loggedHrs, paidAmt, paidHrs, delta, weekLabel, isShort: delta < -0.01, isOver: delta > 0.01 };
+    return { loggedPay, loggedHrs, paidAmt, delta, weekLabel, isShort: delta < -0.01, isOver: delta > 0.01 };
   }).filter(Boolean);
 
   const allOk = weeksShort === 0;
@@ -498,9 +489,8 @@ function renderPayTrend() {
             <div class="ptColSub">${r.loggedHrs} hrs</div>
           </div>
           <div class="ptCol">
-            <div class="ptColLabel">Paid</div>
+            <div class="ptColLabel">Check</div>
             <div class="ptColVal">${r.paidAmt > 0 ? formatMoney(r.paidAmt) : "—"}</div>
-            <div class="ptColSub">${r.paidHrs > 0 ? `${r.paidHrs} hrs` : "—"}</div>
           </div>
           <div class="ptCol ptColRight">
             <div class="ptColLabel">Delta</div>
@@ -517,11 +507,65 @@ function renderPayTrend() {
 
 window.renderPayTrend = renderPayTrend;
 
+async function _callScanPayStub(base64, mediaType = "image/jpeg") {
+  const sbInstance = window.__FR?.sb;
+  const { data: { session } } = await sbInstance.auth.getSession();
+  const token = session?.access_token || window.__SUPABASE_CONFIG__.anonKey;
+  const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-paystub`;
+  const res = await fetch(fnUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "apikey": window.__SUPABASE_CONFIG__.anonKey,
+    },
+    body: JSON.stringify({ imageBase64: base64, mediaType }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Scan failed (${res.status}): ${txt}`);
+  }
+  return res.json();
+}
+
+async function scanPayStub(file) {
+  const amountEl = document.getElementById("payStubAmountPaid");
+  const scanBtn = document.getElementById("scanCheckBtn");
+  if (!amountEl || !scanBtn) return;
+
+  const origText = scanBtn.textContent;
+  scanBtn.textContent = "Scanning…";
+  scanBtn.disabled = true;
+
+  try {
+    const dataUrl = await compressImageFileToDataUrl(file, 1200, 0.75);
+    const base64 = dataUrl.split(",")[1];
+    const mediaType = dataUrl.startsWith("data:image/png") ? "image/png" : "image/jpeg";
+
+    const result = await _callScanPayStub(base64, mediaType);
+
+    if (result.gross != null && result.gross > 0) {
+      amountEl.value = String(result.gross);
+      amountEl.dispatchEvent(new Event("input"));
+      toast(`Found: ${formatMoney(result.gross)}`);
+    } else if (result.error) {
+      toast(`Scan: ${result.error}`);
+    } else {
+      toast("Could not find gross pay — enter manually.");
+    }
+  } catch (e) {
+    console.warn("[scanPayStub]", e?.message || e);
+    toast(`Scan failed: ${e?.message || "try again"}`);
+  } finally {
+    scanBtn.textContent = origText;
+    scanBtn.disabled = false;
+  }
+}
+
 function initPayStubUI() {
   const weekEl = document.getElementById("payStubWeekEnding");
-  const hoursEl = document.getElementById("payStubHoursPaid");
   const amountEl = document.getElementById("payStubAmountPaid");
-  if (!weekEl || !hoursEl || !amountEl) return;
+  if (!weekEl || !amountEl) return;
 
   if (!weekEl.value) weekEl.value = dateKey(endOfWeekLocal(new Date()));
 
@@ -534,8 +578,18 @@ function initPayStubUI() {
     if (key) hydratePayStubFormForWeek(key);
     renderPayStubComparison();
   });
-  hoursEl.addEventListener("input", renderPayStubComparison);
   amountEl.addEventListener("input", renderPayStubComparison);
+
+  const scanBtn = document.getElementById("scanCheckBtn");
+  const picker = document.getElementById("checkStubPicker");
+  if (scanBtn && picker) {
+    scanBtn.addEventListener("click", () => picker.click());
+    picker.addEventListener("change", () => {
+      const file = picker.files?.[0];
+      if (file) scanPayStub(file);
+      picker.value = "";
+    });
+  }
 }
 
 window.comparePayroll = comparePayroll;
