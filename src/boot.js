@@ -218,11 +218,10 @@ async function runOnce() {
     document.getElementById("typeText")?.addEventListener("input", syncClearTypeBtn);
     document.getElementById("typeText")?.addEventListener("change", syncClearTypeBtn);
 
-    // Show type chips on focus, hide on blur — no DOM changes while typing
+    // Strip is rendered once after load; focus/blur only toggle visibility
     const typeStrip = document.getElementById("typeSuggestStrip");
     document.getElementById("typeText")?.addEventListener("focus", () => {
-      if (typeStrip && !typeStrip.hidden) return;
-      renderTypeDatalist?.();
+      if (typeStrip) typeStrip.hidden = false;
     });
     document.getElementById("typeText")?.addEventListener("blur", () => {
       if (typeStrip) typeStrip.hidden = true;
