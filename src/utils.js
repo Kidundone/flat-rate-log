@@ -4,7 +4,7 @@ const SETTINGS_DEFAULTS = Object.freeze({
   defaultRate: 15,
   accentColor: "#0095f6",
   compactList: false,
-  darkMode: true,
+  darkMode: "auto",
 });
 
 function getSettings() {
@@ -23,14 +23,24 @@ function saveSettings(patch) {
   return updated;
 }
 
+function resolveDarkMode(dm) {
+  if (dm === "auto" || dm === undefined || dm === null) {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+  }
+  return dm === true || dm === "dark";
+}
+
 function applySettings(s = getSettings()) {
   const color = s.accentColor || SETTINGS_DEFAULTS.accentColor;
   document.documentElement.style.setProperty("--primary", color);
   document.documentElement.style.setProperty("--accent", color);
   document.body.classList.toggle("compact", !!s.compactList);
-  // darkMode: true = dark (default), false = light
-  const isDark = s.darkMode !== false;
-  document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
+  document.documentElement.setAttribute("data-theme", resolveDarkMode(s.darkMode) ? "dark" : "light");
+
+  if (!window.__FR_DM_MQ_WIRED__) {
+    window.__FR_DM_MQ_WIRED__ = true;
+    window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", () => applySettings());
+  }
 }
 
 function getDefaultRate() {

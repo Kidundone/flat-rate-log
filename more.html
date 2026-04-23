@@ -86,13 +86,14 @@
 
       <div class="moreRow">
         <div>
-          <div class="moreRowLabel">Dark Mode</div>
-          <div class="moreRowSub">Switch between dark and light theme</div>
+          <div class="moreRowLabel">Appearance</div>
+          <div class="moreRowSub">Auto follows system setting</div>
         </div>
-        <label class="moreToggle">
-          <input id="settingsDarkMode" type="checkbox" />
-          <span class="moreToggleTrack"></span>
-        </label>
+        <div class="seg">
+          <button class="segBtn" id="dmAuto" type="button">Auto</button>
+          <button class="segBtn" id="dmLight" type="button">Light</button>
+          <button class="segBtn" id="dmDark" type="button">Dark</button>
+        </div>
       </div>
 
       <div class="moreDivider"></div>
@@ -124,6 +125,35 @@
       <div id="reminderTimeRow" class="moreRow" style="display:none;">
         <div class="moreRowLabel">Reminder Time</div>
         <input id="reminderTime" type="time" class="moreInput moreInputNarrow" value="16:30" />
+      </div>
+
+      <div class="moreDivider"></div>
+
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">Payday Reminder</div>
+          <div class="moreRowSub">Reminds you to log your pay stub</div>
+        </div>
+        <label class="moreToggle">
+          <input id="paydayReminderEnabled" type="checkbox" />
+          <span class="moreToggleTrack"></span>
+        </label>
+      </div>
+
+      <div id="paydayReminderRow" class="moreRow" style="display:none;">
+        <div class="moreRowLabel">Payday</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="paydayDay" class="moreInput moreInputNarrow">
+            <option value="1">Mon</option>
+            <option value="2">Tue</option>
+            <option value="3">Wed</option>
+            <option value="4">Thu</option>
+            <option value="5" selected>Fri</option>
+            <option value="6">Sat</option>
+            <option value="0">Sun</option>
+          </select>
+          <input id="paydayTime" type="time" class="moreInput moreInputNarrow" value="09:00" />
+        </div>
       </div>
 
       <div class="moreSaveRow">
@@ -300,6 +330,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.3e2e89fd85.js" defer></script>
+  <script src="/flat-rate-log/app.b0c19a0e4c.js" defer></script>
 </body>
 </html>

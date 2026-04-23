@@ -322,6 +322,7 @@ window.__FR.updateEarningsPreview = updateEarningsPreview;
 window.__FR.repeatLastEntry = repeatLastEntry;
 window.__FR.deleteSelectedEntries = deleteSelectedEntries;
 window.__FR.checkDuplicates = checkDuplicates;
+window.__FR.bulkEditRate = bulkEditRate;
 
 async function saveEntry(entry, options = {}) {
   const preserveType = !!options.preserveType;
@@ -779,17 +780,33 @@ window.__FR.maybeShowOnboarding = maybeShowOnboarding;
 async function flushPendingSync() {
   const q = getPendingQueue();
   if (!q.length) return;
+
+  // Drop stale items older than 14 days (irrecoverable)
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  getPendingQueue().filter(x => x.queuedAt && x.queuedAt < cutoff).forEach(x => removePendingById(x.id));
+
   let synced = 0;
-  for (const item of [...q]) {
+  let alreadyExists = 0;
+  for (const item of [...getPendingQueue()]) {
     try {
       await apiCreateLog(item.payload, item.entry);
       removePendingById(item.id);
       synced++;
-    } catch { break; }
+    } catch (err) {
+      // 23505 = Postgres duplicate key — partial sync already landed; just dequeue
+      if (err?.code === "23505" || err?.status === 409 || String(err?.message).includes("duplicate")) {
+        removePendingById(item.id);
+        alreadyExists++;
+      }
+      // continue trying remaining items regardless of error type
+    }
   }
   if (synced > 0) {
     toast(`${synced} offline entr${synced === 1 ? "y" : "ies"} synced`);
     await safeLoadEntries();
+  }
+  if (alreadyExists > 0) {
+    toast(`${alreadyExists} duplicate${alreadyExists > 1 ? "s" : ""} cleared — already on server`);
   }
   updatePendingBadge();
 }
@@ -1262,9 +1279,40 @@ function setEntrySelectedById(id, selected) {
 }
 
 function syncSelectionUI() {
-  const hasSelection = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).some(e => e.selected);
+  const selected = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).filter(e => e.selected);
+  const hasSelection = selected.length > 0;
   const listCard = document.getElementById("entryList")?.closest?.(".card");
   listCard?.classList.toggle("has-selection", hasSelection);
+
+  const bulkBar = document.getElementById("bulkBar");
+  const bulkCount = document.getElementById("bulkCount");
+  if (bulkBar) bulkBar.style.display = hasSelection ? "" : "none";
+  if (bulkCount) bulkCount.textContent = `${selected.length} selected`;
+}
+
+async function bulkEditRate() {
+  const selected = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).filter(e => e.selected);
+  if (!selected.length) return;
+  const rateEl = document.getElementById("bulkRateInput");
+  const rateVal = parseFloat(rateEl?.value);
+  if (!Number.isFinite(rateVal) || rateVal < 0) { toast("Enter a valid rate first."); return; }
+
+  let updated = 0;
+  for (const e of selected) {
+    try {
+      const newEarnings = round2(Number(e.hours) * rateVal);
+      await saveEditedLog(e.id, { cash_amount: newEarnings });
+      const idx = (window.CURRENT_ENTRIES || []).findIndex(x => String(x.id) === String(e.id));
+      if (idx >= 0) {
+        window.CURRENT_ENTRIES[idx] = { ...window.CURRENT_ENTRIES[idx], rate: rateVal, earnings: newEarnings, selected: false };
+        CURRENT_ENTRIES = window.CURRENT_ENTRIES;
+      }
+      updated++;
+    } catch {}
+  }
+  if (rateEl) rateEl.value = "";
+  toast(`Rate updated on ${updated} entr${updated === 1 ? "y" : "ies"}`);
+  await refreshUI(CURRENT_ENTRIES);
 }
 
 function renderList(entries, mode){

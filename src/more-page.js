@@ -896,20 +896,38 @@ async function exportAllCsvAdmin() {
 function initSettingsUI() {
   const rateInput     = document.getElementById("settingsDefaultRate");
   const compactToggle = document.getElementById("settingsCompactList");
-  const darkToggle    = document.getElementById("settingsDarkMode");
   const colorPicker   = document.getElementById("accentColorInput");
   const colorPreview  = document.getElementById("accentColorPreview");
   const saveBtn       = document.getElementById("settingsSaveBtn");
 
   const s = getSettings();
+  let activeDarkMode = s.darkMode ?? "auto";
+  // Normalize legacy boolean values
+  if (activeDarkMode === true) activeDarkMode = "dark";
+  if (activeDarkMode === false) activeDarkMode = "light";
 
-  if (rateInput)   rateInput.value      = String(s.defaultRate || 15);
+  if (rateInput)   rateInput.value        = String(s.defaultRate || 15);
   if (compactToggle) compactToggle.checked = !!s.compactList;
-  if (darkToggle)  darkToggle.checked   = s.darkMode !== false;
-  if (colorPicker) colorPicker.value    = s.accentColor || "#0095f6";
+  if (colorPicker) colorPicker.value      = s.accentColor || "#0095f6";
   if (colorPreview) colorPreview.style.background = s.accentColor || "#0095f6";
 
-  // Live preview as user drags the color wheel
+  const syncDmBtns = () => {
+    ["dmAuto", "dmLight", "dmDark"].forEach(id => {
+      const mode = id === "dmAuto" ? "auto" : id === "dmLight" ? "light" : "dark";
+      document.getElementById(id)?.classList.toggle("active", activeDarkMode === mode);
+    });
+  };
+  syncDmBtns();
+
+  ["dmAuto", "dmLight", "dmDark"].forEach(id => {
+    document.getElementById(id)?.addEventListener("click", () => {
+      activeDarkMode = id === "dmAuto" ? "auto" : id === "dmLight" ? "light" : "dark";
+      syncDmBtns();
+      applySettings({ ...getSettings(), darkMode: activeDarkMode });
+    });
+  });
+
+  // Live color preview
   colorPicker?.addEventListener("input", (e) => {
     const c = e.target.value;
     if (colorPreview) colorPreview.style.background = c;
@@ -917,23 +935,16 @@ function initSettingsUI() {
     document.documentElement.style.setProperty("--accent", c);
   });
 
-  // Live dark/light toggle
-  darkToggle?.addEventListener("change", () => {
-    const isDark = !!darkToggle.checked;
-    document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
-  });
-
   saveBtn?.addEventListener("click", () => {
     const color   = colorPicker?.value   || s.accentColor;
     const rate    = parseFloat(rateInput?.value) || 15;
     const compact = compactToggle?.checked ?? false;
-    const dark    = darkToggle?.checked !== false;
-    saveSettings({ defaultRate: rate, accentColor: color, compactList: compact, darkMode: dark });
+    saveSettings({ defaultRate: rate, accentColor: color, compactList: compact, darkMode: activeDarkMode });
     saveBtn.textContent = "Saved!";
     setTimeout(() => { saveBtn.textContent = "Save Preferences"; }, 1800);
   });
 
-  // Shift reminder
+  // ── Shift reminder ──
   const reminderEnabled = document.getElementById("reminderEnabled");
   const reminderTimeRow = document.getElementById("reminderTimeRow");
   const reminderTimeEl  = document.getElementById("reminderTime");
@@ -961,6 +972,39 @@ function initSettingsUI() {
     saveReminderSettings({ enabled: !!reminderEnabled?.checked, time: reminderTimeEl.value });
     scheduleShiftReminder();
   });
+
+  // ── Payday reminder ──
+  const paydayEnabled  = document.getElementById("paydayReminderEnabled");
+  const paydayRow      = document.getElementById("paydayReminderRow");
+  const paydayDayEl    = document.getElementById("paydayDay");
+  const paydayTimeEl   = document.getElementById("paydayTime");
+  const ps = getPaydaySettings();
+  if (paydayEnabled) paydayEnabled.checked = !!ps.enabled;
+  if (paydayDayEl && ps.day != null) paydayDayEl.value = String(ps.day);
+  if (paydayTimeEl && ps.time) paydayTimeEl.value = ps.time;
+  if (paydayRow) paydayRow.style.display = ps.enabled ? "" : "none";
+
+  paydayEnabled?.addEventListener("change", async () => {
+    const enabled = !!paydayEnabled.checked;
+    if (enabled && "Notification" in window && Notification.permission === "default") {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        paydayEnabled.checked = false;
+        toast("Notifications blocked — enable them in browser settings.");
+        return;
+      }
+    }
+    if (paydayRow) paydayRow.style.display = enabled ? "" : "none";
+    savePaydaySettings({ enabled, day: Number(paydayDayEl?.value ?? 5), time: paydayTimeEl?.value || "09:00" });
+    schedulePaydayReminder();
+  });
+
+  const syncPaydayTime = () => {
+    savePaydaySettings({ enabled: !!paydayEnabled?.checked, day: Number(paydayDayEl?.value ?? 5), time: paydayTimeEl?.value || "09:00" });
+    schedulePaydayReminder();
+  };
+  paydayDayEl?.addEventListener("change", syncPaydayTime);
+  paydayTimeEl?.addEventListener("change", syncPaydayTime);
 }
 
 // weekKey: optional "YYYY-MM-DD" week start. When provided, report covers that week only.
@@ -1231,6 +1275,40 @@ function renderEarningsChart() {
 }
 
 window.renderEarningsChart = renderEarningsChart;
+
+/* ── Payday reminder ──────────────────────────────── */
+const LS_PAYDAY = "fr_payday_reminder";
+
+function getPaydaySettings() {
+  try { return JSON.parse(localStorage.getItem(LS_PAYDAY) || "{}"); } catch { return {}; }
+}
+
+function savePaydaySettings(patch) {
+  localStorage.setItem(LS_PAYDAY, JSON.stringify({ ...getPaydaySettings(), ...patch }));
+}
+
+function schedulePaydayReminder() {
+  clearTimeout(window.__FR_PAYDAY__);
+  const s = getPaydaySettings();
+  if (!s.enabled) return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const [h, m] = String(s.time || "09:00").split(":").map(Number);
+  const targetDay = Number(s.day ?? 5);
+  const now = new Date();
+  const d = new Date(now);
+  const daysUntil = ((targetDay - d.getDay()) + 7) % 7 || 7;
+  d.setDate(d.getDate() + daysUntil);
+  d.setHours(h, m, 0, 0);
+  window.__FR_PAYDAY__ = setTimeout(() => {
+    new Notification("Flat-Rate Tracker", {
+      body: "Payday! Remember to log your pay stub.",
+      icon: "/flat-rate-log/icon-192.png",
+    });
+    schedulePaydayReminder();
+  }, d.getTime() - now.getTime());
+}
+
+window.schedulePaydayReminder = schedulePaydayReminder;
 
 /* ── Shift reminder ──────────────────────────────── */
 const LS_REMINDER = "fr_shift_reminder";

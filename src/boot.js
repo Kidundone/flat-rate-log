@@ -219,6 +219,14 @@ async function runOnce() {
 
     document.getElementById("repeatLastBtn")?.addEventListener("click", () => repeatLastEntry?.());
     document.getElementById("deleteSelectedBtn")?.addEventListener("click", () => deleteSelectedEntries?.());
+    document.getElementById("bulkApplyBtn")?.addEventListener("click", () => bulkEditRate?.());
+    document.getElementById("bulkCancelBtn")?.addEventListener("click", () => {
+      if (Array.isArray(window.CURRENT_ENTRIES)) {
+        window.CURRENT_ENTRIES.forEach(e => { e.selected = false; });
+        CURRENT_ENTRIES = window.CURRENT_ENTRIES;
+      }
+      refreshUI?.(CURRENT_ENTRIES);
+    });
     ["ref", "typeText", "hours"].forEach(id =>
       document.getElementById(id)?.addEventListener("input", () => checkDuplicates?.())
     );
@@ -333,6 +341,7 @@ async function runOnce() {
 
     initSettingsUI?.();
     scheduleShiftReminder?.();
+    schedulePaydayReminder?.();
     await safeLoadEntries();
     renderInsights?.();
     renderEarningsChart?.();
