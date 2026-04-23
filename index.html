@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.12687d0c93.css">
+  <link rel="stylesheet" href="./app.e81ed7247a.css">
 </head>
 <body data-page="main">
 
@@ -17,7 +17,6 @@
   <div class="u-row" style="gap:10px;align-items:center;">
     <span id="headerTodayTotal" class="headerTotal"></span>
     <span id="offlineDot" class="offlineDot" style="display:none;" title="Offline"></span>
-    <a class="btn primary headerMoreBtn" href="./more.html">More<span id="shortPayBadge" class="shortPayBadge" style="display:none;"></span></a>
   </div>
 </header>
 
@@ -359,6 +358,17 @@
 
 </main>
 
+<nav class="tabBar" role="navigation" aria-label="Main navigation">
+  <a class="tabItem tabItem--active" href="./index.html" aria-current="page">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h6M12 9v6"/></svg>
+    <span>Log</span>
+  </a>
+  <a class="tabItem" href="./more.html">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/></svg>
+    <span>More<span id="shortPayBadge" class="shortPayBadge tabBadge" style="display:none;"></span></span>
+  </a>
+</nav>
+
 <div id="detailsSaveBar" class="detailsSaveBar" style="display:none;">
   <button class="btn primary detailsSaveFloatBtn" type="button" id="detailsSaveFloatBtn">Save Entry</button>
 </div>
@@ -377,7 +387,7 @@
   </div>
 </div>
 
-<div id="bulkBar" style="display:none;position:fixed;left:12px;right:12px;bottom:68px;z-index:9998;">
+<div id="bulkBar" style="display:none;position:fixed;left:12px;right:12px;bottom:calc(68px + env(safe-area-inset-bottom));z-index:9998;">
   <div class="card u-row" style="justify-content:space-between;padding:12px 14px;gap:8px;flex-wrap:wrap;">
     <div class="muted" id="bulkCount">0 selected</div>
     <div class="u-row" style="gap:8px;align-items:center;flex-wrap:wrap;">
