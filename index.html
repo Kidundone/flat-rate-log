@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.236fc2acfa.css">
+  <link rel="stylesheet" href="./app.d2dc8a95fb.css">
 </head>
 <body data-page="main">
 
@@ -188,7 +188,11 @@
     <div class="statsPanelBody">
       <section class="card">
         <div class="u-row" style="justify-content:space-between;">
-          <div class="mono small" id="rangeTitle">Today</div>
+          <div class="u-row" style="gap:6px;align-items:center;">
+            <button id="rangeNavPrev" type="button" class="btn rangeNavBtn" style="display:none;">‹</button>
+            <div class="mono small" id="rangeTitle">Today</div>
+            <button id="rangeNavNext" type="button" class="btn rangeNavBtn" style="display:none;">›</button>
+          </div>
           <div class="seg rangeTabs" role="tablist" aria-label="Range">
             <button id="rangeDayBtn" type="button" class="segBtn active">Day</button>
             <button id="rangeWeekBtn" type="button" class="segBtn">Week</button>
@@ -366,6 +370,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.2204d38488.js" defer></script>
+<script src="/flat-rate-log/app.d24527fd99.js" defer></script>
 </body>
 </html>

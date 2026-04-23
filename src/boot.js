@@ -66,10 +66,25 @@ async function runOnce() {
     if (sIn) sIn.addEventListener("input", () => refreshUI(CURRENT_ENTRIES));
     if (sClr) sClr.addEventListener("click", () => { if (sIn) sIn.value = ""; refreshUI(CURRENT_ENTRIES); });
 
-    document.getElementById("rangeDayBtn")?.addEventListener("click", () => setRangeMode("day"));
-    document.getElementById("rangeWeekBtn")?.addEventListener("click", () => setRangeMode("week"));
-    document.getElementById("rangeMonthBtn")?.addEventListener("click", () => setRangeMode("month"));
-    document.getElementById("rangeAllBtn")?.addEventListener("click", () => setRangeMode("all"));
+    const resetNavOffset = () => { window.__NAV_OFFSET__ = 0; };
+    document.getElementById("rangeDayBtn")?.addEventListener("click", () => { resetNavOffset(); setRangeMode("day"); });
+    document.getElementById("rangeWeekBtn")?.addEventListener("click", () => { resetNavOffset(); setRangeMode("week"); });
+    document.getElementById("rangeMonthBtn")?.addEventListener("click", () => { resetNavOffset(); setRangeMode("month"); });
+    document.getElementById("rangeAllBtn")?.addEventListener("click", () => { resetNavOffset(); setRangeMode("all"); });
+
+    document.getElementById("rangeNavPrev")?.addEventListener("click", () => {
+      const mode = window.__RANGE_MODE__ || "day";
+      const step = mode === "week" ? -7 : -1;
+      window.__NAV_OFFSET__ = (Number(window.__NAV_OFFSET__ || 0)) + step;
+      refreshUI(CURRENT_ENTRIES);
+    });
+    document.getElementById("rangeNavNext")?.addEventListener("click", () => {
+      const mode = window.__RANGE_MODE__ || "day";
+      const step = mode === "week" ? 7 : 1;
+      const next = (Number(window.__NAV_OFFSET__ || 0)) + step;
+      window.__NAV_OFFSET__ = Math.min(next, 0);
+      refreshUI(CURRENT_ENTRIES);
+    });
 
     const syncWeekBtns = () => {
       document.getElementById("weekThisBtn")?.classList.toggle("active", summaryRange === "thisWeek");

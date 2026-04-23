@@ -1779,3 +1779,63 @@ body.compact .itemMeta { margin-top: 3px; }
 body.compact .itemActions { margin-top: 5px; }
 body.compact .small   { font-size: 11px; }
 body.compact .list    { gap: 1px; }
+
+/* ── Range nav buttons ───────────────────────────── */
+.rangeNavBtn {
+  padding: 4px 9px;
+  font-size: 16px;
+  line-height: 1;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+/* ── iBtn active state (comeback toggle) ─────────── */
+.iBtn--active {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ── Job type list rows (More page) ──────────────── */
+.typeRow {
+  padding: 12px 16px 8px;
+}
+.typeRowMain {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.typeRowName {
+  font-weight: 600;
+  font-size: 15px;
+}
+.typeRowDefaults {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.typeRowActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.typeEditForm {
+  margin-top: 10px;
+}
+.typeEditFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.typeEditLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}

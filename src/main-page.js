@@ -855,29 +855,72 @@ async function renderTypesListInMore(){
   const types = await loadTypesSorted(empId);
   box.innerHTML = "";
   if (types.length === 0) {
-    box.innerHTML = `<div class="muted">No saved types yet.</div>`;
+    box.innerHTML = `<div class="muted small" style="padding:12px 16px;">No saved types yet. Types are created automatically when you log entries.</div>`;
     return;
   }
   for (const t of types) {
     const div = document.createElement("div");
-    div.className = "item";
+    div.className = "typeRow";
+    div.dataset.id = t.id;
     div.innerHTML = `
-      <div class="itemTop">
-        <div>
-          <div class="mono">${escapeHtml(t.name)}</div>
-          <div class="small">defaults: ${String(t.lastHours ?? "")} hrs @ ${formatMoney(t.lastRate||0)}</div>
+      <div class="typeRowMain">
+        <div class="typeRowName">${escapeHtml(t.name)}</div>
+        <div class="typeRowDefaults">${round1(t.lastHours||0)} hrs &nbsp;·&nbsp; ${formatMoney(t.lastRate||0)}/hr</div>
+      </div>
+      <div class="typeRowActions">
+        <button class="iBtn typeEditBtn" type="button">Edit</button>
+        <button class="iBtn iBtn--danger typeDelBtn" type="button">Delete</button>
+      </div>
+      <div class="typeEditForm" style="display:none;">
+        <div class="typeEditFields">
+          <label class="typeEditLabel">Default hrs
+            <input type="number" class="moreInput moreInputNarrow typeEditHours" inputmode="decimal" step="0.1" min="0" value="${round1(t.lastHours||0)}" />
+          </label>
+          <label class="typeEditLabel">Rate $/hr
+            <input type="number" class="moreInput moreInputNarrow typeEditRate" inputmode="decimal" step="0.01" min="0" value="${round2(t.lastRate||0)}" />
+          </label>
+          <button class="btn primary typeEditSaveBtn" type="button">Save</button>
+          <button class="btn typeEditCancelBtn" type="button">Cancel</button>
         </div>
-        <div class="right"><span class="muted">tap to delete</span></div>
       </div>
     `;
-    div.addEventListener("click", async () => {
-      const ok = confirm(`Delete type "${t.name}"?`);
-      if (!ok) return;
+
+    const editBtn = div.querySelector(".typeEditBtn");
+    const delBtn  = div.querySelector(".typeDelBtn");
+    const form    = div.querySelector(".typeEditForm");
+    const saveBtn = div.querySelector(".typeEditSaveBtn");
+    const cancelBtn = div.querySelector(".typeEditCancelBtn");
+
+    editBtn.addEventListener("click", () => {
+      const open = form.style.display !== "none";
+      form.style.display = open ? "none" : "block";
+      editBtn.textContent = open ? "Edit" : "Done";
+    });
+    cancelBtn.addEventListener("click", () => {
+      form.style.display = "none";
+      editBtn.textContent = "Edit";
+    });
+    saveBtn.addEventListener("click", async () => {
+      const hrs = Number(div.querySelector(".typeEditHours").value || 0);
+      const rate = Number(div.querySelector(".typeEditRate").value || 0);
+      if (!Number.isFinite(hrs) || hrs < 0) return;
+      if (!Number.isFinite(rate) || rate < 0) return;
+      await upsertTypeDefaults(t.name, hrs, rate);
+    });
+    delBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete type "${t.name}"?`)) return;
       await del(STORES.types, t.id);
       await renderTypeDatalist();
       await renderTypesListInMore();
     });
+
     box.appendChild(div);
+    if (types.indexOf(t) < types.length - 1) {
+      const hr = document.createElement("div");
+      hr.className = "moreDivider";
+      box.appendChild(hr);
+    }
   }
 }
 
@@ -896,11 +939,19 @@ function computeWeek(entries, weekStart){
   return { hours: round1(hours), dollars: round2(dollars), count: weekEntries.length, entries: weekEntries };
 }
 
+function navRefDate() {
+  const offset = Number(window.__NAV_OFFSET__ || 0);
+  if (!offset) return new Date();
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
 function filterByMode(entries, mode){
-  const now = new Date();
+  const now = navRefDate();
   if (mode === "day") {
-    const dayKey = todayKeyLocal();
-    return entries.filter(e => e.dayKey === dayKey);
+    const dk = dateKey(now);
+    return entries.filter(e => e.dayKey === dk);
   }
   if (mode === "week") {
     const ws = startOfWeekLocal(now);
@@ -1058,7 +1109,7 @@ async function requireAdmin() {
 }
 
 function rangeSubLabel(mode){
-  const now = new Date();
+  const now = navRefDate();
   if (mode === "day") return dateKey(now);
   if (mode === "week") {
     const ws = startOfWeekLocal(now);
@@ -1212,12 +1263,25 @@ function renderList(entries, mode){
       </div>
       <div class="itemActions">
         <button class="iBtn" data-action="edit" data-id="${e.id}">Edit</button>
+        <button class="iBtn${e.isComeback ? " iBtn--active" : ""}" data-action="toggle-cb" data-id="${e.id}">${e.isComeback ? "CB ✓" : "CB"}</button>
         <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
         ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
       </div>
     `;
 
     row.querySelector('button[data-action="edit"]')?.addEventListener("click", () => startEditEntry(e));
+    row.querySelector('button[data-action="toggle-cb"]')?.addEventListener("click", async () => {
+      const next = !e.isComeback;
+      try {
+        await saveEditedLog(e.id, { is_comeback: next });
+        const idx = (window.CURRENT_ENTRIES || []).findIndex(x => String(x.id) === String(e.id));
+        if (idx >= 0) {
+          window.CURRENT_ENTRIES[idx] = { ...window.CURRENT_ENTRIES[idx], isComeback: next, is_comeback: next };
+          CURRENT_ENTRIES = window.CURRENT_ENTRIES;
+        }
+        await refreshUI(CURRENT_ENTRIES);
+      } catch (err) { toast("Failed to update entry"); }
+    });
     row.querySelector('input[data-select-id]')?.addEventListener("change", (ev) => {
       setEntrySelectedById(e.id, !!ev.target?.checked);
     });
@@ -1426,24 +1490,39 @@ async function refreshUI(entriesOverride){
   const mode = window.__RANGE_MODE__ || rangeMode || "day";
   rangeMode = mode;
 
-  const now = new Date();
+  const navNow = navRefDate();
   const dayKey = todayKeyLocal();
-  let ws = startOfWeekLocal(now);
-  let we = endOfWeekLocal(now);
-  const ms = startOfMonthLocal(now);
-  if (summaryRange === "lastWeek") {
-    ws = new Date(ws);
-    ws.setDate(ws.getDate() - 7);
-    we = endOfWeekLocal(ws);
+  let ws = startOfWeekLocal(navNow);
+  let we = endOfWeekLocal(navNow);
+
+  // Show nav arrows only in day and week modes; hide for month/all
+  const navPrev = document.getElementById("rangeNavPrev");
+  const navNext = document.getElementById("rangeNavNext");
+  const navOffset = Number(window.__NAV_OFFSET__ || 0);
+  const showNav = mode === "day" || mode === "week";
+  if (navPrev) navPrev.style.display = showNav ? "" : "none";
+  if (navNext) {
+    navNext.style.display = showNav ? "" : "none";
+    // Disable "next" when we're already at today (or this week)
+    const atPresent = navOffset >= 0;
+    navNext.disabled = atPresent;
+    navNext.style.opacity = atPresent ? "0.35" : "";
   }
+
+  // Week-which row: only show when in week mode AND no nav offset (offset handled by nav buttons)
+  const weekWhichRow = document.getElementById("weekWhichRow");
+  if (weekWhichRow) weekWhichRow.style.display = (mode === "week" && navOffset === 0) ? "inline-flex" : "none";
+
+  // When nav offset active in week mode, ignore summaryRange for filtering
+  const useNavWeek = mode === "week" && navOffset !== 0;
 
   let filtered = filterByMode(entries, mode);
 
   let wc = null;
   let shownEntries = filtered;
   let shownTotals = null;
-  if (mode === "week") {
-    wc = computeWeekComparison(entries, now);
+  if (mode === "week" && !useNavWeek) {
+    wc = computeWeekComparison(entries, new Date());
     shownEntries = summaryRange === "lastWeek" ? wc.entries.lastWeekEntries : wc.entries.thisWeekEntries;
     shownTotals = summaryRange === "lastWeek" ? wc.totals.lastTotals : wc.totals.thisTotals;
   }
@@ -1478,9 +1557,11 @@ async function refreshUI(entriesOverride){
 
   const r1 = (n) => (Math.round(Number(n || 0) * 10) / 10).toFixed(1);
 
+  const navOff = Number(window.__NAV_OFFSET__ || 0);
+  const mo = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const title =
-    mode === "day" ? "Today" :
-    mode === "week" ? (summaryRange === "lastWeek" ? "Last Week" : "This Week") :
+    mode === "day"   ? (navOff === 0 ? "Today" : mo(navNow)) :
+    mode === "week"  ? (navOff === 0 ? (summaryRange === "lastWeek" ? "Last Week" : "This Week") : `Week of ${dateKey(ws)}`) :
     mode === "month" ? "This Month" : "All Time";
 
   setText("rangeTitle", title);
