@@ -1699,6 +1699,14 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   -webkit-appearance: none;
 }
 
+/* ── Search highlight ────────────────────────────── */
+.srchHl {
+  background: rgba(250,204,21,.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 /* ── Empty state ─────────────────────────────────── */
 .emptyState {
   text-align: center;

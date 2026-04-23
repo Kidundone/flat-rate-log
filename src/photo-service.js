@@ -149,9 +149,16 @@ function wirePhotoPickers() {
   btnFile?.addEventListener("click", (e) => { e.preventDefault(); inFile.click(); });
 
   // Change handlers (this is what you’re missing/broken)
-  inCamera.addEventListener("change", () => setSelectedPhoto(inCamera.files?.[0] || null, "camera"));
-  inPicker.addEventListener("change", () => setSelectedPhoto(inPicker.files?.[0] || null, "library"));
-  inFile.addEventListener("change",   () => setSelectedPhoto(inFile.files?.[0]   || null, "file"));
+  const handlePhotoChange = (input, label) => async () => {
+    const file = input.files?.[0] || null;
+    if (!file) { setSelectedPhoto(null); return; }
+    setPhotoSummaryState("Processing…");
+    await new Promise(r => setTimeout(r, 0)); // yield so UI updates
+    setSelectedPhoto(file, label);
+  };
+  inCamera.addEventListener("change", handlePhotoChange(inCamera, "camera"));
+  inPicker.addEventListener("change", handlePhotoChange(inPicker, "library"));
+  inFile.addEventListener("change",   handlePhotoChange(inFile, "file"));
 }
 
 async function fileToDataURL(file){
@@ -469,25 +476,35 @@ function initPhotosUI(){
   });
 }
 
-async function _callScanRo(base64, mediaType = "image/jpeg") {
+async function _callScanRo(base64, mediaType = "image/jpeg", timeoutMs = 18000) {
   const sbInstance = window.__FR?.sb;
   const { data: { session } } = await sbInstance.auth.getSession();
   const token = session?.access_token || window.__SUPABASE_CONFIG__.anonKey;
   const fnUrl = `${window.__SUPABASE_CONFIG__.url}/functions/v1/scan-ro`;
-  const res = await fetch(fnUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "apikey": window.__SUPABASE_CONFIG__.anonKey,
-    },
-    body: JSON.stringify({ imageBase64: base64, mediaType }),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => String(res.status));
-    throw new Error(`Scan failed (${res.status}): ${txt}`);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(fnUrl, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "apikey": window.__SUPABASE_CONFIG__.anonKey,
+      },
+      body: JSON.stringify({ imageBase64: base64, mediaType }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => String(res.status));
+      throw new Error(`Scan failed (${res.status}): ${txt}`);
+    }
+    return res.json();
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("OCR timed out — try again");
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 async function autoScanPhotoAndPatch(file, entryId, currentRef, currentVin8) {

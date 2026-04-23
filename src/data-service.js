@@ -777,11 +777,15 @@ function updatePendingBadge() {
   const count = getPendingQueue().length;
   const el = document.getElementById("offlineBanner");
   if (!el) return;
-  if (count > 0) {
-    el.textContent = `${count} offline entr${count === 1 ? "y" : "ies"} waiting to sync`;
+  const online = navigator.onLine;
+  if (count > 0 && !online) {
+    el.textContent = `Offline · ${count} entr${count === 1 ? "y" : "ies"} queued — will sync when back online`;
     el.style.display = "";
-  } else if (!navigator.onLine) {
-    el.textContent = "You're offline — entries may not save";
+  } else if (count > 0 && online) {
+    el.textContent = `Syncing ${count} queued entr${count === 1 ? "y" : "ies"}…`;
+    el.style.display = "";
+  } else if (!online) {
+    el.textContent = "Offline — new entries will be saved locally";
     el.style.display = "";
   } else {
     el.style.display = "none";

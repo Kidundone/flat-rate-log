@@ -1444,12 +1444,21 @@ function renderList(entries, mode){
     return;
   }
 
+  const hlQ = q.length >= 2 ? q : "";
+  const hl = (text) => {
+    if (!hlQ) return escapeHtml(text);
+    const safe = escapeHtml(text);
+    const idx = safe.toLowerCase().indexOf(hlQ);
+    if (idx < 0) return safe;
+    return safe.slice(0, idx) + `<mark class="srchHl">${safe.slice(idx, idx + hlQ.length)}</mark>` + safe.slice(idx + hlQ.length);
+  };
+
   const buildEntry = (e) => {
     const row = document.createElement("div");
     row.className = "item";
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
-    const refVal = escapeHtml(e.ref || e.ro || "—");
-    const typeLabel = escapeHtml(e.type || e.typeText || "—");
+    const refVal = hl(e.ref || e.ro || "—");
+    const typeLabel = hl(e.type || e.typeText || "—");
     const entryId = escapeHtml(String(e.id ?? ""));
     const hasPhoto = entryHasPhoto(e);
 
@@ -1459,12 +1468,12 @@ function renderList(entries, mode){
         <div class="itemLeft">
           <div class="itemHeadline">
             <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
-            ${typeBadgeHtml(typeLabel)}
+            ${typeBadgeHtml(escapeHtml(e.type || e.typeText || "—"))}
             ${e.isComeback ? `<span class="comebackBadge">CB</span>` : ""}
             <span class="itemRef mono">${refLabel}: ${refVal}</span>
           </div>
           ${buildEntryMetaHtml(e)}
-          ${e.notes ? `<div class="itemNotes">${escapeHtml(e.notes)}</div>` : ""}
+          ${e.notes ? `<div class="itemNotes">${hl(e.notes)}</div>` : ""}
           ${hasPhoto ? `<div class="entryThumbWrap"><img class="entryThumb" data-photo-path="${escapeHtml(photoPath)}" alt="Proof" /></div>` : ""}
         </div>
         <div class="itemRight">
