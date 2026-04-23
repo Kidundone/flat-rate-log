@@ -173,8 +173,11 @@ async function runOnce() {
       document.getElementById("saveBtn")?.click();
     });
 
-    window.addEventListener("online", () => { flushPendingSync?.().catch(() => {}); });
+    window.addEventListener("online", () => { flushPendingSync?.().catch(() => {}); syncOfflineDot?.(); });
+    window.addEventListener("offline", () => syncOfflineDot?.());
+    syncOfflineDot?.();
     updatePendingBadge?.();
+    maybeShowOnboarding?.();
 
     ["empId", "ref", "typeText", "hours"].forEach((id) => {
       const el = document.getElementById(id);
@@ -263,6 +266,7 @@ async function runOnce() {
     });
 
     initPhotosUI();
+    updateShortPayBadge?.();
     return;
   }
 

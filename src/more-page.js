@@ -216,6 +216,17 @@ function comparePayroll(expected, actual){
   };
 }
 
+function isBiweeklyMode() {
+  return document.getElementById("payPeriodBiweekly")?.classList.contains("active");
+}
+
+function getWeek2StartKey(week1StartKey) {
+  const d = parseDateInputValue(week1StartKey);
+  if (!d) return null;
+  d.setDate(d.getDate() + 7);
+  return dateKey(d);
+}
+
 function getPayStubAuditContext() {
   const weekEl = document.getElementById("payStubWeekEnding");
   const amountEl = document.getElementById("payStubAmountPaid");
@@ -232,28 +243,43 @@ function getPayStubAuditContext() {
   const amountPaid = Number(amountEl.value || 0);
   if (!Number.isFinite(amountPaid) || amountPaid < 0) return { error: "Check amount must be a number >= 0." };
 
-  const { totals, entries } = expectedTotalsForWeekKey(weekStartKey);
-  const expected = {
-    hours: Number(totals?.hours || 0),
-    pay: Number(totals?.dollars || 0),
-  };
-  const actual = {
-    hours: expected.hours,
-    pay: amountPaid,
-  };
-  const comparison = comparePayroll(expected, actual);
+  const biweekly = isBiweeklyMode();
+  const { totals: t1, entries: e1 } = expectedTotalsForWeekKey(weekStartKey);
+  let allEntries = Array.isArray(e1) ? [...e1] : [];
+  let totalHours = Number(t1?.hours || 0);
+  let totalPay   = Number(t1?.dollars || 0);
+  let weekEnd    = "";
+  let week2StartKey = null;
 
-  const ws = parseDateInputValue(weekStartKey);
-  const weekEnd = ws ? dateKey(endOfWeekLocal(ws)) : "";
+  if (biweekly) {
+    week2StartKey = getWeek2StartKey(weekStartKey);
+    if (week2StartKey) {
+      const { totals: t2, entries: e2 } = expectedTotalsForWeekKey(week2StartKey);
+      allEntries = [...allEntries, ...(Array.isArray(e2) ? e2 : [])];
+      totalHours = round1(totalHours + Number(t2?.hours || 0));
+      totalPay   = round2(totalPay   + Number(t2?.dollars || 0));
+      const ws2 = parseDateInputValue(week2StartKey);
+      weekEnd = ws2 ? dateKey(endOfWeekLocal(ws2)) : "";
+    }
+  } else {
+    const ws = parseDateInputValue(weekStartKey);
+    weekEnd = ws ? dateKey(endOfWeekLocal(ws)) : "";
+  }
+
+  const expected = { hours: totalHours, pay: totalPay };
+  const actual   = { hours: totalHours, pay: amountPaid };
+  const comparison = comparePayroll(expected, actual);
 
   return {
     weekEnding,
     weekStartKey,
+    week2StartKey,
     weekEnd,
+    biweekly,
     expected,
     actual,
     comparison,
-    entries: Array.isArray(entries) ? entries : [],
+    entries: allEntries,
   };
 }
 
@@ -297,7 +323,22 @@ function renderPayStubComparison() {
   const loggedHrs = ctx.expected.hours;
   const delta = round2(checkAmt - loggedPay);
 
-  summaryEl.textContent = `Week of ${ctx.weekStartKey}${ctx.weekEnd ? ` → ${ctx.weekEnd}` : ""}`;
+  const periodLabel = ctx.biweekly
+    ? `${ctx.weekStartKey} → ${ctx.weekEnd} (2 weeks)`
+    : `${ctx.weekStartKey}${ctx.weekEnd ? ` → ${ctx.weekEnd}` : ""}`;
+  summaryEl.textContent = `Period: ${periodLabel}`;
+
+  // Update week 2 label if biweekly
+  const w2label = document.getElementById("payStubWeek2Label");
+  if (w2label) {
+    if (ctx.biweekly && ctx.week2StartKey) {
+      const ws2 = parseDateInputValue(ctx.week2StartKey);
+      const we2 = ws2 ? dateKey(endOfWeekLocal(ws2)) : "";
+      w2label.textContent = `${ctx.week2StartKey}${we2 ? ` → ${we2}` : ""}`;
+    } else {
+      w2label.textContent = "";
+    }
+  }
 
   if (checkAmt <= 0) {
     detailsEl.textContent = `Logged: ${formatHours(loggedHrs)} hrs • ${formatMoney(loggedPay)}`;
@@ -406,12 +447,23 @@ async function savePayStubEntry() {
   const weekStartKey = weekStartKeyFromDateInput(weekEnding);
   if (!weekStartKey) return alert("Week ending date is invalid.");
 
-  upsertPayStubEntry({
-    weekStartKey,
-    weekEnding,
-    hoursPaid: 0,
-    amountPaid,
-  });
+  const biweekly = isBiweeklyMode();
+  const week2StartKey = biweekly ? getWeek2StartKey(weekStartKey) : null;
+
+  if (biweekly && week2StartKey) {
+    // Split the check amount evenly across both weeks for per-week tracking
+    const ctx = getPayStubAuditContext();
+    const w1Pay = round2(Number(ctx.expected?.pay || 0));
+    const total = round2(Number(ctx.actual?.pay || 0));
+    const w2Pay = round2(total - w1Pay > 0 ? total - w1Pay : total / 2);
+    const w1Amt = round2(total - w2Pay);
+    upsertPayStubEntry({ weekStartKey, weekEnding, hoursPaid: 0, amountPaid: w1Amt, biweekly: true, linkedWeek: week2StartKey });
+    const ws2 = parseDateInputValue(week2StartKey);
+    const we2 = ws2 ? dateKey(endOfWeekLocal(ws2)) : weekEnding;
+    upsertPayStubEntry({ weekStartKey: week2StartKey, weekEnding: we2, hoursPaid: 0, amountPaid: w2Pay, biweekly: true, linkedWeek: weekStartKey });
+  } else {
+    upsertPayStubEntry({ weekStartKey, weekEnding, hoursPaid: 0, amountPaid });
+  }
 
   renderPayStubComparison();
   renderPayTrend();
@@ -590,6 +642,29 @@ function initPayStubUI() {
       picker.value = "";
     });
   }
+
+  // Biweekly toggle
+  const weeklyBtn    = document.getElementById("payPeriodWeekly");
+  const biweeklyBtn  = document.getElementById("payPeriodBiweekly");
+  const week2Row     = document.getElementById("payStubWeek2Row");
+  const syncPeriodUI = () => {
+    const bw = isBiweeklyMode();
+    if (week2Row) week2Row.style.display = bw ? "" : "none";
+    weeklyBtn?.classList.toggle("active", !bw);
+    biweeklyBtn?.classList.toggle("active", bw);
+    renderPayStubComparison();
+  };
+  weeklyBtn?.addEventListener("click", () => {
+    biweeklyBtn?.classList.remove("active");
+    weeklyBtn?.classList.add("active");
+    syncPeriodUI();
+  });
+  biweeklyBtn?.addEventListener("click", () => {
+    weeklyBtn?.classList.remove("active");
+    biweeklyBtn?.classList.add("active");
+    syncPeriodUI();
+  });
+  syncPeriodUI();
 }
 
 window.comparePayroll = comparePayroll;

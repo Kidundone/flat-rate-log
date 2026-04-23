@@ -674,19 +674,29 @@ async function shareDaySummary() {
   if (!today.length) { toast("No entries today to share."); return; }
 
   const totals = computeTotals(today);
+  const comebacks = today.filter(e => e.isComeback);
+  const d = new Date();
+  const dayLabel = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+
   const lines = today.map(e => {
     const ref = e.ref || e.ro || "—";
     const type = e.type || e.typeText || "—";
-    return `• ${type} | ${e.refType === "STOCK" ? "STK" : "RO"}: ${ref} | ${e.hours} hrs | ${formatMoney(e.earnings)}`;
+    const cb = e.isComeback ? " ↩️" : "";
+    return `  ${type}${cb}  ·  ${e.refType === "STOCK" ? "STK" : "RO"} ${ref}  ·  ${e.hours} hrs  ·  ${formatMoney(e.earnings)}`;
   });
 
+  const cbLine = comebacks.length
+    ? `⚠️ ${comebacks.length} comeback${comebacks.length > 1 ? "s" : ""} today`
+    : "";
+
   const text = [
-    `Flat Rate Summary — ${dk}`,
-    `Employee: ${empId}`,
+    `📋 Flat-Rate Summary — ${dayLabel}`,
+    `Emp #${empId}`,
     "",
     ...lines,
     "",
-    `Total: ${formatHours(totals.hours)} hrs | ${formatMoney(totals.dollars)} | ${totals.count} jobs`,
+    `🕐 ${formatHours(totals.hours)} hrs   💵 ${formatMoney(totals.dollars)}   📦 ${totals.count} job${totals.count !== 1 ? "s" : ""}`,
+    ...(cbLine ? ["", cbLine] : []),
   ].join("\n");
 
   if (navigator.share) {
@@ -703,8 +713,68 @@ async function shareDaySummary() {
   }
 }
 
+function updateShortPayBadge() {
+  const badge = document.getElementById("shortPayBadge");
+  if (!badge) return;
+  const stubMap = loadPayStubMap?.() || {};
+  const entries = normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
+  const empId = getEmpId();
+  if (!empId) { badge.style.display = "none"; return; }
+  const own = filterEntriesByEmp(entries, empId);
+  let shortCount = 0;
+  for (const stub of Object.values(stubMap)) {
+    if (!stub?.weekStartKey || !stub?.amountPaid) continue;
+    const ws = parseDateInputValue(stub.weekStartKey);
+    if (!ws) continue;
+    const we = endOfWeekLocal(ws);
+    const loggedPay = round2(own
+      .filter(e => e.dayKey && e.dayKey >= stub.weekStartKey && e.dayKey <= dateKey(we))
+      .reduce((s, e) => s + Number(e.earnings || 0), 0));
+    if (stub.amountPaid < loggedPay - 0.01) shortCount++;
+  }
+  if (shortCount > 0) {
+    badge.textContent = String(shortCount);
+    badge.style.display = "";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+function maybeShowOnboarding() {
+  const hasEmp = !!(localStorage.getItem("fr_emp_id") || "").trim();
+  const hasDismissed = localStorage.getItem("fr_onboard_done");
+  if (hasEmp || hasDismissed) return;
+
+  const modal = document.getElementById("onboardingModal");
+  if (!modal) return;
+  modal.style.display = "flex";
+
+  document.getElementById("onboardDoneBtn")?.addEventListener("click", () => {
+    const empVal = (document.getElementById("onboardEmpId")?.value || "").trim();
+    const rateVal = Number(document.getElementById("onboardRate")?.value || 0);
+    if (empVal) {
+      const empInput = document.getElementById("empId");
+      if (empInput) { empInput.value = empVal; empInput.dispatchEvent(new Event("input")); }
+      localStorage.setItem("fr_emp_id", empVal);
+    }
+    if (rateVal > 0) saveSettings({ defaultRate: rateVal });
+    localStorage.setItem("fr_onboard_done", "1");
+    modal.style.display = "none";
+  });
+}
+
+function syncOfflineDot() {
+  const dot = document.getElementById("offlineDot");
+  const banner = document.getElementById("offlineBanner");
+  const isOffline = !navigator.onLine;
+  if (dot) dot.style.display = isOffline ? "" : "none";
+  if (banner) banner.style.display = isOffline ? "" : "none";
+}
+
 window.__FR = window.__FR || {};
 window.__FR.shareDaySummary = shareDaySummary;
+window.__FR.updateShortPayBadge = updateShortPayBadge;
+window.__FR.maybeShowOnboarding = maybeShowOnboarding;
 
 async function flushPendingSync() {
   const q = getPendingQueue();

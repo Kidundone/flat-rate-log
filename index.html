@@ -8,21 +8,39 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.d2dc8a95fb.css">
+  <link rel="stylesheet" href="./app.36b07a7292.css">
 </head>
 <body data-page="main">
 
 <header>
   <h1>Flat-Rate</h1>
-  <div class="u-row">
+  <div class="u-row" style="gap:10px;align-items:center;">
     <span id="headerTodayTotal" class="headerTotal"></span>
-    <a class="btn primary" href="./more.html">More</a>
+    <span id="offlineDot" class="offlineDot" style="display:none;" title="Offline"></span>
+    <a class="btn primary headerMoreBtn" href="./more.html">More<span id="shortPayBadge" class="shortPayBadge" style="display:none;"></span></a>
   </div>
 </header>
 
 <div id="statusMsg" class="statusMsg muted small"></div>
 <div id="dataWarning" class="warningBanner" style="display:none;max-width:680px;margin:8px auto 0;"></div>
 <div id="offlineBanner" class="offlineBanner" style="display:none;">You're offline — entries may not save</div>
+
+<!-- ── Onboarding modal ── -->
+<div id="onboardingModal" class="modalShell" style="display:none;">
+  <div class="onboardCard card">
+    <div class="onboardTitle">Welcome to Flat-Rate</div>
+    <div class="onboardSub">Quick setup to get started</div>
+    <div class="onboardField">
+      <label class="onboardLabel">Your Employee #</label>
+      <input id="onboardEmpId" type="text" inputmode="numeric" placeholder="12345" class="moreInput" />
+    </div>
+    <div class="onboardField">
+      <label class="onboardLabel">Your Hourly Rate ($/hr)</label>
+      <input id="onboardRate" type="number" inputmode="decimal" step="0.01" min="0" placeholder="18.00" class="moreInput" />
+    </div>
+    <button id="onboardDoneBtn" class="btn primary" type="button" style="width:100%;margin-top:8px;">Get Started</button>
+  </div>
+</div>
 <div id="cloudNudge" class="cloudNudge" style="display:none;">
   <span>Sign in for cloud backup &amp; sync across devices</span>
   <a class="btn" href="./more.html">Sign In</a>
@@ -370,6 +388,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.d24527fd99.js" defer></script>
+<script src="/flat-rate-log/app.3e2e89fd85.js" defer></script>
 </body>
 </html>

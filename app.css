@@ -1839,3 +1839,101 @@ body.compact .list    { gap: 1px; }
   text-transform: uppercase;
   letter-spacing: .3px;
 }
+
+/* ── Offline dot ─────────────────────────────────── */
+.offlineDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .5; transform: scale(.75); }
+}
+
+/* ── Short-pay badge on More button ──────────────── */
+.headerMoreBtn { position: relative; }
+.shortPayBadge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ── Onboarding modal ────────────────────────────── */
+#onboardingModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 24px;
+}
+.onboardCard {
+  width: 100%;
+  max-width: 360px;
+  padding: 28px 24px 24px;
+}
+.onboardTitle {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.onboardSub {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+.onboardField {
+  margin-bottom: 14px;
+}
+.onboardLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-bottom: 6px;
+}
+
+/* ── Dup warning — make it impossible to miss ────── */
+#dupWarnGlobal {
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+#dupWarnGlobal[data-level="strong"] {
+  background: rgba(237,73,86,.15);
+  color: #f87171;
+  border: 1px solid rgba(237,73,86,.35);
+  animation: shakeWarn .35s ease;
+}
+#dupWarnGlobal[data-level="weak"] {
+  background: rgba(234,179,8,.12);
+  color: #fbbf24;
+  border: 1px solid rgba(234,179,8,.3);
+}
+@keyframes shakeWarn {
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-6px); }
+  40%     { transform: translateX(6px); }
+  60%     { transform: translateX(-4px); }
+  80%     { transform: translateX(4px); }
+}
