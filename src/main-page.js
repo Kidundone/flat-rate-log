@@ -993,6 +993,7 @@ async function renderTypesListInMore(){
       if (!Number.isFinite(hrs) || hrs < 0) return;
       if (!Number.isFinite(rate) || rate < 0) return;
       await upsertTypeDefaults(t.name, hrs, rate);
+      toast?.(`${t.name} updated`);
     });
     delBtn.addEventListener("click", async (e) => {
       e.stopPropagation();

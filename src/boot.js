@@ -343,6 +343,7 @@ async function runOnce() {
     scheduleShiftReminder?.();
     schedulePaydayReminder?.();
     await safeLoadEntries();
+    await renderTypesListInMore?.();
     renderInsights?.();
     renderEarningsChart?.();
     renderPayTrend?.();
