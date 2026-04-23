@@ -338,6 +338,16 @@ async function runOnce() {
     };
     document.getElementById("payStubPrevWeekBtn")?.addEventListener("click", () => stepPayStubWeek(-7));
     document.getElementById("payStubNextWeekBtn")?.addEventListener("click", () => stepPayStubWeek(7));
+    const savedTypeRate = document.getElementById("savedTypeRate");
+    if (savedTypeRate) savedTypeRate.value = String(getDefaultRate?.() || 15);
+    const savedTypeCreateForm = document.getElementById("savedTypeCreateForm");
+    if (savedTypeCreateForm && !savedTypeCreateForm.dataset.wired) {
+      savedTypeCreateForm.dataset.wired = "1";
+      savedTypeCreateForm.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        await saveTypeFromMoreForm?.();
+      });
+    }
 
     initSettingsUI?.();
     scheduleShiftReminder?.();

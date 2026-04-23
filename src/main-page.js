@@ -919,6 +919,32 @@ async function maybeSaveTypeNameOnly(nameRaw){
   await renderTypesListInMore();
 }
 
+async function saveTypeFromMoreForm(){
+  const empId = cleanEmpId(getEmpId());
+  if (!empId) return alert("Enter Employee # first.");
+
+  const nameEl = document.getElementById("savedTypeName");
+  const hoursEl = document.getElementById("savedTypeHours");
+  const rateEl = document.getElementById("savedTypeRate");
+
+  const name = normalizeTypeName(nameEl?.value || "");
+  const hours = Number(hoursEl?.value || 0);
+  const rate = Number(rateEl?.value || getDefaultRate());
+
+  if (!name) return alert("Type name required.");
+  if (!Number.isFinite(hours) || hours < 0) return alert("Default hours must be a number >= 0.");
+  if (!Number.isFinite(rate) || rate < 0) return alert("Rate must be a number >= 0.");
+
+  const existing = await findTypeByName(empId, name);
+  await upsertTypeDefaults(name, hours, rate);
+
+  if (nameEl) nameEl.value = "";
+  if (hoursEl) hoursEl.value = "0.5";
+  if (rateEl) rateEl.value = String(getDefaultRate());
+
+  toast(`${name} ${existing ? "updated" : "added"}`);
+}
+
 async function maybeAutofillFromType(nameRaw){
   const name = String(nameRaw || "").trim();
   if (!name) return;
@@ -942,7 +968,7 @@ async function renderTypesListInMore(){
   const types = await loadTypesSorted(empId);
   box.innerHTML = "";
   if (types.length === 0) {
-    box.innerHTML = `<div class="muted small" style="padding:12px 16px;">No saved types yet. Types are created automatically when you log entries.</div>`;
+    box.innerHTML = `<div class="muted small" style="padding:12px 16px;">No saved types yet. Add one above or create them automatically when you log entries.</div>`;
     return;
   }
   for (const t of types) {
@@ -1322,7 +1348,11 @@ function renderList(entries, mode){
   list.innerHTML = "";
 
   const dayKey = todayKeyLocal();
-  const byRange = (mode === "today") ? entries.filter(e => e.dayKey === dayKey) : entries;
+  const weekStart = dateKey(startOfWeekLocal(new Date()));
+  const weekEnd   = dateKey(endOfWeekLocal(new Date()));
+  const byRange = mode === "today" ? entries.filter(e => e.dayKey === dayKey)
+    : mode === "week" ? entries.filter(e => e.dayKey >= weekStart && e.dayKey <= weekEnd)
+    : entries;
 
   const pickedDay = (mode === "week") ? (window.__WEEK_DAY_PICK__ || "") : "";
   const ranged = pickedDay ? byRange.filter(e => e.dayKey === pickedDay) : byRange;
@@ -1771,7 +1801,7 @@ async function refreshUI(entriesOverride){
 
   const fs = document.getElementById("filterSelect");
   const listFilter = fs ? fs.value : "today";
-  const listMode = (listFilter === "today") ? "today" : "all";
+  const listMode = listFilter === "today" ? "today" : listFilter === "week" ? "week" : "all";
 
   const status = document.getElementById("filterStatus");
   if (status) {
@@ -1786,7 +1816,7 @@ async function refreshUI(entriesOverride){
     !!document.getElementById("hoursDiff") ||
     !!document.getElementById("rangeLabel");
   if (hasWeekHeader) renderWeekHeader(entries);
-  else renderList(listMode === "all" ? entries : shownEntries, listMode);
+  else renderList(entries, listMode);
 
   syncSelectionUI();
   loadPhotoThumbs();

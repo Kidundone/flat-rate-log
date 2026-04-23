@@ -751,10 +751,15 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   display: flex;
   flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   padding: 12px 16px;
   border-top: 1px solid var(--stroke);
   background: var(--surface);
 }
+.fr26QuickTools::-webkit-scrollbar { display: none; }
+.fr26QuickTools > * { flex: 0 0 auto; }
 
 /* ── Stats pills ─────────────────────────────────── */
 .pillRow {
@@ -1806,6 +1811,15 @@ body.compact .list    { gap: 1px; }
 }
 
 /* ── Job type list rows (More page) ──────────────── */
+.typeAddForm {
+  padding: 8px 16px 12px;
+}
+.typeAddFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
 .typeRow {
   padding: 12px 16px 8px;
 }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Tracker — More</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./app.69838d3cf2.css">
+  <link rel="stylesheet" href="./app.a436e5df95.css">
 </head>
 <body data-page="more">
 
@@ -246,7 +246,24 @@
     <!-- ── Job Types ── -->
     <section class="card moreCard">
       <div class="moreCardHeader">Job Types</div>
-      <div class="moreCardSub">Tap a type to edit its default hours and rate.</div>
+      <div class="moreCardSub">Add a type here, then tap any saved type to edit its default hours and rate.</div>
+      <form id="savedTypeCreateForm" class="typeAddForm">
+        <div class="typeAddFields">
+          <label class="typeEditLabel">
+            Type Name
+            <input id="savedTypeName" class="moreInput" type="text" placeholder="Brake job" autocomplete="off" />
+          </label>
+          <label class="typeEditLabel">
+            Default hrs
+            <input id="savedTypeHours" class="moreInput moreInputNarrow" inputmode="decimal" type="number" step="0.1" min="0" value="0.5" />
+          </label>
+          <label class="typeEditLabel">
+            Rate $/hr
+            <input id="savedTypeRate" class="moreInput moreInputNarrow" inputmode="decimal" type="number" step="0.01" min="0" value="15" />
+          </label>
+          <button class="btn primary" type="submit">Add Type</button>
+        </div>
+      </form>
       <div id="savedTypesList" style="padding-bottom:4px;"></div>
     </section>
 
@@ -330,6 +347,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/flat-rate-log/app.9e404d6f31.js" defer></script>
+  <script src="/flat-rate-log/app.0a46b4d3a0.js" defer></script>
 </body>
 </html>
