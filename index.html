@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.a436e5df95.css">
+  <link rel="stylesheet" href="./app.3b13629d13.css">
 </head>
 <body data-page="main">
 
@@ -94,9 +94,12 @@
 
         <div class="fr26Row">
           <label class="fr26Label" for="typeText">Work Done</label>
-          <input name="typeText" id="typeText" list="typeList"
-                 placeholder="Describe the work" inputmode="text"
-                 autocomplete="off" required class="fr26Input" />
+          <div class="fr26InlineField">
+            <input name="typeText" id="typeText" list="typeList"
+                   placeholder="Describe the work" inputmode="text"
+                   autocomplete="off" required class="fr26Input" />
+            <button id="clearTypeBtn" class="btn fr26InlineClearBtn" type="button" aria-label="Clear work done" hidden>Clear</button>
+          </div>
           <datalist id="typeList"></datalist>
           <label class="fr26Check">
             <input id="keepLastWork" type="checkbox" checked />
@@ -400,6 +403,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.7be236b9f3.js" defer></script>
+<script src="/flat-rate-log/app.8037214b87.js" defer></script>
 </body>
 </html>

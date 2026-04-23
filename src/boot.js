@@ -194,7 +194,27 @@ async function runOnce() {
       updateSaveEnabled();
     });
 
+    const syncClearTypeBtn = () => {
+      const typeEl = document.getElementById("typeText");
+      const clearBtn = document.getElementById("clearTypeBtn");
+      if (!clearBtn) return;
+      clearBtn.hidden = !String(typeEl?.value || "").trim();
+    };
+    const clearTypeInput = () => {
+      const typeEl = document.getElementById("typeText");
+      if (!typeEl) return;
+      typeEl.value = "";
+      typeEl.dispatchEvent(new Event("input", { bubbles: true }));
+      typeEl.dispatchEvent(new Event("change", { bubbles: true }));
+      syncClearTypeBtn();
+      typeEl.focus();
+    };
+    document.getElementById("clearTypeBtn")?.addEventListener("click", clearTypeInput);
+    document.getElementById("typeText")?.addEventListener("input", syncClearTypeBtn);
+    document.getElementById("typeText")?.addEventListener("change", syncClearTypeBtn);
+
     restoreLastWorkType?.();
+    syncClearTypeBtn();
     updateSaveEnabled();
 
     const keepLastWorkEl = document.getElementById("keepLastWork");
@@ -241,6 +261,11 @@ async function runOnce() {
 
     ["typeText", "hours", "ref"].forEach((id) => {
       document.getElementById(id)?.addEventListener("keydown", (e) => {
+        if (id === "typeText" && e.key === "Escape") {
+          e.preventDefault();
+          clearTypeInput();
+          return;
+        }
         if (e.key !== "Enter") return;
         e.preventDefault();
         const btn = document.getElementById("saveBtn");
