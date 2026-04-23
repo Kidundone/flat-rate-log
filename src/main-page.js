@@ -506,6 +506,7 @@ async function handleSave(ev) {
       __isEdit: isEditing,
     });
     await refreshEntries();
+    document.getElementById("entryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
     setSelectedPhotoFile(null);
     document.getElementById("photoPicker") && (document.getElementById("photoPicker").value = "");
     document.getElementById("photoCamera") && (document.getElementById("photoCamera").value = "");

@@ -153,7 +153,6 @@ async function runOnce() {
             .catch(console.error)
             .finally(() => (window.__saving = false));
         });
-        console.log("FORM WIRED");
       }
     }
 
@@ -441,7 +440,6 @@ document.getElementById("installDismissBtn")?.addEventListener("click", () => {
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    console.log("DOMContentLoaded fired");
     runOnce().catch(console.error);
   });
 } else {
