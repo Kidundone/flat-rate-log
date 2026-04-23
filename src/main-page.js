@@ -900,14 +900,42 @@ async function syncTypesFromEntries(entriesRaw, empIdRaw = getEmpId()) {
 
 async function renderTypeDatalist(){
   const list = $("typeList");
-  if (!list) return;
+  const strip = $("typeSuggestStrip");
   const empId = getEmpId();
   const types = await loadTypesSorted(empId);
-  list.innerHTML = "";
-  for (const t of types) {
-    const opt = document.createElement("option");
-    opt.value = t.name;
-    list.appendChild(opt);
+
+  if (list) {
+    list.innerHTML = "";
+    for (const t of types) {
+      const opt = document.createElement("option");
+      opt.value = t.name;
+      list.appendChild(opt);
+    }
+  }
+
+  if (strip) {
+    const query = String($("typeText")?.value || "").trim().toLowerCase();
+    const shown = query
+      ? types.filter(t => t.name.toLowerCase().includes(query)).slice(0, 8)
+      : types.slice(0, 6);
+    strip.innerHTML = "";
+    if (shown.length === 0) { strip.hidden = true; return; }
+    strip.hidden = false;
+    for (const t of shown) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "typeSuggestChip";
+      chip.textContent = t.name;
+      chip.addEventListener("click", () => {
+        const typeEl = $("typeText");
+        if (!typeEl) return;
+        typeEl.value = t.name;
+        typeEl.dispatchEvent(new Event("input", { bubbles: true }));
+        typeEl.dispatchEvent(new Event("change", { bubbles: true }));
+        strip.hidden = true;
+      });
+      strip.appendChild(chip);
+    }
   }
 }
 

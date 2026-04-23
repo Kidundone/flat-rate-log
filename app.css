@@ -31,6 +31,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 
 body {
@@ -575,6 +576,29 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   padding: 10px 14px;
   white-space: nowrap;
 }
+
+.typeSuggestStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.typeSuggestChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  background: var(--surface3);
+  border: 1px solid var(--stroke2);
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms;
+}
+
+.typeSuggestChip:active { background: var(--surface2); opacity: .75; }
 
 .fr26FieldHint {
   font-size: 11px;

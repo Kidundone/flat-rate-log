@@ -215,7 +215,7 @@ async function runOnce() {
       typeEl.focus();
     };
     document.getElementById("clearTypeBtn")?.addEventListener("click", clearTypeInput);
-    document.getElementById("typeText")?.addEventListener("input", syncClearTypeBtn);
+    document.getElementById("typeText")?.addEventListener("input", () => { syncClearTypeBtn(); renderTypeDatalist?.(); });
     document.getElementById("typeText")?.addEventListener("change", syncClearTypeBtn);
 
     restoreLastWorkType?.();
