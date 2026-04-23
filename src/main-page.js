@@ -1135,6 +1135,13 @@ function setEntrySelectedById(id, selected) {
   apply(window.STATE?.entries);
   apply(window.__RANGE_ENTRIES__);
   apply(window.__RANGE_FILTERED__);
+  syncSelectionUI();
+}
+
+function syncSelectionUI() {
+  const hasSelection = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).some(e => e.selected);
+  const listCard = document.getElementById("entryList")?.closest?.(".card");
+  listCard?.classList.toggle("has-selection", hasSelection);
 }
 
 function renderList(entries, mode){
@@ -1579,6 +1586,7 @@ async function refreshUI(entriesOverride){
   if (hasWeekHeader) renderWeekHeader(entries);
   else renderList(listMode === "all" ? entries : shownEntries, listMode);
 
+  syncSelectionUI();
   loadPhotoThumbs();
 
   // stash last week calc for export (delta always set)

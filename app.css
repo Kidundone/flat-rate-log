@@ -475,7 +475,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   grid-template-columns: auto minmax(0,1fr);
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--stroke);
   background: var(--surface2);
   border-radius: var(--r-xl) var(--r-xl) 0 0;
@@ -525,8 +525,8 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 .fr26Row {
   display: grid;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 10px 16px;
   border-top: 1px solid var(--stroke);
   background: var(--surface);
 }
@@ -541,7 +541,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 .fr26Input, .fr26Textarea, .fr26File {
   width: 100%;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: var(--r-md);
   border: 1px solid var(--stroke2);
   background: var(--surface2);
@@ -559,24 +559,30 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .fr26Input::placeholder, .fr26Textarea::placeholder { color: var(--muted2); }
 
 .fr26QuickHours {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
+  display: flex;
   gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
 }
+.fr26QuickHours::-webkit-scrollbar { display: none; }
 
 .fr26HourBtn {
-  height: 56px;
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 18px;
   border: 1px solid var(--stroke2);
-  border-radius: var(--r-md);
+  border-radius: var(--r-pill);
   background: var(--surface2);
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+  transition: background 100ms var(--ease), border-color 100ms var(--ease);
 }
 
-.fr26HourBtn:active { transform: scale(.96); }
+.fr26HourBtn:active { transform: scale(.94); transition-duration: 60ms; }
 
 .fr26HourBtn.selected {
   background: var(--primary);
@@ -655,7 +661,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .fr26ChipGhost { background: transparent; color: var(--muted); }
 
 .fr26PrimaryAction {
-  padding: 14px 16px;
+  padding: 10px 16px;
   border-top: 1px solid var(--stroke);
   background: var(--surface);
 }
@@ -670,7 +676,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 .fr26BtnPrimary {
   width: 100%;
-  min-height: 52px;
+  min-height: 46px;
   border: none;
   background: var(--primary);
   color: #fff;
@@ -750,21 +756,21 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 /* ── Stats pills ─────────────────────────────────── */
 .pillRow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
 }
-
-@media (min-width: 540px) { .pillRow { grid-template-columns: repeat(5, 1fr); } }
 
 .pill {
   background: var(--surface2);
-  border-radius: var(--r-lg);
-  padding: 12px;
+  border-radius: var(--r-md);
+  padding: 8px 6px;
   border: 1px solid var(--stroke);
+  text-align: center;
 }
 
-.k { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
-.v { font-size: 20px; font-weight: 700; margin-top: 4px; letter-spacing: -.5px; }
+.k { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+.v { font-size: 16px; font-weight: 700; margin-top: 2px; letter-spacing: -.4px; }
+.pill .muted { font-size: 11px; margin-top: 1px; }
 
 /* ── Type badges ─────────────────────────────────── */
 .typeBadge {
@@ -1623,6 +1629,24 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 }
 
 .searchRow .fr26Input { flex: 1; }
+
+/* Primary entry actions: always visible */
+.entryActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Selection actions: hidden until items selected */
+.entrySelectionActions {
+  display: none;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--stroke);
+}
+
+.has-selection .entrySelectionActions { display: flex; }
 
 /* ── Filter select pill ──────────────────────────── */
 #filterSelect {

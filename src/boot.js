@@ -230,7 +230,7 @@ async function runOnce() {
       if (isOpen) { showHistory(false); }
       else { showHistory(true); renderHistory(); }
     });
-    document.getElementById("exportCsvMainBtn")?.addEventListener("click", exportCSV);
+    // exportCsvMainBtn removed from main page; Export CSV available on More page
     document.getElementById("closeHistoryBtn")?.addEventListener("click", () => showHistory(false));
     document.getElementById("historyPanel")?.addEventListener("click", (e) => {
       if (e.target?.id === "historyPanel") showHistory(false);

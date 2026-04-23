@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.c459e3a371.css">
+  <link rel="stylesheet" href="./app.7cfc30cf16.css">
 </head>
 <body data-page="main">
 
@@ -279,12 +279,13 @@
       <button class="btn" type="button" id="clearSearchBtn">Clear</button>
     </div>
 
-    <div class="u-row" style="flex-wrap:wrap;gap:6px;margin-top:10px;">
+    <div class="entryActions">
       <button class="btn" id="historyBtn" type="button">History</button>
       <button class="btn" id="shareTodayBtn" type="button">Share Today</button>
-      <button class="btn" id="exportSelectedBtn" type="button" onclick="exportSelected()">Export Selected</button>
+    </div>
+    <div class="entrySelectionActions" id="entrySelectionActions">
+      <button class="btn" id="exportSelectedBtn" type="button" onclick="exportSelected()">Export</button>
       <button class="btn danger-ghost" id="deleteSelectedBtn" type="button">Delete</button>
-      <button class="btn primary" id="exportCsvMainBtn" type="button">Export CSV</button>
     </div>
 
     <div class="muted small" id="filterStatus" style="margin-top:8px;"></div>
@@ -373,6 +374,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.b843f21bd2.js" defer></script>
+<script src="/flat-rate-log/app.abbab606ef.js" defer></script>
 </body>
 </html>
