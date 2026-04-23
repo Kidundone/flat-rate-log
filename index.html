@@ -88,7 +88,18 @@
         <div class="fr26Row">
           <label class="fr26Label" for="hours">Hours</label>
           <input id="hours" name="hours" type="number" step="0.1" min="0"
-                 inputmode="decimal" placeholder="0.0" required class="fr26Input" />
+                 inputmode="decimal" placeholder="0.0" required class="fr26Input"
+                 enterkeyhint="next" />
+          <div class="fr26QuickHours">
+            <button type="button" class="fr26HourBtn" data-hours-quick="0.5">0.5</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="1.0">1.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="1.5">1.5</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="2.0">2.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="2.5">2.5</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="3.0">3.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="4.0">4.0</button>
+            <button type="button" class="fr26HourBtn" data-hours-quick="5.0">5.0</button>
+          </div>
         </div>
 
         <div class="fr26Row">
@@ -96,7 +107,8 @@
           <div class="fr26InlineField">
             <input name="typeText" id="typeText"
                    placeholder="Describe the work" inputmode="text"
-                   autocomplete="off" spellcheck="false" required class="fr26Input" />
+                   autocomplete="off" spellcheck="false" required class="fr26Input"
+                   enterkeyhint="done" />
             <button id="clearTypeBtn" class="btn fr26InlineClearBtn" type="button" aria-label="Clear work done" hidden>Clear</button>
           </div>
           <div id="typeSuggestStrip" class="typeSuggestStrip" hidden></div>
@@ -108,9 +120,9 @@
         </div>
 
         <div class="fr26PrimaryAction">
+          <div id="earningsPreview" aria-live="polite"></div>
           <div id="dupWarnGlobal" aria-live="polite"></div>
           <button id="saveBtn" class="fr26BtnPrimary" type="submit">Save Entry</button>
-          <div id="earningsPreview" aria-live="polite"></div>
         </div>
 
       </section>
@@ -416,6 +428,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/flat-rate-log/app.c72c628b5e.js" defer></script>
+<script src="/flat-rate-log/app.0f0d6881a5.js" defer></script>
 </body>
 </html>

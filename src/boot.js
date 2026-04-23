@@ -294,6 +294,10 @@ async function runOnce() {
         }
         if (e.key !== "Enter") return;
         e.preventDefault();
+        if (id === "hours") {
+          document.getElementById("typeText")?.focus();
+          return;
+        }
         const btn = document.getElementById("saveBtn");
         if (btn && !btn.disabled) btn.click();
       });

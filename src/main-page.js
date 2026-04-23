@@ -410,7 +410,7 @@ async function handleSave(ev) {
   const saveBtn = document.getElementById("saveBtn");
   if (isSaving) return;
   isSaving = true;
-  if (saveBtn) saveBtn.disabled = true;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
   try {
     const empId = getEmpId();
     if (!empId) { toast("Employee # required"); return; }
@@ -520,7 +520,10 @@ async function handleSave(ev) {
     showToast(msg);
   } finally {
     isSaving = false;
-    if (saveBtn) saveBtn.disabled = false;
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = EDITING_ID ? "Update" : "Save Entry";
+    }
   }
 }
 
@@ -931,8 +934,7 @@ async function renderTypeDatalist(){
       chip.type = "button";
       chip.className = "typeSuggestChip";
       chip.textContent = t.name;
-      chip.addEventListener("mousedown", (e) => {
-        // mousedown before blur so the value is set before focus leaves
+      const applyChip = (e) => {
         e.preventDefault();
         const typeEl = $("typeText");
         if (!typeEl) return;
@@ -941,7 +943,9 @@ async function renderTypeDatalist(){
         typeEl.dispatchEvent(new Event("change", { bubbles: true }));
         strip.hidden = true;
         typeEl.focus();
-      });
+      };
+      chip.addEventListener("mousedown", applyChip);
+      chip.addEventListener("touchstart", applyChip, { passive: false });
       strip.appendChild(chip);
     }
   }
