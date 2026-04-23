@@ -561,20 +561,22 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .fr26Input::placeholder, .fr26Textarea::placeholder { color: var(--muted2); }
 
 .fr26InlineField {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  position: relative;
 }
 
 .fr26InlineField .fr26Input {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
+  padding-right: 56px;
 }
 
 .fr26InlineClearBtn {
-  flex: 0 0 auto;
-  padding: 10px 14px;
-  white-space: nowrap;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: var(--r-sm);
 }
 
 .typeSuggestStrip {
