@@ -193,6 +193,11 @@ async function runOnce() {
       checkDuplicates?.();
       updateSaveEnabled();
     });
+    document.getElementById("typeText")?.addEventListener("blur", async () => {
+      const name = document.getElementById("typeText")?.value || "";
+      if (!String(name || "").trim()) return;
+      await maybeSaveTypeNameOnly?.(name);
+    });
 
     const syncClearTypeBtn = () => {
       const typeEl = document.getElementById("typeText");

@@ -576,6 +576,12 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   white-space: nowrap;
 }
 
+.fr26FieldHint {
+  font-size: 11px;
+  color: var(--muted2);
+  margin-top: -1px;
+}
+
 .fr26QuickHours {
   display: flex;
   gap: 6px;
@@ -1796,6 +1802,18 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   font-size: 11px;
   color: var(--muted);
   margin-top: 1px;
+}
+
+.ptActions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.ptActionBtn {
+  min-width: 72px;
 }
 
 .ptDeltaShort { color: var(--danger); }

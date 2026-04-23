@@ -514,6 +514,15 @@ function setPaidHoursForWeekKey(weekStartKey, value) {
   savePaidMap(map);
 }
 
+function removePaidHoursForWeekKey(weekStartKey) {
+  const key = String(weekStartKey || "").trim();
+  if (!key) return;
+  const map = loadPaidMap();
+  if (!Object.prototype.hasOwnProperty.call(map, key)) return;
+  delete map[key];
+  savePaidMap(map);
+}
+
 function getPaidRecordForWeekStart(startDate) {
   const key = weekKey(startDate);
   const map = loadPaidMap();
@@ -561,10 +570,36 @@ function upsertPayStubEntry(entry) {
     weekEnding: String(entry?.weekEnding || ""),
     hoursPaid: Number(entry?.hoursPaid || 0),
     amountPaid: Number(entry?.amountPaid || 0),
+    biweekly: !!entry?.biweekly,
+    linkedWeek: String(entry?.linkedWeek || "").trim(),
     updatedAt: nowISO(),
   };
   savePayStubMap(map);
   setPaidHoursForWeekKey(key, Number(entry?.hoursPaid || 0));
+}
+
+function removePayStubEntry(weekStartKey, { includeLinked = true } = {}) {
+  const key = String(weekStartKey || "").trim();
+  if (!key) return 0;
+
+  const map = loadPayStubMap();
+  const row = map[key];
+  if (!row) return 0;
+
+  let removed = 0;
+  const keysToRemove = [key];
+  const linkedKey = String(row?.linkedWeek || "").trim();
+  if (includeLinked && linkedKey && map[linkedKey]) keysToRemove.push(linkedKey);
+
+  for (const target of keysToRemove) {
+    if (!map[target]) continue;
+    delete map[target];
+    removePaidHoursForWeekKey(target);
+    removed++;
+  }
+
+  savePayStubMap(map);
+  return removed;
 }
 
 function parseDateInputValue(ymd) {

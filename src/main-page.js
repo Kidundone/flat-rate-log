@@ -497,6 +497,7 @@ async function handleSave(ev) {
     const refreshEntries = async () => {
       await safeLoadEntries();
     };
+    await upsertTypeDefaults?.(typeName, hoursVal, rateVal);
     if (keepLastWork) rememberLastWorkType(typeName);
     await saveEntry(entry, {
       preserveType: keepLastWork,

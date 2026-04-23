@@ -291,6 +291,7 @@ function hydratePayStubFormForWeek(weekStartKey) {
   const key = String(weekStartKey || "").trim();
   const stub = getPayStubForWeekKey(key);
   if (stub) {
+    applyPayStubPeriodMode(!!stub.biweekly);
     weekEl.value = stub.weekEnding || weekEndingForWeekStartKey(key);
     amountEl.value = stub.amountPaid > 0 ? String(Number(stub.amountPaid)) : "";
     return;
@@ -299,6 +300,53 @@ function hydratePayStubFormForWeek(weekStartKey) {
   const weekEnd = weekEndingForWeekStartKey(key);
   if (weekEnd) weekEl.value = weekEnd;
   amountEl.value = "";
+}
+
+function applyPayStubPeriodMode(biweekly) {
+  const weeklyBtn = document.getElementById("payPeriodWeekly");
+  const biweeklyBtn = document.getElementById("payPeriodBiweekly");
+  const week2Row = document.getElementById("payStubWeek2Row");
+  const useBiweekly = !!biweekly;
+
+  weeklyBtn?.classList.toggle("active", !useBiweekly);
+  biweeklyBtn?.classList.toggle("active", useBiweekly);
+  if (week2Row) week2Row.style.display = useBiweekly ? "" : "none";
+}
+
+function loadPayStubIntoForm(weekStartKey) {
+  const key = String(weekStartKey || "").trim();
+  if (!key) return;
+  const stub = getPayStubForWeekKey(key);
+  if (!stub) return;
+
+  applyPayStubPeriodMode(!!stub.biweekly);
+  hydratePayStubFormForWeek(key);
+  renderPayStubComparison();
+  renderMissingWorkReview?.();
+
+  document.getElementById("payStubWeekEnding")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  toast(`Loaded ${stub.weekEnding || weekEndingForWeekStartKey(key)}`);
+}
+
+async function deletePayStubFromTrend(weekStartKey) {
+  const key = String(weekStartKey || "").trim();
+  if (!key) return;
+  const stub = getPayStubForWeekKey(key);
+  if (!stub) return;
+
+  const weekLabel = stub.weekEnding || weekEndingForWeekStartKey(key) || key;
+  const extra = stub.biweekly && stub.linkedWeek ? " This will remove both linked weeks." : "";
+  if (!confirm(`Delete saved pay stub for ${weekLabel}?${extra}`)) return;
+
+  const removed = removePayStubEntry(key, { includeLinked: true });
+  const selectedWeekEl = document.getElementById("payStubWeekEnding");
+  const selectedKey = selectedWeekEl ? weekStartKeyFromDateInput(selectedWeekEl.value) : "";
+  if (selectedKey) hydratePayStubFormForWeek(selectedKey);
+  renderPayStubComparison();
+  renderMissingWorkReview?.();
+  renderPayTrend();
+  if (typeof refreshUI === "function") await refreshUI(CURRENT_ENTRIES);
+  toast(`Removed ${removed} pay stub entr${removed === 1 ? "y" : "ies"}`);
 }
 
 function renderPayStubComparison() {
@@ -520,7 +568,19 @@ function renderPayTrend() {
       ? `${mo(wsDate)} ${dy(wsDate)}–${dy(weDate)}`
       : `${mo(wsDate)} ${dy(wsDate)} – ${mo(weDate)} ${dy(weDate)}`;
 
-    return { loggedPay, loggedHrs, paidAmt, delta, weekLabel, isShort: delta < -0.01, isOver: delta > 0.01 };
+    return {
+      weekStartKey: stub.weekStartKey,
+      weekEnding: stub.weekEnding || weekEndingForWeekStartKey(stub.weekStartKey),
+      biweekly: !!stub.biweekly,
+      linkedWeek: String(stub.linkedWeek || "").trim(),
+      loggedPay,
+      loggedHrs,
+      paidAmt,
+      delta,
+      weekLabel,
+      isShort: delta < -0.01,
+      isOver: delta > 0.01,
+    };
   }).filter(Boolean);
 
   const allOk = weeksShort === 0;
@@ -532,7 +592,7 @@ function renderPayTrend() {
     const deltaText  = r.isShort ? `−${formatMoney(Math.abs(r.delta))}` : r.isOver ? `+${formatMoney(r.delta)}` : "Even";
     const deltaClass = r.isShort ? "ptDeltaShort" : r.isOver ? "ptDeltaOver" : "ptDeltaEven";
     return `
-      <div class="ptRow${r.isShort ? " ptRow--short" : ""}">
+      <div class="ptRow${r.isShort ? " ptRow--short" : ""}" data-paystub-week="${escapeHtml(r.weekStartKey)}">
         <div class="ptWeek">${r.weekLabel}</div>
         <div class="ptCols">
           <div class="ptCol">
@@ -549,12 +609,25 @@ function renderPayTrend() {
             <div class="ptColVal ${deltaClass}">${deltaText}</div>
           </div>
         </div>
+        <div class="ptActions">
+          <button class="btn ptActionBtn" type="button" data-paystub-load="${escapeHtml(r.weekStartKey)}">Load</button>
+          <button class="btn danger-ghost ptActionBtn" type="button" data-paystub-del="${escapeHtml(r.weekStartKey)}">Delete</button>
+        </div>
       </div>`;
   }).join("");
 
   container.innerHTML = `
     <div class="ptSummary ${allOk ? "ptSummaryOk" : "ptSummaryWarn"}">${summaryText}</div>
     <div class="ptList">${rowsHtml}</div>`;
+
+  container.querySelectorAll("[data-paystub-load]").forEach((btn) => {
+    btn.addEventListener("click", () => loadPayStubIntoForm(btn.getAttribute("data-paystub-load")));
+  });
+  container.querySelectorAll("[data-paystub-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await deletePayStubFromTrend(btn.getAttribute("data-paystub-del"));
+    });
+  });
 }
 
 window.renderPayTrend = renderPayTrend;
@@ -661,12 +734,8 @@ function initPayStubUI() {
   // Biweekly toggle
   const weeklyBtn    = document.getElementById("payPeriodWeekly");
   const biweeklyBtn  = document.getElementById("payPeriodBiweekly");
-  const week2Row     = document.getElementById("payStubWeek2Row");
   const syncPeriodUI = () => {
-    const bw = isBiweeklyMode();
-    if (week2Row) week2Row.style.display = bw ? "" : "none";
-    weeklyBtn?.classList.toggle("active", !bw);
-    biweeklyBtn?.classList.toggle("active", bw);
+    applyPayStubPeriodMode(isBiweeklyMode());
     renderPayStubComparison();
   };
   weeklyBtn?.addEventListener("click", () => {
