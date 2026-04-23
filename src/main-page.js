@@ -1613,18 +1613,18 @@ async function refreshUI(entriesOverride){
   let ws = startOfWeekLocal(navNow);
   let we = endOfWeekLocal(navNow);
 
-  // Show nav arrows only in day and week modes; hide for month/all
+  // Show nav arrows only in day and week modes; use visibility so they always reserve space
   const navPrev = document.getElementById("rangeNavPrev");
   const navNext = document.getElementById("rangeNavNext");
   const navOffset = Number(window.__NAV_OFFSET__ || 0);
   const showNav = mode === "day" || mode === "week";
-  if (navPrev) navPrev.style.display = showNav ? "" : "none";
+  if (navPrev) { navPrev.style.visibility = showNav ? "" : "hidden"; navPrev.style.display = ""; }
   if (navNext) {
-    navNext.style.display = showNav ? "" : "none";
-    // Disable "next" when we're already at today (or this week)
     const atPresent = navOffset >= 0;
+    navNext.style.visibility = showNav ? "" : "hidden";
+    navNext.style.display = "";
     navNext.disabled = atPresent;
-    navNext.style.opacity = atPresent ? "0.35" : "";
+    navNext.style.opacity = atPresent ? "0.3" : "";
   }
 
   // Week-which row: only show when in week mode AND no nav offset (offset handled by nav buttons)
