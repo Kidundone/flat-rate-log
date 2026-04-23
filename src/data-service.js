@@ -11,7 +11,16 @@ function sb() {
 
 async function setUidFromSession(session) {
   window.CURRENT_UID = session?.user?.id || null;
+  window.CURRENT_USER_EMAIL = session?.user?.email || null;
   console.log("UID:", window.CURRENT_UID);
+}
+
+function setAuthMessage(text = "", isError = false) {
+  const msgEl = document.getElementById("authMsg");
+  if (!msgEl) return;
+  msgEl.textContent = text;
+  msgEl.style.color = isError ? "var(--danger)" : "var(--muted)";
+  msgEl.style.display = text ? "" : "none";
 }
 
 async function bootAuth() {
@@ -27,7 +36,7 @@ async function bootAuth() {
 
   sb().auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
-    window.CURRENT_UID = session?.user?.id || null;
+    await setUidFromSession(session || null);
     await initAuth();
 
     if ((event === "INITIAL_SESSION" || event === "SIGNED_IN") && window.CURRENT_UID) {
@@ -55,71 +64,145 @@ async function initAuth() {
   const signedInEl = document.getElementById("authSignedIn");
   const outBtn    = document.getElementById("authSignOut");
 
-  if (statusEl) statusEl.textContent = signedIn ? "Signed in" : "";
+  if (statusEl) statusEl.textContent = signedIn
+    ? (window.CURRENT_USER_EMAIL || "Signed in")
+    : "";
 
   if (formEl)      formEl.style.display      = signedIn ? "none" : "";
   if (signedInEl)  signedInEl.style.display  = signedIn ? ""     : "none";
   if (outBtn)      outBtn.style.display       = signedIn ? ""     : "none";
+  setAuthMessage("");
 
   const nudge = document.getElementById("cloudNudge");
   if (nudge) nudge.style.display = signedIn ? "none" : "";
 }
 
-async function signIn(email, password) {
-  const { error } = await sb().auth.signInWithPassword({
-    email,
-    password
-  });
-
-  if (error) return alert(error.message);
-}
-
 function wireAuthUI() {
   const client = sb();
-  const emailEl = document.getElementById("authEmail");
-  const passEl  = document.getElementById("authPassword");
-
+  const emailEl  = document.getElementById("authEmail");
+  const passEl   = document.getElementById("authPassword");
   const signUpBtn = document.getElementById("authSignUp");
   const signInBtn = document.getElementById("authSignIn");
   const resetBtn  = document.getElementById("authReset");
   const outBtn    = document.getElementById("authSignOut");
-  const statusEl  = document.getElementById("authStatus");
+  // only wire on the more page where these elements exist
+  if (!signInBtn && !signUpBtn) return;
 
-  if (!statusEl) return;
+  const baseText = new Map(
+    [signInBtn, signUpBtn, resetBtn]
+      .filter(Boolean)
+      .map((btn) => [btn, btn.textContent || ""])
+  );
 
-  signUpBtn?.addEventListener("click", async () => {
-    const email = emailEl.value.trim();
-    const password = passEl.value.trim();
-    if (!email || !password) return alert("Email and password required");
+  const setBusy = (busy, mode = "") => {
+    [signInBtn, signUpBtn, resetBtn].forEach((btn) => {
+      if (!btn) return;
+      btn.disabled = busy;
+      const original = baseText.get(btn) || "";
+      if (!busy) {
+        btn.textContent = original;
+        return;
+      }
+      if (btn === signInBtn) btn.textContent = mode === "signin" ? "Signing In..." : original;
+      if (btn === signUpBtn) btn.textContent = mode === "signup" ? "Creating..." : original;
+      if (btn === resetBtn) btn.textContent = mode === "reset" ? "Sending..." : original;
+    });
+  };
 
-    const { error } = await client.auth.signUp({ email, password });
-    if (error) return alert(error.message);
+  const runSignIn = async () => {
+    const email    = (emailEl?.value || "").trim();
+    const password = (passEl?.value  || "").trim();
+    if (!email || !password) {
+      setAuthMessage("Email and password required.", true);
+      return;
+    }
+    setAuthMessage("Signing in...");
+    setBusy(true, "signin");
+    try {
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
+      if (error) {
+        const msg = /not confirmed/i.test(error.message)
+          ? "Check your email and click the confirmation link first."
+          : error.message;
+        setAuthMessage(msg, true);
+        return;
+      }
+      await setUidFromSession(data?.session || null);
+      await initAuth();
+      setAuthMessage("Signed in.");
+      toast?.("Signed in");
+    } catch (e) {
+      setAuthMessage(e?.message || "Sign in failed.", true);
+    } finally {
+      setBusy(false);
+    }
+  };
 
-    alert("Account created. You can now sign in.");
+  const submitOnEnter = (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    runSignIn().catch((err) => {
+      console.error("Auth submit failed", err);
+    });
+  };
+
+  emailEl?.addEventListener("keydown", submitOnEnter);
+  passEl?.addEventListener("keydown", submitOnEnter);
+
+  signInBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    await runSignIn();
   });
 
-  signInBtn?.addEventListener("click", async () => {
-    const email = emailEl.value.trim();
-    const password = passEl.value.trim();
-    if (!email || !password) return alert("Email and password required");
-    await signIn(email, password);
+  signUpBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const email    = (emailEl?.value || "").trim();
+    const password = (passEl?.value  || "").trim();
+    if (!email || !password) return setAuthMessage("Email and password required.", true);
+    if (password.length < 6)  return setAuthMessage("Password must be at least 6 characters.", true);
+    setAuthMessage("Creating account...");
+    setBusy(true, "signup");
+    try {
+      const { data, error } = await client.auth.signUp({ email, password });
+      if (error) return setAuthMessage(error.message, true);
+      if (data?.session) {
+        await setUidFromSession(data.session);
+        await initAuth();
+        setAuthMessage("Account created and signed in.");
+        toast?.("Signed in");
+        return;
+      }
+      setAuthMessage("Account created. Check your email for a confirmation link, then sign in.");
+    } catch (e) {
+      setAuthMessage(e?.message || "Sign up failed.", true);
+    } finally {
+      setBusy(false);
+    }
   });
 
-  resetBtn?.addEventListener("click", async () => {
-    const email = emailEl.value.trim();
-    if (!email) return alert("Enter your email");
-
-    const { error } = await client.auth.resetPasswordForEmail(email);
-    if (error) return alert(error.message);
-
-    alert("Password reset email sent.");
+  resetBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const email = (emailEl?.value || "").trim();
+    if (!email) return setAuthMessage("Enter your email first.", true);
+    setAuthMessage("Sending reset email...");
+    setBusy(true, "reset");
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(email);
+      if (error) return setAuthMessage(error.message, true);
+      setAuthMessage("Password reset email sent. Check your inbox.");
+    } catch (e) {
+      setAuthMessage(e?.message || "Reset failed.", true);
+    } finally {
+      setBusy(false);
+    }
   });
 
-  outBtn?.addEventListener("click", async () => {
+  outBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
     await client.auth.signOut();
+    await setUidFromSession(null);
     await initAuth();
   });
-
 }
 
 async function sbListRows(empId) {
