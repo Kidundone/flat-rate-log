@@ -62,6 +62,10 @@ function restoreDraft() {
     }
 
     updateEarningsPreview?.();
+    // Trigger listeners so updateSaveEnabled re-evaluates the restored values
+    ["hours", "typeText"].forEach(id =>
+      document.getElementById(id)?.dispatchEvent(new Event("input", { bubbles: true }))
+    );
     toast("Draft restored", 2500);
   } catch {}
 }
