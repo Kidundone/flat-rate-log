@@ -169,7 +169,6 @@ async function runOnce() {
 
     const detailsBtn = document.getElementById("toggleDetailsBtn");
     const detailsPanel = document.getElementById("detailsPanel");
-    const detailsSaveBar = document.getElementById("detailsSaveBar");
     if (detailsBtn && detailsPanel) {
       detailsPanel.style.display = "none";
       detailsBtn.textContent = "Add Details";
@@ -177,13 +176,19 @@ async function runOnce() {
         const isOpen = detailsPanel.style.display !== "none";
         detailsPanel.style.display = isOpen ? "none" : "block";
         detailsBtn.textContent = isOpen ? "Add Details" : "Less";
-        if (detailsSaveBar) detailsSaveBar.style.display = isOpen ? "none" : "";
+
+        const saveBtn = document.getElementById("saveBtn");
+        const primaryAction = document.querySelector(".fr26PrimaryAction");
+        const detailsGroup = detailsPanel.querySelector(".fr26Group");
+        if (saveBtn && primaryAction && detailsGroup) {
+          if (!isOpen) {
+            detailsGroup.appendChild(saveBtn);
+          } else {
+            primaryAction.appendChild(saveBtn);
+          }
+        }
       });
     }
-
-    document.getElementById("detailsSaveFloatBtn")?.addEventListener("click", () => {
-      document.getElementById("saveBtn")?.click();
-    });
 
     window.addEventListener("online", () => { flushPendingSync?.().catch(() => {}); syncOfflineDot?.(); });
     window.addEventListener("offline", () => syncOfflineDot?.());

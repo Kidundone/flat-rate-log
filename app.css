@@ -57,6 +57,9 @@ body.modal-open {
 button, a, [role="button"], summary, label { touch-action: manipulation; }
 
 /* ── Floating details save bar ───────────────────── */
+/* Save button spacing when moved inside the Details panel */
+#detailsPanel .fr26BtnPrimary { margin-top: 16px; }
+
 .detailsSaveBar {
   position: fixed;
   bottom: calc(72px + env(safe-area-inset-bottom));
