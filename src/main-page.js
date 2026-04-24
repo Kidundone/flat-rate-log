@@ -342,19 +342,21 @@ async function saveEntry(entry, options = {}) {
     const { photo_path: _ignored, ...patch } = payload;
     if (photoFile) toast("Uploading photo...");
     patch.updated_at = new Date().toISOString();
-    saved = await saveEditedLog(EDITING_ID, patch);
+    saved = await withTimeout(saveEditedLog(EDITING_ID, patch), 20000, "Save timed out — please try again");
     photo_path = saved?.photo_path || null;
     if (photoFile) photoStatus = "ok";
   } else {
     try {
-      saved = await apiCreateLog(payload, entry);
+      saved = await withTimeout(apiCreateLog(payload, entry), 20000, "Save timed out — please try again");
     } catch (err) {
-      if (!navigator.onLine) {
+      const isTimeout = String(err?.message || "").startsWith("Save timed out");
+      const isNetworkErr = !navigator.onLine || err?.message === "Failed to fetch" || err?.name === "TypeError";
+      if (isTimeout || isNetworkErr) {
         const localEntry = { ...entry, _pending: true };
         CURRENT_ENTRIES = syncStateEntries([localEntry, ...(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])]);
         queuePendingEntry(entry, payload);
         setEditingEntry(null);
-        toast("Saved offline — syncs when back online");
+        toast(isTimeout ? "Connection slow — saved locally, will sync" : "Saved offline — syncs when back online");
         handleClear(null, { preserveType: options.preserveType, typeValue: options.preservedType });
         return;
       }
