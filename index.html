@@ -246,7 +246,6 @@
           <div class="pill">
             <div class="k">Hours</div>
             <div class="v" id="rangeHours">0.0</div>
-            <div class="muted" id="rangeSub">—</div>
           </div>
           <div class="pill">
             <div class="k">Pay</div>
@@ -265,12 +264,13 @@
             <div class="v" id="rangeEffRate">—</div>
           </div>
         </div>
+        <div id="rangeSub" class="muted small" style="margin-top:6px;text-align:center;">—</div>
       </section>
 
       <section id="weekGoalCard" class="card" style="display:none;">
-        <div class="u-row" style="justify-content:space-between;">
-          <div class="small" style="text-transform:uppercase;letter-spacing:.4px;font-weight:700;">Week Goal</div>
-          <div id="weekGoalLabel" class="mono" style="font-size:13px;font-weight:700;"></div>
+        <div class="u-row" style="justify-content:space-between;gap:8px;">
+          <div class="small" style="text-transform:uppercase;letter-spacing:.4px;font-weight:700;white-space:nowrap;">Week Goal</div>
+          <div id="weekGoalLabel" class="mono" style="font-size:13px;font-weight:700;white-space:nowrap;"></div>
         </div>
         <div class="goalBar"><div id="weekGoalFill" class="goalBarFill"></div></div>
         <div id="weekGoalSub" class="small" style="margin-top:6px;"></div>
