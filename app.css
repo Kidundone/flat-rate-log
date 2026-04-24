@@ -372,21 +372,25 @@ main {
 
 /* ── Entry photo thumbnail ───────────────────────── */
 .entryThumbWrap {
-  margin-top: 8px;
   border-radius: var(--r-md);
   overflow: hidden;
-  background: var(--surface3);
-  min-height: 44px;
-  max-height: 90px;
   max-width: 240px;
+  max-height: 0;
+  margin-top: 0;
+  transition: max-height 300ms var(--ease), margin-top 200ms var(--ease);
+}
+.entryThumbWrap.loaded {
+  background: var(--surface3);
+  max-height: 90px;
+  min-height: 44px;
+  margin-top: 8px;
 }
 .entryThumb {
   width: 100%;
-  height: 100%;
-  min-height: 44px;
-  max-height: 90px;
-  object-fit: cover;
   display: block;
+  max-height: 90px;
+  min-height: 44px;
+  object-fit: cover;
   opacity: 0;
   transition: opacity 300ms var(--ease);
 }
@@ -692,13 +696,10 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 
 .fr26QuickHours {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;
 }
-.fr26QuickHours::-webkit-scrollbar { display: none; }
 
 .fr26HourBtn {
   flex-shrink: 0;
@@ -906,11 +907,11 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .pillRow::-webkit-scrollbar { display: none; }
 
 .pill {
-  flex: 1 0 auto;
-  min-width: 64px;
+  flex: 1 1 0;
+  min-width: 52px;
   background: var(--surface2);
   border-radius: var(--r-md);
-  padding: 9px 8px;
+  padding: 9px 6px;
   border: 1px solid var(--stroke);
   text-align: center;
 }
