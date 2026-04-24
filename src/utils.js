@@ -85,12 +85,13 @@ function setDataWarning(msg) {
   el.style.display = msg ? "block" : "none";
 }
 
-function toast(msg){
+function toast(msg, ms = 2000){
   const t = document.getElementById("toast");
   if(!t) return;
   t.textContent = msg;
   t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), 1400);
+  clearTimeout(t._toastTimer);
+  t._toastTimer = setTimeout(() => t.classList.remove("show"), ms);
 }
 
 let UNDO_STATE = null; // { onUndo, timer }

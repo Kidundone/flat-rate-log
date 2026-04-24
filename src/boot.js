@@ -330,6 +330,15 @@ async function runOnce() {
 
     initPhotosUI();
     updateShortPayBadge?.();
+
+    // Draft auto-save
+    ["hours", "typeText", "ref", "vin8"].forEach(id =>
+      document.getElementById(id)?.addEventListener("input", () => debouncedSaveDraft?.())
+    );
+    document.querySelector('input[name="rate"]')?.addEventListener("input", () => debouncedSaveDraft?.());
+    document.querySelector('textarea[name="notes"]')?.addEventListener("input", () => debouncedSaveDraft?.());
+    document.getElementById("isComeback")?.addEventListener("change", () => debouncedSaveDraft?.());
+    restoreDraft?.();
     return;
   }
 

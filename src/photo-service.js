@@ -18,6 +18,14 @@ async function requireUserId(sb) {
   return uid;
 }
 
+async function ensureSession() {
+  try {
+    const { data } = await sb().auth.getSession();
+    const uid = data?.session?.user?.id || null;
+    if (uid) window.CURRENT_UID = uid;
+  } catch {}
+}
+
 async function getProofSignedUrl(sb, photoPath) {
   const { data, error } = await sb.storage
     .from("proofs")

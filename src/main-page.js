@@ -1,6 +1,75 @@
 let EDITING_ID = null; // null = creating new
 let EDITING_ENTRY = null;
 let isSaving = false;
+
+/* ── Form draft (survives accidental refresh) ── */
+const LS_DRAFT = "fr_form_draft";
+let _draftTimer = null;
+
+function saveDraft() {
+  if (EDITING_ID) return;
+  const draft = {
+    hours: document.getElementById("hours")?.value || "",
+    typeText: document.getElementById("typeText")?.value || "",
+    ref: document.getElementById("ref")?.value || "",
+    vin8: document.getElementById("vin8")?.value || "",
+    rate: document.querySelector('input[name="rate"]')?.value || "",
+    notes: document.querySelector('textarea[name="notes"]')?.value || "",
+    isComeback: !!(document.getElementById("isComeback")?.checked),
+    refType: currentRefType,
+    detailsOpen: document.getElementById("detailsPanel")?.style.display !== "none",
+  };
+  if (!draft.hours && !draft.typeText) { localStorage.removeItem(LS_DRAFT); return; }
+  try { localStorage.setItem(LS_DRAFT, JSON.stringify(draft)); } catch {}
+}
+
+function debouncedSaveDraft() {
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(saveDraft, 400);
+}
+
+function restoreDraft() {
+  if (EDITING_ID) return;
+  try {
+    const raw = localStorage.getItem(LS_DRAFT);
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!draft || (!draft.hours && !draft.typeText)) return;
+
+    const hoursEl = document.getElementById("hours");
+    const typeEl  = document.getElementById("typeText");
+    const refEl   = document.getElementById("ref");
+    const vinEl   = document.getElementById("vin8");
+    const rateEl  = document.querySelector('input[name="rate"]');
+    const notesEl = document.querySelector('textarea[name="notes"]');
+    const cbEl    = document.getElementById("isComeback");
+
+    if (draft.hours   && hoursEl) { hoursEl.value = draft.hours; hoursEl.dataset.touched = "1"; }
+    if (draft.typeText && typeEl) typeEl.value = draft.typeText;
+    if (draft.rate    && rateEl)  { rateEl.value = draft.rate; rateEl.dataset.touched = "1"; }
+    if (draft.notes   && notesEl) notesEl.value = draft.notes;
+    if (cbEl) cbEl.checked = !!draft.isComeback;
+    if (draft.refType) setRefType(draft.refType);
+
+    const hasDetails = draft.ref || draft.vin8 || draft.detailsOpen;
+    if (hasDetails) {
+      if (draft.ref && refEl) refEl.value = draft.ref;
+      if (draft.vin8 && vinEl) vinEl.value = draft.vin8;
+      const dp  = document.getElementById("detailsPanel");
+      const dbt = document.getElementById("toggleDetailsBtn");
+      if (dp)  dp.style.display  = "block";
+      if (dbt) dbt.textContent   = "Less";
+    }
+
+    updateEarningsPreview?.();
+    toast("Draft restored", 2500);
+  } catch {}
+}
+
+function clearDraft() {
+  clearTimeout(_draftTimer);
+  localStorage.removeItem(LS_DRAFT);
+}
 const LS_KEEP_LAST_WORK = "fr_keep_last_work";
 const LS_LAST_WORK_TYPE = "fr_last_work_type";
 
@@ -157,6 +226,7 @@ async function handleDeleteEntry(entry, ev) {
 
 function handleClear(ev, options = {}) {
   if (ev) ev.preventDefault();
+  clearDraft();
   const preserveType = !!options.preserveType;
   const preservedType = preserveType ? String(options.typeValue || getLastWorkType()).trim() : "";
   setEditingEntry(null);
@@ -414,6 +484,7 @@ async function handleSave(ev) {
   isSaving = true;
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
   try {
+    await ensureSession?.();
     const empId = getEmpId();
     if (!empId) { toast("Employee # required"); return; }
 
@@ -519,7 +590,7 @@ async function handleSave(ev) {
     const msg = /sign in required/i.test(String(err?.message || ""))
       ? "Sign in on More page first"
       : (err?.message || "Save failed");
-    showToast(msg);
+    toast(msg, 5000);
   } finally {
     isSaving = false;
     if (saveBtn) {

@@ -859,18 +859,30 @@ function removePendingById(id) {
 function updatePendingBadge() {
   const count = getPendingQueue().length;
   const el = document.getElementById("offlineBanner");
-  if (!el) return;
+  const badge = document.getElementById("pendingSyncBadge");
   const online = navigator.onLine;
-  if (count > 0 && !online) {
-    el.textContent = `Offline · ${count} entr${count === 1 ? "y" : "ies"} queued — will sync when back online`;
-    el.style.display = "";
-  } else if (count > 0 && online) {
-    el.textContent = `Syncing ${count} queued entr${count === 1 ? "y" : "ies"}…`;
-    el.style.display = "";
-  } else if (!online) {
-    el.textContent = "Offline — new entries will be saved locally";
-    el.style.display = "";
-  } else {
-    el.style.display = "none";
+
+  if (el) {
+    if (count > 0 && !online) {
+      el.textContent = `Offline · ${count} entr${count === 1 ? "y" : "ies"} queued — will sync when back online`;
+      el.style.display = "";
+    } else if (count > 0 && online) {
+      el.textContent = `Syncing ${count} queued entr${count === 1 ? "y" : "ies"}…`;
+      el.style.display = "";
+    } else if (!online) {
+      el.textContent = "Offline — new entries will be saved locally";
+      el.style.display = "";
+    } else {
+      el.style.display = "none";
+    }
+  }
+
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = `↑${count}`;
+      badge.style.display = "";
+    } else {
+      badge.style.display = "none";
+    }
   }
 }
