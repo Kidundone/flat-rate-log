@@ -1386,7 +1386,7 @@ function schedulePaydayReminder() {
   window.__FR_PAYDAY__ = setTimeout(() => {
     new Notification("Flat-Rate Tracker", {
       body: "Payday! Remember to log your pay stub.",
-      icon: "/flat-rate-log/icon-192.png",
+      icon: "/FlatRate/icon-192.png",
     });
     schedulePaydayReminder();
   }, d.getTime() - now.getTime());
@@ -1417,7 +1417,7 @@ function scheduleShiftReminder() {
   window.__FR_REMINDER__ = setTimeout(() => {
     new Notification("Flat-Rate Tracker", {
       body: "End of shift — log your hours before you leave!",
-      icon: "/flat-rate-log/icon-192.png",
+      icon: "/FlatRate/icon-192.png",
     });
   }, target.getTime() - now.getTime());
 }
