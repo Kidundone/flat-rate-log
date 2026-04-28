@@ -66,7 +66,7 @@ function restoreDraft() {
     ["hours", "typeText"].forEach(id =>
       document.getElementById(id)?.dispatchEvent(new Event("input", { bubbles: true }))
     );
-    toast("Draft restored", 2500);
+    // silent restore — user can see their content was carried over
   } catch {}
 }
 
