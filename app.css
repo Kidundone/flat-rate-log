@@ -1382,11 +1382,11 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .moreCard { padding: 0; overflow: hidden; }
 
 .moreCardHeader {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--muted);
+  color: var(--muted2);
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .8px;
   padding: 14px 16px 10px;
 }
 
@@ -1963,27 +1963,53 @@ body.compact .list    { gap: 1px; }
 }
 
 /* ── Job type list rows (More page) ──────────────── */
+.typeAddDetails { border-top: 1px solid var(--stroke); }
+.typeAddSummary {
+  display: flex;
+  align-items: center;
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.typeAddSummary::-webkit-details-marker { display: none; }
+.typeAddDetails[open] .typeAddSummary { color: var(--muted); }
 .typeAddForm {
-  padding: 8px 16px 12px;
+  padding: 0 16px 12px;
+  border-top: 1px solid var(--stroke);
 }
 .typeAddFields {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
+  padding-top: 12px;
 }
 .typeRow {
-  padding: 12px 16px 8px;
+  padding: 10px 16px;
 }
 .typeRowMain {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
 }
 .typeRowName {
   font-weight: 600;
   font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.typeRowEnd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 .typeRowDefaults {
   font-size: 12px;
@@ -1992,8 +2018,7 @@ body.compact .list    { gap: 1px; }
 }
 .typeRowActions {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px;
 }
 .typeEditForm {
   margin-top: 10px;

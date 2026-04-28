@@ -1142,11 +1142,13 @@ async function renderTypesListInMore(){
     div.innerHTML = `
       <div class="typeRowMain">
         <div class="typeRowName">${escapeHtml(t.name)}</div>
-        <div class="typeRowDefaults">${round1(t.lastHours||0)} hrs &nbsp;·&nbsp; ${formatMoney(t.lastRate||0)}/hr</div>
-      </div>
-      <div class="typeRowActions">
-        <button class="iBtn typeEditBtn" type="button">Edit</button>
-        <button class="iBtn iBtn--danger typeDelBtn" type="button">Delete</button>
+        <div class="typeRowEnd">
+          <div class="typeRowDefaults">${round1(t.lastHours||0)} hrs · ${formatMoney(t.lastRate||0)}/hr</div>
+          <div class="typeRowActions">
+            <button class="iBtn typeEditBtn" type="button">Edit</button>
+            <button class="iBtn iBtn--danger typeDelBtn" type="button">Del</button>
+          </div>
+        </div>
       </div>
       <div class="typeEditForm" style="display:none;">
         <div class="typeEditFields">

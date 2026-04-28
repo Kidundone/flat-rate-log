@@ -1019,14 +1019,15 @@ function initSettingsUI() {
     document.documentElement.style.setProperty("--accent", c);
   });
 
-  saveBtn?.addEventListener("click", () => {
+  const autosave = () => {
     const color   = colorPicker?.value   || s.accentColor;
     const rate    = parseFloat(rateInput?.value) || 15;
     const compact = compactToggle?.checked ?? false;
     saveSettings({ defaultRate: rate, accentColor: color, compactList: compact, darkMode: activeDarkMode });
-    saveBtn.textContent = "Saved!";
-    setTimeout(() => { saveBtn.textContent = "Save Preferences"; }, 1800);
-  });
+  };
+  rateInput?.addEventListener("blur", autosave);
+  compactToggle?.addEventListener("change", autosave);
+  colorPicker?.addEventListener("change", autosave);
 
   // ── Shift reminder ──
   const reminderEnabled = document.getElementById("reminderEnabled");
