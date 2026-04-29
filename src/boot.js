@@ -384,6 +384,11 @@ async function runOnce() {
       });
     }
 
+    document.getElementById("retakeTourBtn")?.addEventListener("click", () => {
+      localStorage.removeItem("fr_tour_done");
+      window.location.href = "./index.html";
+    });
+
     document.getElementById("repairBtn")?.addEventListener("click", async () => {
       const empId = getEmpId();
       if (!empId) return alert("Enter Employee # first.");

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Flat-Rate Tracker — More</title>
   <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="stylesheet" href="./app.d1a5068469.css">
+  <link rel="stylesheet" href="./app.a17393efa4.css">
 </head>
 <body data-page="more">
 
@@ -246,28 +246,42 @@
 
     <!-- ── Job Types ── -->
     <section class="card moreCard">
-      <div class="moreCardHeader">Job Types</div>
-      <details class="typeAddDetails">
-        <summary class="typeAddSummary">+ New Type</summary>
-        <form id="savedTypeCreateForm" class="typeAddForm">
-          <div class="typeAddFields">
-            <label class="typeEditLabel typeNameField">
-              Type Name
-              <input id="savedTypeName" class="moreInput" type="text" placeholder="Brake job" autocomplete="off" />
-            </label>
-            <label class="typeEditLabel">
-              Default hrs
-              <input id="savedTypeHours" class="moreInput" inputmode="decimal" type="number" step="0.1" min="0" value="0.5" />
-            </label>
-            <label class="typeEditLabel">
-              Rate $/hr
-              <input id="savedTypeRate" class="moreInput" inputmode="decimal" type="number" step="0.01" min="0" value="15" />
-            </label>
-            <button class="btn primary" type="submit">Add Type</button>
-          </div>
-        </form>
+      <details class="moreSectionDetails">
+        <summary class="moreCardHeader moreSectionSummary">Job Types</summary>
+        <details class="typeAddDetails">
+          <summary class="typeAddSummary">+ New Type</summary>
+          <form id="savedTypeCreateForm" class="typeAddForm">
+            <div class="typeAddFields">
+              <label class="typeEditLabel typeNameField">
+                Type Name
+                <input id="savedTypeName" class="moreInput" type="text" placeholder="Brake job" autocomplete="off" />
+              </label>
+              <label class="typeEditLabel">
+                Default hrs
+                <input id="savedTypeHours" class="moreInput" inputmode="decimal" type="number" step="0.1" min="0" value="0.5" />
+              </label>
+              <label class="typeEditLabel">
+                Rate $/hr
+                <input id="savedTypeRate" class="moreInput" inputmode="decimal" type="number" step="0.01" min="0" value="15" />
+              </label>
+              <button class="btn primary" type="submit">Add Type</button>
+            </div>
+          </form>
+        </details>
+        <div id="savedTypesList" style="padding-bottom:4px;"></div>
       </details>
-      <div id="savedTypesList" style="padding-bottom:4px;"></div>
+    </section>
+
+    <!-- ── Help ── -->
+    <section class="card moreCard">
+      <div class="moreCardHeader">Help</div>
+      <div class="moreRow">
+        <div>
+          <div class="moreRowLabel">App Tour</div>
+          <div class="moreRowSub">Replay the getting-started walkthrough</div>
+        </div>
+        <button class="btn" id="retakeTourBtn" type="button">Take Tour</button>
+      </div>
     </section>
 
     <!-- ── Export & Tools ── -->
@@ -361,6 +375,6 @@
       anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmbnlkaGlkYndmeWZqYWZhemR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNTk0MDYsImV4cCI6MjA4MzkzNTQwNn0.ES4tEeUgtTrPjYR64SGHDeQJps7dFdTmF7IRUhPZwt4"
     };
   </script>
-  <script src="/FlatRate/app.428594f48e.js" defer></script>
+  <script src="/FlatRate/app.a3e58daa92.js" defer></script>
 </body>
 </html>

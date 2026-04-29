@@ -1962,6 +1962,28 @@ body.compact .list    { gap: 1px; }
   border-color: var(--primary);
 }
 
+/* ── Collapsible More-page sections ─────────────── */
+.moreSectionDetails { }
+.moreSectionSummary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.moreSectionSummary::-webkit-details-marker { display: none; }
+.moreSectionSummary::after {
+  content: "›";
+  font-size: 18px;
+  color: var(--muted2);
+  transition: transform 200ms var(--ease);
+  line-height: 1;
+}
+.moreSectionDetails[open] > .moreSectionSummary::after {
+  transform: rotate(90deg);
+}
+
 /* ── Job type list rows (More page) ──────────────── */
 .typeAddDetails { border-top: 1px solid var(--stroke); }
 .typeAddSummary {
@@ -2166,6 +2188,17 @@ body.compact .list    { gap: 1px; }
   inset: 0;
   z-index: 10000;
   pointer-events: all;
+  background: rgba(0,0,0,0.72);
+}
+
+/* When a spotlight target is active the box-shadow creates the backdrop */
+#tourOverlay.tour-has-target { background: transparent; }
+
+/* Welcome step (no target): center the tooltip on screen */
+#tourOverlay:not(.tour-has-target) .tourTooltip {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
 }
 
 #tourSpotlight {

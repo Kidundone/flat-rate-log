@@ -2023,32 +2023,42 @@ const TOUR_STEPS = [
   {
     el: null,
     title: "Welcome to Flat-Rate!",
-    body: "Let's take a 30-second tour so you know where everything is. Tap Next to continue.",
+    body: "A quick tour of every section. Tap Next to continue, or Skip to jump right in.",
   },
   {
     el: "#statsStrip",
-    title: "Your Earnings at a Glance",
-    body: "Today's hours, job count, pay, and this week's total — updates every time you save an entry.",
+    title: "Earnings Strip",
+    body: "Today's hours, job count, pay, and week total — always visible at the top. Taps into the stats panel.",
   },
   {
     el: ".fr26PrimaryEntry",
     title: "Log a Job",
-    body: "Enter hours worked and describe the job. Tap a quick-hour button (0.5, 1.0…) or type any value.",
+    body: "Enter hours and describe the work. Quick-tap buttons (0.5, 1.0…) fill the hours field instantly.",
   },
   {
     el: "#saveBtn",
-    title: "Save Your Entry",
-    body: "Tap Save Entry to log the job. It saves instantly and syncs to the cloud when you're online.",
+    title: "Save Entry",
+    body: "Records the job instantly. Saves locally offline and syncs to the cloud when you're back online.",
   },
   {
-    el: "#toggleDetailsBtn",
-    title: "Add Details (Optional)",
-    body: "Tap here to add an RO #, VIN, rate override, notes, or a proof photo for your records.",
+    el: ".fr26QuickTools",
+    title: "Quick Tools",
+    body: "Add Details opens RO #, VIN, rate, notes, and proof photo. Repeat Last copies your previous entry.",
+  },
+  {
+    el: "#statsPanel",
+    title: "Stats Panel",
+    body: "Switch Day / Week / Month / All. Tap any day in the week breakdown to filter the entry list below.",
+  },
+  {
+    el: "#entryList",
+    title: "Entry List",
+    body: "All your logged jobs. Tap to edit, swipe or long-press to select multiples for bulk export or delete.",
   },
   {
     el: ".tabItem:last-child",
-    title: "More Features",
-    body: "Visit the More tab for pay stub comparison, needs-review queue, earnings history, and exports.",
+    title: "The More Tab",
+    body: "Pay stub comparison, needs-review queue, earnings history, job types, and export tools — all in More.",
   },
 ];
 
@@ -2060,8 +2070,10 @@ function maybeStartTour() {
 
 function startTour() {
   if (localStorage.getItem("fr_tour_done")) return;
-  const overlay = document.getElementById("tourOverlay");
-  if (!overlay) return;
+  const overlay  = document.getElementById("tourOverlay");
+  const nextBtn  = document.getElementById("tourNextBtn");
+  const skipBtn  = document.getElementById("tourSkipBtn");
+  if (!overlay || !nextBtn || !skipBtn) return;
 
   let step = 0;
 
@@ -2079,32 +2091,40 @@ function startTour() {
   function positionSpotlight(elSel) {
     const spotlight = document.getElementById("tourSpotlight");
     if (!spotlight) return;
-    if (!elSel) { spotlight.style.display = "none"; spotlight.classList.remove("pulse"); return; }
+    if (!elSel) {
+      spotlight.style.display = "none";
+      spotlight.classList.remove("pulse");
+      overlay.style.background = "rgba(0,0,0,0.72)";
+      overlay.classList.remove("tour-has-target");
+      return;
+    }
     const target = document.querySelector(elSel);
-    if (!target) { spotlight.style.display = "none"; return; }
+    if (!target) {
+      spotlight.style.display = "none";
+      overlay.style.background = "rgba(0,0,0,0.72)";
+      overlay.classList.remove("tour-has-target");
+      return;
+    }
     target.scrollIntoView({ block: "center", behavior: "smooth" });
+    overlay.style.background = "transparent";
+    overlay.classList.add("tour-has-target");
     setTimeout(() => {
       const r = target.getBoundingClientRect();
-      const pad = 7;
-      spotlight.style.display = "block";
-      spotlight.style.top = (r.top - pad) + "px";
-      spotlight.style.left = (r.left - pad) + "px";
-      spotlight.style.width = (r.width + pad * 2) + "px";
-      spotlight.style.height = (r.height + pad * 2) + "px";
+      const pad = 8;
+      spotlight.style.cssText = `display:block;top:${r.top - pad}px;left:${r.left - pad}px;width:${r.width + pad * 2}px;height:${r.height + pad * 2}px;`;
       spotlight.classList.add("pulse");
-    }, 280);
+    }, 260);
   }
 
   function show(idx) {
     const s = TOUR_STEPS[idx];
     const stepLabel = document.getElementById("tourStep");
-    const titleEl = document.getElementById("tourTitle");
-    const bodyEl = document.getElementById("tourBody");
-    const nextBtn = document.getElementById("tourNextBtn");
+    const titleEl   = document.getElementById("tourTitle");
+    const bodyEl    = document.getElementById("tourBody");
     if (stepLabel) stepLabel.textContent = `${idx + 1} of ${TOUR_STEPS.length}`;
-    if (titleEl) titleEl.textContent = s.title;
-    if (bodyEl) bodyEl.textContent = s.body;
-    if (nextBtn) nextBtn.textContent = idx === TOUR_STEPS.length - 1 ? "Done" : "Next";
+    if (titleEl)   titleEl.textContent = s.title;
+    if (bodyEl)    bodyEl.textContent = s.body;
+    nextBtn.textContent = idx === TOUR_STEPS.length - 1 ? "Done" : "Next";
     overlay.style.display = "block";
     buildDots();
     positionSpotlight(s.el);
@@ -2112,17 +2132,15 @@ function startTour() {
 
   function endTour() {
     overlay.style.display = "none";
+    overlay.style.background = "";
+    overlay.classList.remove("tour-has-target");
     const spotlight = document.getElementById("tourSpotlight");
-    if (spotlight) { spotlight.style.display = "none"; spotlight.classList.remove("pulse"); }
+    if (spotlight) { spotlight.style.cssText = "display:none;"; spotlight.classList.remove("pulse"); }
     localStorage.setItem("fr_tour_done", "1");
   }
 
-  document.getElementById("tourNextBtn").onclick = () => {
-    step++;
-    if (step >= TOUR_STEPS.length) endTour();
-    else show(step);
-  };
-  document.getElementById("tourSkipBtn").onclick = endTour;
+  nextBtn.onclick = () => { step++; if (step >= TOUR_STEPS.length) endTour(); else show(step); };
+  skipBtn.onclick = endTour;
 
   show(0);
 }
