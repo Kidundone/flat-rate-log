@@ -1968,7 +1968,7 @@ body.compact .list    { gap: 1px; }
   display: flex;
   align-items: center;
   padding: 11px 16px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--primary);
   cursor: pointer;
@@ -1978,67 +1978,89 @@ body.compact .list    { gap: 1px; }
 .typeAddSummary::-webkit-details-marker { display: none; }
 .typeAddDetails[open] .typeAddSummary { color: var(--muted); }
 .typeAddForm {
-  padding: 0 16px 12px;
+  padding: 0 16px 14px;
   border-top: 1px solid var(--stroke);
 }
 .typeAddFields {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  align-items: flex-end;
   padding-top: 12px;
 }
-.typeRow {
-  padding: 10px 16px;
+.typeAddFields .typeNameField {
+  grid-column: 1 / -1;
 }
+.typeAddFields .btn {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.typeRow {
+  padding: 9px 16px;
+  border-top: 1px solid var(--stroke);
+}
+.typeRow:first-child { border-top: none; }
 .typeRowMain {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
+.typeRowInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .typeRowName {
   font-weight: 600;
-  font-size: 15px;
-  min-width: 0;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.typeRowEnd {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-.typeRowDefaults {
-  font-size: 12px;
+.typeRowMeta {
+  font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
 }
 .typeRowActions {
   display: flex;
-  gap: 6px;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.typeRowActions .iBtn {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 .typeEditForm {
   margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--stroke);
 }
 .typeEditFields {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  align-items: flex-end;
+  align-items: end;
 }
+.typeEditActions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+}
+.typeEditActions .btn { flex: 1; }
 .typeEditLabel {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: .3px;
+  letter-spacing: .4px;
 }
+.typeEditLabel input { font-size: 14px; }
 
 /* ── Offline dot ─────────────────────────────────── */
 .offlineDot {

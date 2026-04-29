@@ -1143,50 +1143,55 @@ async function renderTypesListInMore(){
     div.dataset.id = t.id;
     div.innerHTML = `
       <div class="typeRowMain">
-        <div class="typeRowName">${escapeHtml(t.name)}</div>
-        <div class="typeRowEnd">
-          <div class="typeRowDefaults">${round1(t.lastHours||0)} hrs · ${formatMoney(t.lastRate||0)}/hr</div>
-          <div class="typeRowActions">
-            <button class="iBtn typeEditBtn" type="button">Edit</button>
-            <button class="iBtn iBtn--danger typeDelBtn" type="button">Del</button>
-          </div>
+        <div class="typeRowInfo">
+          <div class="typeRowName">${escapeHtml(t.name)}</div>
+          <div class="typeRowMeta">${round1(t.lastHours||0)} hrs · ${formatMoney(t.lastRate||0)}/hr</div>
+        </div>
+        <div class="typeRowActions">
+          <button class="iBtn typeEditBtn" type="button">Edit</button>
+          <button class="iBtn iBtn--danger typeDelBtn" type="button">Delete</button>
         </div>
       </div>
       <div class="typeEditForm" style="display:none;">
         <div class="typeEditFields">
           <label class="typeEditLabel">Default hrs
-            <input type="number" class="moreInput moreInputNarrow typeEditHours" inputmode="decimal" step="0.1" min="0" value="${round1(t.lastHours||0)}" />
+            <input type="number" class="moreInput typeEditHours" inputmode="decimal" step="0.1" min="0" value="${round1(t.lastHours||0)}" />
           </label>
           <label class="typeEditLabel">Rate $/hr
-            <input type="number" class="moreInput moreInputNarrow typeEditRate" inputmode="decimal" step="0.01" min="0" value="${round2(t.lastRate||0)}" />
+            <input type="number" class="moreInput typeEditRate" inputmode="decimal" step="0.01" min="0" value="${round2(t.lastRate||0)}" />
           </label>
-          <button class="btn primary typeEditSaveBtn" type="button">Save</button>
-          <button class="btn typeEditCancelBtn" type="button">Cancel</button>
+          <div class="typeEditActions">
+            <button class="btn primary typeEditSaveBtn" type="button">Save</button>
+            <button class="btn typeEditCancelBtn" type="button">Cancel</button>
+          </div>
         </div>
       </div>
     `;
 
-    const editBtn = div.querySelector(".typeEditBtn");
-    const delBtn  = div.querySelector(".typeDelBtn");
-    const form    = div.querySelector(".typeEditForm");
-    const saveBtn = div.querySelector(".typeEditSaveBtn");
+    const editBtn   = div.querySelector(".typeEditBtn");
+    const delBtn    = div.querySelector(".typeDelBtn");
+    const form      = div.querySelector(".typeEditForm");
+    const saveBtn   = div.querySelector(".typeEditSaveBtn");
     const cancelBtn = div.querySelector(".typeEditCancelBtn");
 
     editBtn.addEventListener("click", () => {
       const open = form.style.display !== "none";
       form.style.display = open ? "none" : "block";
-      editBtn.textContent = open ? "Edit" : "Done";
+      editBtn.textContent = open ? "Edit" : "Close";
     });
     cancelBtn.addEventListener("click", () => {
       form.style.display = "none";
       editBtn.textContent = "Edit";
     });
     saveBtn.addEventListener("click", async () => {
-      const hrs = Number(div.querySelector(".typeEditHours").value || 0);
+      const hrs  = Number(div.querySelector(".typeEditHours").value || 0);
       const rate = Number(div.querySelector(".typeEditRate").value || 0);
       if (!Number.isFinite(hrs) || hrs < 0) return;
       if (!Number.isFinite(rate) || rate < 0) return;
       await upsertTypeDefaults(t.name, hrs, rate);
+      form.style.display = "none";
+      editBtn.textContent = "Edit";
+      div.querySelector(".typeRowMeta").textContent = `${round1(hrs)} hrs · ${formatMoney(rate)}/hr`;
       toast?.(`${t.name} updated`);
     });
     delBtn.addEventListener("click", async (e) => {
@@ -1198,11 +1203,6 @@ async function renderTypesListInMore(){
     });
 
     box.appendChild(div);
-    if (types.indexOf(t) < types.length - 1) {
-      const hr = document.createElement("div");
-      hr.className = "moreDivider";
-      box.appendChild(hr);
-    }
   }
 }
 
