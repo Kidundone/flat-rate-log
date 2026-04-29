@@ -597,9 +597,16 @@ async function handleSave(ev) {
     focusHoursInput();
   } catch (err) {
     console.error("Save failed", err);
-    const msg = /sign in required/i.test(String(err?.message || ""))
-      ? "Sign in on More page first"
-      : (err?.message || "Save failed");
+    const errStr = String(err?.message || "") + String(err?.code || "");
+    const isAuthErr = /UNSUPPORTED_TOKEN_ALGORITHM|invalid.*token|token.*expired|not_authenticated|unauthorized/i.test(errStr);
+    const msg = isAuthErr
+      ? "Session expired — sign out and sign back in"
+      : /sign in required/i.test(errStr)
+        ? "Sign in on More page first"
+        : (err?.message || "Save failed");
+    if (isAuthErr) {
+      try { await sb().auth.signOut(); } catch {}
+    }
     toast(msg, 5000);
   } finally {
     isSaving = false;
