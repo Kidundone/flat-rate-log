@@ -125,10 +125,13 @@ async function runOnce() {
     const rateInput  = document.querySelector('input[name="rate"]');
 
     if (hoursInput) {
-      hoursInput.addEventListener("input", () => hoursInput.dataset.touched = "1");
+      hoursInput.addEventListener("input", () => {
+        hoursInput.dataset.touched = "1";
+        if (num(hoursInput.value) > 0) restoreLastWorkType?.();
+      });
       hoursInput.addEventListener("blur", () => {
         const v = round1(num(hoursInput.value));
-        if (Number.isFinite(v) && v > 0) hoursInput.value = String(v);
+        if (Number.isFinite(v) && v > 0) { hoursInput.value = String(v); restoreLastWorkType?.(); }
         else if (hoursInput.value) hoursInput.value = "";
       });
     }
@@ -245,7 +248,6 @@ async function runOnce() {
       if (typeStrip) typeStrip.hidden = true;
     });
 
-    restoreLastWorkType?.();
     syncClearTypeBtn();
     updateSaveEnabled();
 
@@ -260,6 +262,7 @@ async function runOnce() {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         setQuickHoursValue?.(btn.getAttribute("data-hours-quick"));
+        restoreLastWorkType?.();
         updateEarningsPreview?.();
       });
     });
