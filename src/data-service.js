@@ -719,14 +719,15 @@ const STORES = {
 const $ = (id) => document.getElementById(id);
 
 async function safeLoadEntries() {
-  if (!window.CURRENT_UID) {
-    console.warn("No UID - skipping loadEntries");
-    return [];
-  }
-
   const emp = getEmpId();
-  if (!emp) {
-    console.warn("No employee number - skipping loadEntries");
+
+  if (!window.CURRENT_UID || !emp) {
+    // Not signed in — still show any queued offline entries so they aren't invisible
+    const pending = getPendingQueue().map(item => ({ ...item.entry, _pending: true }));
+    if (pending.length) {
+      CURRENT_ENTRIES = syncStateEntries(normalizeEntries(pending));
+      await renderLogs(CURRENT_ENTRIES);
+    }
     return [];
   }
 
@@ -735,6 +736,18 @@ async function safeLoadEntries() {
     return rows;
   } catch (e) {
     console.error("loadEntries failed:", e);
+    // Offline fallback: merge last-known cache with any pending (unsynced) entries
+    if (!navigator.onLine || String(e?.message || "").includes("fetch")) {
+      const pendingMap = new Map(getPendingQueue().map(x => [String(x.id), { ...x.entry, _pending: true }]));
+      const cached = getCachedEntries(emp).filter(c => !pendingMap.has(String(c.id)));
+      const merged = [...pendingMap.values(), ...cached];
+      if (merged.length) {
+        CURRENT_ENTRIES = syncStateEntries(normalizeEntries(merged));
+        setCachedEntries(emp, merged);
+        await renderLogs(CURRENT_ENTRIES);
+        toast?.("Offline — showing cached entries");
+      }
+    }
     return [];
   }
 }
@@ -794,10 +807,31 @@ async function renderLogs(logs) {
   await refreshUI(entries);
 }
 
+const LS_ENTRY_CACHE = "fr_entry_cache_";
+
+function getCachedEntries(empId) {
+  try { return JSON.parse(localStorage.getItem(LS_ENTRY_CACHE + empId) || "[]"); } catch { return []; }
+}
+
+function setCachedEntries(empId, entries) {
+  if (!empId || !entries?.length) return;
+  try {
+    const slim = entries.slice(0, 300).map(e => ({
+      id: e.id, empId: e.empId, dayKey: e.dayKey, weekStartKey: e.weekStartKey,
+      type: e.type, typeText: e.typeText, hours: e.hours, rate: e.rate,
+      earnings: e.earnings, ref: e.ref, ro: e.ro, vin8: e.vin8, notes: e.notes,
+      isComeback: e.isComeback, createdAt: e.createdAt, work_date: e.work_date,
+      photo_path: e.photo_path, refType: e.refType,
+    }));
+    localStorage.setItem(LS_ENTRY_CACHE + empId, JSON.stringify(slim));
+  } catch {}
+}
+
 async function renderEntries(rows) {
   const mapped = (rows || []).map(mapServerLogToEntry);
   CURRENT_ENTRIES = syncStateEntries(mapped);
   await syncTypesFromEntries?.(mapped, getEmpId());
+  setCachedEntries(getEmpId(), mapped);
   await renderLogs(mapped);
   await refreshMorePagePanels?.();
   return mapped;

@@ -424,7 +424,13 @@ async function saveEntry(entry, options = {}) {
       saved = await withTimeout(apiCreateLog(payload, entry), 20000, "Save timed out — please try again");
     } catch (err) {
       const isTimeout = String(err?.message || "").startsWith("Save timed out");
-      const isNetworkErr = !navigator.onLine || err?.message === "Failed to fetch" || err?.name === "TypeError";
+      const errMsg = String(err?.message || "");
+      const isNetworkErr = !navigator.onLine
+        || errMsg === "Failed to fetch"
+        || err?.name === "TypeError"
+        || err?.name === "NetworkError"
+        || errMsg.includes("network")
+        || errMsg.includes("fetch");
       if (isTimeout || isNetworkErr) {
         const localEntry = { ...entry, _pending: true };
         CURRENT_ENTRIES = syncStateEntries([localEntry, ...(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [])]);
@@ -868,6 +874,9 @@ async function flushPendingSync() {
   const q = getPendingQueue();
   if (!q.length) return;
 
+  // Can't sync without auth — wait for next online/auth event
+  if (!window.CURRENT_UID) { updatePendingBadge(); return; }
+
   // Drop stale items older than 14 days (irrecoverable)
   const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   getPendingQueue().filter(x => x.queuedAt && x.queuedAt < cutoff).forEach(x => removePendingById(x.id));
@@ -880,12 +889,17 @@ async function flushPendingSync() {
       removePendingById(item.id);
       synced++;
     } catch (err) {
-      // 23505 = Postgres duplicate key — partial sync already landed; just dequeue
-      if (err?.code === "23505" || err?.status === 409 || String(err?.message).includes("duplicate")) {
+      const msg = String(err?.message || "");
+      // 23505 = Postgres duplicate key — already landed; just dequeue
+      if (err?.code === "23505" || err?.status === 409 || msg.includes("duplicate")) {
         removePendingById(item.id);
         alreadyExists++;
+        continue;
       }
-      // continue trying remaining items regardless of error type
+      // Auth gone — stop trying; entries stay queued until user re-signs-in
+      if (msg.includes("Sign in required") || msg.includes("sign in")) break;
+      // Network still down — stop; will retry on next online event
+      if (!navigator.onLine || msg.includes("fetch")) break;
     }
   }
   if (synced > 0) {
@@ -893,7 +907,7 @@ async function flushPendingSync() {
     await safeLoadEntries();
   }
   if (alreadyExists > 0) {
-    toast(`${alreadyExists} duplicate${alreadyExists > 1 ? "s" : ""} cleared — already on server`);
+    toast(`${alreadyExists} duplicate${alreadyExists > 1 ? "s" : ""} cleared`);
   }
   updatePendingBadge();
 }
