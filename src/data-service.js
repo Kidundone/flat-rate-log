@@ -25,7 +25,13 @@ function setAuthMessage(text = "", isError = false) {
 
 async function bootAuth() {
   console.log("bootAuth called");
-  const { data, error } = await sb().auth.getSession();
+  let client;
+  try { client = sb(); } catch (e) {
+    console.error("Supabase not ready during bootAuth:", e);
+    await initAuth();
+    return;
+  }
+  const { data, error } = await client.auth.getSession();
   if (error) console.error("getSession error:", error);
   await setUidFromSession(data?.session || null);
 
@@ -34,7 +40,7 @@ async function bootAuth() {
   if (window.__AUTH_WIRED__) return;
   window.__AUTH_WIRED__ = true;
 
-  sb().auth.onAuthStateChange(async (event, session) => {
+  client.auth.onAuthStateChange(async (event, session) => {
     console.log("AUTH EVENT:", event);
     await setUidFromSession(session || null);
     await initAuth();
@@ -78,7 +84,6 @@ async function initAuth() {
 }
 
 function wireAuthUI() {
-  const client = sb();
   const emailEl  = document.getElementById("authEmail");
   const passEl   = document.getElementById("authPassword");
   const signUpBtn = document.getElementById("authSignUp");
@@ -87,6 +92,16 @@ function wireAuthUI() {
   const outBtn    = document.getElementById("authSignOut");
   // only wire on the more page where these elements exist
   if (!signInBtn && !signUpBtn) return;
+
+  // Lazy client getter — called at click time so wiring never fails even if
+  // the Supabase library isn't loaded yet when the page first runs
+  const getClient = () => {
+    try { return sb(); }
+    catch (e) {
+      setAuthMessage("App not ready — please reload the page.", true);
+      return null;
+    }
+  };
 
   const baseText = new Map(
     [signInBtn, signUpBtn, resetBtn]
@@ -99,32 +114,27 @@ function wireAuthUI() {
       if (!btn) return;
       btn.disabled = busy;
       const original = baseText.get(btn) || "";
-      if (!busy) {
-        btn.textContent = original;
-        return;
-      }
+      if (!busy) { btn.textContent = original; return; }
       if (btn === signInBtn) btn.textContent = mode === "signin" ? "Signing In..." : original;
       if (btn === signUpBtn) btn.textContent = mode === "signup" ? "Creating..." : original;
-      if (btn === resetBtn) btn.textContent = mode === "reset" ? "Sending..." : original;
+      if (btn === resetBtn)  btn.textContent = mode === "reset"  ? "Sending..."  : original;
     });
   };
 
   const runSignIn = async () => {
+    const client = getClient();
+    if (!client) return;
     const email    = (emailEl?.value || "").trim();
     const password = (passEl?.value  || "").trim();
-    if (!email || !password) {
-      setAuthMessage("Email and password required.", true);
-      return;
-    }
+    if (!email || !password) { setAuthMessage("Email and password required.", true); return; }
     setAuthMessage("Signing in...");
     setBusy(true, "signin");
     try {
       const { data, error } = await client.auth.signInWithPassword({ email, password });
       if (error) {
-        const msg = /not confirmed/i.test(error.message)
+        setAuthMessage(/not confirmed/i.test(error.message)
           ? "Check your email and click the confirmation link first."
-          : error.message;
-        setAuthMessage(msg, true);
+          : error.message, true);
         return;
       }
       await setUidFromSession(data?.session || null);
@@ -141,9 +151,7 @@ function wireAuthUI() {
   const submitOnEnter = (e) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    runSignIn().catch((err) => {
-      console.error("Auth submit failed", err);
-    });
+    runSignIn().catch(console.error);
   };
 
   emailEl?.addEventListener("keydown", submitOnEnter);
@@ -156,6 +164,8 @@ function wireAuthUI() {
 
   signUpBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
+    const client = getClient();
+    if (!client) return;
     const email    = (emailEl?.value || "").trim();
     const password = (passEl?.value  || "").trim();
     if (!email || !password) return setAuthMessage("Email and password required.", true);
@@ -182,6 +192,8 @@ function wireAuthUI() {
 
   resetBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
+    const client = getClient();
+    if (!client) return;
     const email = (emailEl?.value || "").trim();
     if (!email) return setAuthMessage("Enter your email first.", true);
     setAuthMessage("Sending reset email...");
@@ -199,6 +211,8 @@ function wireAuthUI() {
 
   outBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
+    const client = getClient();
+    if (!client) return;
     await client.auth.signOut();
     await setUidFromSession(null);
     await initAuth();
