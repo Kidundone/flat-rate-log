@@ -9,6 +9,8 @@ console.log("__FR_MARKER_20260316");
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
+  // When a new SW takes over, reload once so the user always gets the latest version
+  navigator.serviceWorker.addEventListener("controllerchange", () => location.reload());
 }
 
 window.__FR = window.__FR || {};
