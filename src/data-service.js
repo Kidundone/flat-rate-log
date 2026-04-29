@@ -299,22 +299,14 @@ async function saveEditedLog(logId, patch) {
     patch.photo_path = newPath;
   }
 
-  const runUpdate = (body) => sb()
-    .from("work_logs")
-    .update(body)
-    .eq("id", logId)
-    .select("id, photo_path")
-    .maybeSingle();
-
-  const { data, error } = await runUpdate(patch);
-  if (error) throw error;
+  await updateWorkLogWithFallback(sb(), logId, patch);
 
   window.SELECTED_PHOTO_FILE = null;
   SELECTED_PHOTO_FILE = null;
   const input = document.querySelector("#photoInput, input[type=file][data-photo]");
   if (input) input.value = "";
 
-  return data;
+  return { photo_path: patch.photo_path || null };
 }
 
 async function sbProofPhotoUrl(photoPath) {
@@ -593,7 +585,6 @@ function normalizeEntryForApi(entry) {
     location: entry.location || null,
     vin8: entry.vin8 || null,
     photo_path: entry.photo_path || entry.photoPath || null,
-    is_comeback: entry.isComeback || false,
   };
 }
 
