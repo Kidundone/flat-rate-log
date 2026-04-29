@@ -2022,49 +2022,71 @@ async function refreshUI(entriesOverride){
 const TOUR_STEPS = [
   {
     el: null,
-    title: "Welcome to Flat-Rate!",
-    body: "A quick tour of every section. Tap Next to continue, or Skip to jump right in.",
+    title: "Welcome to Flat-Rate Log",
+    body: "This app tracks every flat-rate job you complete — hours worked, earnings, RO numbers, and proof photos. This tour takes about a minute and walks through everything. Tap Next to begin.",
   },
   {
-    el: "#statsStrip",
-    title: "Earnings Strip",
-    body: "Today's hours, job count, pay, and week total — always visible at the top. Taps into the stats panel.",
+    el: "#empId",
+    title: "Your Employee Number",
+    body: "Enter your employee number here first. This ties all your entries to you. It saves automatically so you only need to do it once.",
   },
   {
-    el: ".fr26PrimaryEntry",
-    title: "Log a Job",
-    body: "Enter hours and describe the work. Quick-tap buttons (0.5, 1.0…) fill the hours field instantly.",
+    el: ".fr26QuickHours",
+    title: "Step 1 of 3 — Log Hours",
+    body: "Every job starts with how many flat-rate hours it paid. Tap a quick button (0.5, 1.0, 1.5...) for common values, or type any number in the Hours field above it.",
+  },
+  {
+    el: "#typeText",
+    title: "Step 2 of 3 — Describe the Work",
+    body: "Type what you worked on — 'Oil change', 'Front brakes', 'PDI'. The app remembers your past descriptions as shortcuts so entry gets faster over time.",
   },
   {
     el: "#saveBtn",
-    title: "Save Entry",
-    body: "Records the job instantly. Saves locally offline and syncs to the cloud when you're back online.",
+    title: "Step 3 of 3 — Save the Entry",
+    body: "Tap Save Entry to record the job. It saves instantly even when you are offline. Any offline entries sync automatically the next time you reconnect.",
+  },
+  {
+    el: "#entryList",
+    title: "Your Entry History",
+    body: "Every job you log appears here, newest on top. Tap any entry to open and edit it. Use the search bar to find jobs by RO number, work type, or VIN.",
   },
   {
     el: ".fr26QuickTools",
     title: "Quick Tools",
-    body: "Add Details opens RO #, VIN, rate, notes, and proof photo. Repeat Last copies your previous entry.",
+    body: "Add Details opens extra fields: RO number, VIN, a custom hourly rate, notes, and a proof photo. Repeat Last copies your previous job in one tap — great for similar jobs back to back.",
+  },
+  {
+    el: "#statsStrip",
+    title: "Earnings Strip",
+    body: "This bar at the top shows your running totals — hours worked today, number of jobs, today's pay, and this week's total. It updates the moment you save an entry.",
   },
   {
     el: "#statsPanel",
     title: "Stats Panel",
-    body: "Switch Day / Week / Month / All. Tap any day in the week breakdown to filter the entry list below.",
-  },
-  {
-    el: "#entryList",
-    title: "Entry List",
-    body: "All your logged jobs. Tap to edit, swipe or long-press to select multiples for bulk export or delete.",
+    body: "Tap here to expand your stats. Switch between Day, Week, Month, or All-Time. The week view breaks earnings down by day — tap any day to filter the entry list to just that day.",
   },
   {
     el: ".tabItem:last-child",
     title: "The More Tab",
-    body: "Pay stub comparison, needs-review queue, earnings history, job types, and export tools — all in More.",
+    body: "Tap More to reach: pay stub comparison (catch missing pay), earnings history chart, needs-review queue, job type presets, and CSV or PDF exports.",
+  },
+  {
+    el: null,
+    title: "Sign In for Cloud Backup",
+    body: "On the More tab, sign in with your email to back up all your data. Your entries then sync across every device you sign in on so you never lose your records.",
+  },
+  {
+    el: null,
+    title: "You Are All Set",
+    body: "Log your first job: enter hours, describe the work, tap Save. Then open the More tab to compare your logged pay against your pay stub. You can replay this tour anytime from More — Help.",
   },
 ];
 
 function maybeStartTour() {
   if (localStorage.getItem("fr_tour_done")) return;
-  if (!localStorage.getItem("fr_onboard_done")) return;
+  // If the setup modal is still open, the tour will fire from the Get Started click handler
+  const modal = document.getElementById("onboardingModal");
+  if (modal && modal.style.display !== "none") return;
   startTour();
 }
 

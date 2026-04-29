@@ -2220,10 +2220,10 @@ body.compact .list    { gap: 1px; }
   background: var(--surface);
   border: 1px solid var(--stroke2);
   border-radius: var(--r-xl);
-  padding: 18px 16px 14px;
+  padding: 20px 18px 16px;
   box-shadow: var(--shadow-lg);
   z-index: 10001;
-  max-width: 480px;
+  max-width: 520px;
   margin: 0 auto;
 }
 
@@ -2254,17 +2254,17 @@ body.compact .list    { gap: 1px; }
 .tourSkip:active { color: var(--text2); }
 
 .tourTitle {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   color: var(--text);
 }
 
 .tourBody {
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.55;
-  margin-bottom: 14px;
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 16px;
 }
 
 .tourFooter {
