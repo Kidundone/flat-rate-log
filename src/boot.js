@@ -7,17 +7,9 @@ const FEATURE_FREEZE = Object.freeze({
 const ACTIVE_DATA_PATH = FEATURE_FREEZE.entriesDataPath;
 console.log("__FR_MARKER_20260316");
 
-(async () => {
-  if ("serviceWorker" in navigator) {
-    const regs = await navigator.serviceWorker.getRegistrations();
-    for (const r of regs) await r.unregister();
-  }
-  if (window.caches) {
-    const keys = await caches.keys();
-    await Promise.all(keys.map(k => caches.delete(k)));
-  }
-  console.log("[SW] fully removed");
-})();
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
 
 window.__FR = window.__FR || {};
 window.__FR.buildTag = BUILD_TAG;

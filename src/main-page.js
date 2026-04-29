@@ -1614,7 +1614,7 @@ function renderList(entries, mode){
       </div>
       <div class="itemActions">
         <button class="iBtn" data-action="edit" data-id="${e.id}">Edit</button>
-        ${e.isComeback ? `<button class="iBtn iBtn--active" data-action="toggle-cb" data-id="${e.id}">CB ✓</button>` : ""}
+        <button class="iBtn${e.isComeback ? " iBtn--active" : ""}" data-action="toggle-cb" data-id="${e.id}">${e.isComeback ? "CB ✓" : "CB"}</button>
         <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
         ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
       </div>
