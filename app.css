@@ -257,9 +257,10 @@ main {
   position: relative;
   z-index: 2;
   transition: transform 200ms ease;
+  will-change: transform;
 }
 .item.swiping .itemInner { transition: none; }
-.item:active .itemInner { background: var(--surface3); }
+.item:not(.swiping):active .itemInner { background: var(--surface3); }
 
 /* Swipe action zones — sit behind .itemInner, revealed on swipe */
 .swipeZone {
@@ -359,21 +360,51 @@ main {
 /* ── Collapsible entries ─────────────────────────── */
 .item .itemTop { cursor: pointer; user-select: none; -webkit-user-select: none; }
 
+.itemMeta, .itemNotes, .itemActions {
+  overflow: hidden;
+  transition: max-height 220ms var(--ease), opacity 180ms var(--ease), margin-top 200ms var(--ease);
+}
+.itemMeta   { max-height: 56px; }
+.itemNotes  { max-height: 80px; }
+.itemActions { max-height: 60px; }
+
 .item.collapsed .itemMeta,
 .item.collapsed .itemNotes,
-.item.collapsed .entryThumbWrap,
-.item.collapsed .itemActions { display: none; }
-
-.itemChevron {
-  font-size: 9px;
-  color: var(--muted);
-  margin-top: 5px;
-  text-align: right;
-  line-height: 1;
-  transition: transform 180ms ease;
+.item.collapsed .itemActions {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
   pointer-events: none;
 }
-.item.collapsed .itemChevron { transform: rotate(-90deg); }
+.item.collapsed .entryThumbWrap {
+  max-height: 0 !important;
+  margin-top: 0;
+}
+
+/* CSS chevron — more consistent than Unicode across devices */
+.itemChevron {
+  width: 16px;
+  height: 16px;
+  margin-top: 6px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.itemChevron::after {
+  content: "";
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted2);
+  border-bottom: 2px solid var(--muted2);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 180ms var(--ease);
+}
+.item.collapsed .itemChevron::after {
+  transform: rotate(-45deg) translateY(2px);
+}
 
 /* Action buttons — compact pill style */
 .itemActions {
@@ -383,7 +414,8 @@ main {
   flex-wrap: wrap;
 }
 .iBtn {
-  padding: 5px 13px;
+  padding: 7px 14px;
+  min-height: 34px;
   font-size: 12px;
   font-weight: 600;
   border-radius: var(--r-pill);
@@ -391,10 +423,12 @@ main {
   background: var(--surface2);
   color: var(--text2);
   cursor: pointer;
-  transition: background 120ms var(--ease);
+  transition: background 120ms var(--ease), transform 80ms var(--ease);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
-.iBtn:active { background: var(--surface3); }
+.iBtn:active { background: var(--surface3); transform: scale(.94); }
 .iBtn--danger { color: var(--danger); border-color: rgba(237,73,86,.25); background: rgba(237,73,86,.06); }
 
 /* ── Week group header ───────────────────────────── */
@@ -1051,22 +1085,27 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 /* ── Toast ───────────────────────────────────────── */
 .toast {
   position: fixed;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%) translateY(8px);
-  background: var(--surface3);
-  color: var(--text);
-  padding: 12px 18px;
+  background: rgba(40,40,44,.96);
+  color: #fff;
+  padding: 11px 18px;
   border-radius: var(--r-pill);
-  border: 1px solid var(--stroke2);
+  border: 1px solid rgba(255,255,255,.12);
   box-shadow: var(--shadow-lg);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   opacity: 0;
   pointer-events: none;
   white-space: nowrap;
+  max-width: calc(100vw - 48px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: opacity 200ms var(--ease), transform 200ms var(--ease);
   z-index: 9000;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .toast.show {
@@ -1250,7 +1289,10 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 8px 16px 32px;
+  padding: 10px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .histDayHeader {
@@ -1285,32 +1327,32 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 }
 
 .histEntryRow {
+  background: var(--surface2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-lg);
+  padding: 14px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--stroke);
 }
 
-.histEntryRow:last-child { border-bottom: 0; }
+[data-theme="light"] .histEntryRow { background: var(--surface); }
 
 .histEntryLeft { flex: 1; min-width: 0; }
 
 .histEntryType {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .histEntryRef {
   font-size: 12px;
   color: var(--muted);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .histEntryMeta {
@@ -1329,10 +1371,11 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   font-weight: 800;
   letter-spacing: -.4px;
   line-height: 1;
+  color: var(--accent);
 }
 
 .histEntryHrs {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   margin-top: 3px;
 }
@@ -1340,8 +1383,8 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .histEntryActions {
   display: flex;
   gap: 6px;
-  justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
 
 /* ── More page ───────────────────────────────────── */
@@ -1908,6 +1951,11 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
   background: rgba(242,242,247,.92);
 }
 
+[data-theme="light"] .itemInner { background: var(--surface); }
+[data-theme="light"] .item:active .itemInner { background: var(--surface2); }
+[data-theme="light"] .swipeDeleteZone { background: #ff3b30; }
+[data-theme="light"] .swipeEditZone   { background: #007aff; }
+
 [data-theme="light"] .moreToggleTrack {
   background: var(--surface3);
   border-color: var(--stroke2);
@@ -2006,9 +2054,9 @@ body.compact .list    { gap: 1px; }
 
 /* ── iBtn active state (comeback toggle) ─────────── */
 .iBtn--active {
-  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  background: rgba(0,149,246,.18);
   color: var(--primary);
-  border-color: var(--primary);
+  border-color: rgba(0,149,246,.5);
 }
 
 /* ── Collapsible More-page sections ─────────────── */

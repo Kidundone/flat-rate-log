@@ -394,30 +394,6 @@ window.__FR.deleteSelectedEntries = deleteSelectedEntries;
 window.__FR.checkDuplicates = checkDuplicates;
 window.__FR.bulkEditRate = bulkEditRate;
 
-function duplicateEntryRo(e) {
-  setEditingEntry(null);
-  const refEl   = document.getElementById("ref");
-  const vinEl   = document.getElementById("vin8");
-  const typeEl  = document.getElementById("typeText");
-  const hoursEl = document.getElementById("hours");
-  const rateEl  = document.querySelector('input[name="rate"]');
-  const notesEl = document.querySelector('textarea[name="notes"]');
-  if (refEl)   refEl.value  = e.ref || e.ro || "";
-  if (vinEl)   vinEl.value  = e.vin8 || "";
-  if (typeEl)  typeEl.value = "";
-  if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
-  if (rateEl)  { rateEl.value = String(getDefaultRate()); rateEl.dataset.touched = ""; }
-  if (notesEl) notesEl.value = "";
-  setRefType(e.refType || "RO");
-  clearPickedPhoto();
-  const dp  = document.getElementById("detailsPanel");
-  const dbt = document.getElementById("toggleDetailsBtn");
-  if (dp)  dp.style.display  = "block";
-  if (dbt) dbt.textContent   = "Less";
-  document.getElementById("logForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  setTimeout(() => typeEl?.focus(), 300);
-  toast("RO pre-filled — enter type and hours");
-}
 
 async function saveEntry(entry, options = {}) {
   const preserveType = !!options.preserveType;
@@ -660,19 +636,22 @@ function buildHistEntryRow(e) {
   row.className = "histEntryRow";
   row.innerHTML = `
     <div class="histEntryLeft">
-      <div class="histEntryType">${typeBadgeHtml(e.type || e.typeText || "—")}${e.isComeback ? ` <span class="comebackBadge">Comeback</span>` : ""}</div>
+      <div class="histEntryType">
+        ${typeBadgeHtml(e.type || e.typeText || "—")}
+        ${e.isComeback ? `<span class="comebackBadge">CB</span>` : ""}
+      </div>
       <div class="histEntryRef">${refLabel}: ${escapeHtml(refVal)}${vin8}</div>
       <div class="histEntryMeta">${escapeHtml(formatTimeAgo(e.updatedAt || e.createdAt))}${photoTag}</div>
       ${notesHtml}
       <div class="histEntryActions">
-        <button class="btn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
-        <button class="btn danger-ghost" data-del="${e.id}">Del</button>
-        ${hasPhoto ? `<button class="btn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
+        <button class="iBtn" data-edit-id="${escapeHtml(String(e.id ?? ""))}" ${e.id == null ? "disabled" : ""}>Edit</button>
+        <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
+        ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
       </div>
     </div>
     <div class="histEntryRight">
       <div class="histEntryPay">${formatMoney(e.earnings)}</div>
-      <div class="histEntryHrs">${String(e.hours)} hrs</div>
+      <div class="histEntryHrs">${formatHours(e.hours)} hrs</div>
     </div>
   `;
 
@@ -1636,13 +1615,12 @@ function renderList(entries, mode){
           </div>
           <div class="itemRight">
             <div class="itemPay">${formatMoney(e.earnings)}</div>
-            <div class="itemHrs">${String(e.hours)} hrs</div>
-            <div class="itemChevron">▾</div>
+            <div class="itemHrs">${formatHours(e.hours)} hrs</div>
+            <div class="itemChevron"></div>
           </div>
         </div>
         <div class="itemActions">
           <button class="iBtn" data-action="edit">Edit</button>
-          <button class="iBtn" data-action="dupe">Dupe RO</button>
           <button class="iBtn${e.isComeback ? " iBtn--active" : ""}" data-action="toggle-cb">${e.isComeback ? "CB ✓" : "CB"}</button>
           <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
           ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
@@ -1670,7 +1648,6 @@ function renderList(entries, mode){
 
     // ── Action buttons ───────────────────────────────────────────
     inner.querySelector('[data-action="edit"]')?.addEventListener("click", () => startEditEntry(e));
-    inner.querySelector('[data-action="dupe"]')?.addEventListener("click", () => duplicateEntryRo(e));
     inner.querySelector('[data-action="toggle-cb"]')?.addEventListener("click", async () => {
       const next = !e.isComeback;
       try {
