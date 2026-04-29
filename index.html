@@ -8,7 +8,7 @@
   <link rel="icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#000000" />
-  <link rel="stylesheet" href="./app.f253cb1850.css">
+  <link rel="stylesheet" href="./app.653f81310c.css">
 </head>
 <body data-page="main">
 
@@ -388,6 +388,23 @@
 
 <div id="toast" class="toast" aria-live="polite"></div>
 
+<!-- ── Onboarding tour ── -->
+<div id="tourOverlay" style="display:none;" aria-modal="true" role="dialog" aria-label="App tour">
+  <div id="tourSpotlight"></div>
+  <div id="tourTooltip" class="tourTooltip">
+    <div class="tourHeader">
+      <span id="tourStep" class="tourStepLabel"></span>
+      <button id="tourSkipBtn" class="tourSkip" type="button">Skip tour</button>
+    </div>
+    <div id="tourTitle" class="tourTitle"></div>
+    <div id="tourBody" class="tourBody"></div>
+    <div class="tourFooter">
+      <div id="tourDots" class="tourDots"></div>
+      <button id="tourNextBtn" class="btn primary" type="button">Next</button>
+    </div>
+  </div>
+</div>
+
 <div id="photoModal" class="modalShell">
   <div style="width:100%;max-width:560px;">
     <div class="card">
@@ -429,6 +446,6 @@
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="/FlatRate/app.9f93c72915.js" defer></script>
+<script src="/FlatRate/app.2964046d85.js" defer></script>
 </body>
 </html>

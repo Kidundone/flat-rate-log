@@ -846,6 +846,7 @@ function maybeShowOnboarding() {
     if (rateVal > 0) saveSettings({ defaultRate: rateVal });
     localStorage.setItem("fr_onboard_done", "1");
     modal.style.display = "none";
+    setTimeout(() => startTour(), 400);
   });
 }
 
@@ -861,6 +862,7 @@ window.__FR = window.__FR || {};
 window.__FR.shareDaySummary = shareDaySummary;
 window.__FR.updateShortPayBadge = updateShortPayBadge;
 window.__FR.maybeShowOnboarding = maybeShowOnboarding;
+window.__FR.maybeStartTour = maybeStartTour;
 
 async function flushPendingSync() {
   const q = getPendingQueue();
@@ -2013,4 +2015,114 @@ async function refreshUI(entriesOverride){
 
   // stash last week calc for export (delta always set)
   window.__WEEK_STATE__ = { ws, we, week, flagged, delta };
+}
+
+/* -------------------- Onboarding tour -------------------- */
+
+const TOUR_STEPS = [
+  {
+    el: null,
+    title: "Welcome to Flat-Rate!",
+    body: "Let's take a 30-second tour so you know where everything is. Tap Next to continue.",
+  },
+  {
+    el: "#statsStrip",
+    title: "Your Earnings at a Glance",
+    body: "Today's hours, job count, pay, and this week's total — updates every time you save an entry.",
+  },
+  {
+    el: ".fr26PrimaryEntry",
+    title: "Log a Job",
+    body: "Enter hours worked and describe the job. Tap a quick-hour button (0.5, 1.0…) or type any value.",
+  },
+  {
+    el: "#saveBtn",
+    title: "Save Your Entry",
+    body: "Tap Save Entry to log the job. It saves instantly and syncs to the cloud when you're online.",
+  },
+  {
+    el: "#toggleDetailsBtn",
+    title: "Add Details (Optional)",
+    body: "Tap here to add an RO #, VIN, rate override, notes, or a proof photo for your records.",
+  },
+  {
+    el: ".tabItem:last-child",
+    title: "More Features",
+    body: "Visit the More tab for pay stub comparison, needs-review queue, earnings history, and exports.",
+  },
+];
+
+function maybeStartTour() {
+  if (localStorage.getItem("fr_tour_done")) return;
+  if (!localStorage.getItem("fr_onboard_done")) return;
+  startTour();
+}
+
+function startTour() {
+  if (localStorage.getItem("fr_tour_done")) return;
+  const overlay = document.getElementById("tourOverlay");
+  if (!overlay) return;
+
+  let step = 0;
+
+  function buildDots() {
+    const container = document.getElementById("tourDots");
+    if (!container) return;
+    container.innerHTML = "";
+    TOUR_STEPS.forEach((_, i) => {
+      const d = document.createElement("div");
+      d.className = "tourDot" + (i === step ? " tourDot--active" : "");
+      container.appendChild(d);
+    });
+  }
+
+  function positionSpotlight(elSel) {
+    const spotlight = document.getElementById("tourSpotlight");
+    if (!spotlight) return;
+    if (!elSel) { spotlight.style.display = "none"; spotlight.classList.remove("pulse"); return; }
+    const target = document.querySelector(elSel);
+    if (!target) { spotlight.style.display = "none"; return; }
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => {
+      const r = target.getBoundingClientRect();
+      const pad = 7;
+      spotlight.style.display = "block";
+      spotlight.style.top = (r.top - pad) + "px";
+      spotlight.style.left = (r.left - pad) + "px";
+      spotlight.style.width = (r.width + pad * 2) + "px";
+      spotlight.style.height = (r.height + pad * 2) + "px";
+      spotlight.classList.add("pulse");
+    }, 280);
+  }
+
+  function show(idx) {
+    const s = TOUR_STEPS[idx];
+    const stepLabel = document.getElementById("tourStep");
+    const titleEl = document.getElementById("tourTitle");
+    const bodyEl = document.getElementById("tourBody");
+    const nextBtn = document.getElementById("tourNextBtn");
+    if (stepLabel) stepLabel.textContent = `${idx + 1} of ${TOUR_STEPS.length}`;
+    if (titleEl) titleEl.textContent = s.title;
+    if (bodyEl) bodyEl.textContent = s.body;
+    if (nextBtn) nextBtn.textContent = idx === TOUR_STEPS.length - 1 ? "Done" : "Next";
+    overlay.style.display = "block";
+    buildDots();
+    positionSpotlight(s.el);
+  }
+
+  function endTour() {
+    overlay.style.display = "none";
+    const spotlight = document.getElementById("tourSpotlight");
+    if (spotlight) { spotlight.style.display = "none"; spotlight.classList.remove("pulse"); }
+    localStorage.setItem("fr_tour_done", "1");
+  }
+
+  document.getElementById("tourNextBtn").onclick = () => {
+    step++;
+    if (step >= TOUR_STEPS.length) endTour();
+    else show(step);
+  };
+  document.getElementById("tourSkipBtn").onclick = endTour;
+
+  show(0);
 }

@@ -195,6 +195,7 @@ async function runOnce() {
     syncOfflineDot?.();
     updatePendingBadge?.();
     maybeShowOnboarding?.();
+    maybeStartTour?.();
 
     ["empId", "ref", "typeText", "hours"].forEach((id) => {
       const el = document.getElementById(id);
