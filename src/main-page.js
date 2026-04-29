@@ -1585,7 +1585,7 @@ function renderList(entries, mode){
 
   const buildEntry = (e) => {
     const row = document.createElement("div");
-    row.className = "item";
+    row.className = hlQ ? "item" : "item collapsed";
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
     const refVal = hl(e.ref || e.ro || "—");
     const typeLabel = hl(e.type || e.typeText || "—");
@@ -1609,6 +1609,7 @@ function renderList(entries, mode){
         <div class="itemRight">
           <div class="itemPay">${formatMoney(e.earnings)}</div>
           <div class="itemHrs">${String(e.hours)} hrs</div>
+          <div class="itemChevron">▾</div>
         </div>
       </div>
       <div class="itemActions">
@@ -1618,6 +1619,11 @@ function renderList(entries, mode){
         ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
       </div>
     `;
+
+    row.querySelector(".itemTop")?.addEventListener("click", (ev) => {
+      if (ev.target?.closest(".itemCheck")) return;
+      row.classList.toggle("collapsed");
+    });
 
     row.querySelector('button[data-action="edit"]')?.addEventListener("click", () => startEditEntry(e));
     row.querySelector('button[data-action="toggle-cb"]')?.addEventListener("click", async () => {

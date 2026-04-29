@@ -326,6 +326,25 @@ main {
 .itemEarnings { font-size: 20px; font-weight: 800; letter-spacing: -.5px; color: var(--text); }
 .itemHours    { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
+/* ── Collapsible entries ─────────────────────────── */
+.item .itemTop { cursor: pointer; user-select: none; -webkit-user-select: none; }
+
+.item.collapsed .itemMeta,
+.item.collapsed .itemNotes,
+.item.collapsed .entryThumbWrap,
+.item.collapsed .itemActions { display: none; }
+
+.itemChevron {
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 5px;
+  text-align: right;
+  line-height: 1;
+  transition: transform 180ms ease;
+  pointer-events: none;
+}
+.item.collapsed .itemChevron { transform: rotate(-90deg); }
+
 /* Action buttons — compact pill style */
 .itemActions {
   margin-top: 8px;
