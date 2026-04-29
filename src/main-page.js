@@ -394,6 +394,31 @@ window.__FR.deleteSelectedEntries = deleteSelectedEntries;
 window.__FR.checkDuplicates = checkDuplicates;
 window.__FR.bulkEditRate = bulkEditRate;
 
+function duplicateEntryRo(e) {
+  setEditingEntry(null);
+  const refEl   = document.getElementById("ref");
+  const vinEl   = document.getElementById("vin8");
+  const typeEl  = document.getElementById("typeText");
+  const hoursEl = document.getElementById("hours");
+  const rateEl  = document.querySelector('input[name="rate"]');
+  const notesEl = document.querySelector('textarea[name="notes"]');
+  if (refEl)   refEl.value  = e.ref || e.ro || "";
+  if (vinEl)   vinEl.value  = e.vin8 || "";
+  if (typeEl)  typeEl.value = "";
+  if (hoursEl) { hoursEl.value = ""; hoursEl.dataset.touched = ""; }
+  if (rateEl)  { rateEl.value = String(getDefaultRate()); rateEl.dataset.touched = ""; }
+  if (notesEl) notesEl.value = "";
+  setRefType(e.refType || "RO");
+  clearPickedPhoto();
+  const dp  = document.getElementById("detailsPanel");
+  const dbt = document.getElementById("toggleDetailsBtn");
+  if (dp)  dp.style.display  = "block";
+  if (dbt) dbt.textContent   = "Less";
+  document.getElementById("logForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => typeEl?.focus(), 300);
+  toast("RO pre-filled — enter type and hours");
+}
+
 async function saveEntry(entry, options = {}) {
   const preserveType = !!options.preserveType;
   const preservedType = String(options.preservedType || "").trim();
@@ -584,6 +609,7 @@ async function handleSave(ev) {
       preservedType: keepLastWork ? typeName : "",
       __isEdit: isEditing,
     });
+    navigator.vibrate?.(30);
     await refreshEntries();
     document.getElementById("entryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
     setSelectedPhotoFile(null);
@@ -1588,45 +1614,64 @@ function renderList(entries, mode){
     row.className = hlQ ? "item" : "item collapsed";
     const refLabel = e.refType === "STOCK" ? "STK" : "RO";
     const refVal = hl(e.ref || e.ro || "—");
-    const typeLabel = hl(e.type || e.typeText || "—");
     const entryId = escapeHtml(String(e.id ?? ""));
     const hasPhoto = entryHasPhoto(e);
-
     const photoPath = e.photo_path || e.photoPath || "";
+
     row.innerHTML = `
-      <div class="itemTop">
-        <div class="itemLeft">
-          <div class="itemHeadline">
-            <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
-            ${typeBadgeHtml(escapeHtml(e.type || e.typeText || "—"))}
-            ${e.isComeback ? `<span class="comebackBadge">CB</span>` : ""}
-            <span class="itemRef mono">${refLabel}: ${refVal}</span>
+      <div class="swipeEditZone swipeZone"><span>✏️</span>Edit</div>
+      <div class="swipeDeleteZone swipeZone"><span>🗑</span>Delete</div>
+      <div class="itemInner">
+        <div class="itemTop">
+          <div class="itemLeft">
+            <div class="itemHeadline">
+              <input type="checkbox" data-select-id="${entryId}" ${e.selected ? "checked" : ""} class="itemCheck" />
+              ${typeBadgeHtml(escapeHtml(e.type || e.typeText || "—"))}
+              ${e.isComeback ? `<span class="comebackBadge">CB</span>` : ""}
+              <span class="itemRef mono">${refLabel}: ${refVal}</span>
+            </div>
+            ${buildEntryMetaHtml(e)}
+            ${e.notes ? `<div class="itemNotes">${hl(e.notes)}</div>` : ""}
+            ${hasPhoto ? `<div class="entryThumbWrap"><img class="entryThumb" data-photo-path="${escapeHtml(photoPath)}" alt="Proof" /></div>` : ""}
           </div>
-          ${buildEntryMetaHtml(e)}
-          ${e.notes ? `<div class="itemNotes">${hl(e.notes)}</div>` : ""}
-          ${hasPhoto ? `<div class="entryThumbWrap"><img class="entryThumb" data-photo-path="${escapeHtml(photoPath)}" alt="Proof" /></div>` : ""}
+          <div class="itemRight">
+            <div class="itemPay">${formatMoney(e.earnings)}</div>
+            <div class="itemHrs">${String(e.hours)} hrs</div>
+            <div class="itemChevron">▾</div>
+          </div>
         </div>
-        <div class="itemRight">
-          <div class="itemPay">${formatMoney(e.earnings)}</div>
-          <div class="itemHrs">${String(e.hours)} hrs</div>
-          <div class="itemChevron">▾</div>
+        <div class="itemActions">
+          <button class="iBtn" data-action="edit">Edit</button>
+          <button class="iBtn" data-action="dupe">Dupe RO</button>
+          <button class="iBtn${e.isComeback ? " iBtn--active" : ""}" data-action="toggle-cb">${e.isComeback ? "CB ✓" : "CB"}</button>
+          <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
+          ${hasPhoto ? `<button class="iBtn" data-action="view-photo">Photo</button>` : ""}
         </div>
-      </div>
-      <div class="itemActions">
-        <button class="iBtn" data-action="edit" data-id="${e.id}">Edit</button>
-        <button class="iBtn${e.isComeback ? " iBtn--active" : ""}" data-action="toggle-cb" data-id="${e.id}">${e.isComeback ? "CB ✓" : "CB"}</button>
-        <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
-        ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
       </div>
     `;
 
-    row.querySelector(".itemTop")?.addEventListener("click", (ev) => {
-      if (ev.target?.closest(".itemCheck")) return;
+    const inner = row.querySelector(".itemInner");
+
+    // ── Collapse toggle ──────────────────────────────────────────
+    inner.querySelector(".itemTop")?.addEventListener("click", (ev) => {
+      if (ev.target?.closest(".itemCheck") || ev.target?.closest(".itemRef")) return;
       row.classList.toggle("collapsed");
     });
 
-    row.querySelector('button[data-action="edit"]')?.addEventListener("click", () => startEditEntry(e));
-    row.querySelector('button[data-action="toggle-cb"]')?.addEventListener("click", async () => {
+    // ── Tap RO to copy ───────────────────────────────────────────
+    inner.querySelector(".itemRef")?.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const val = e.ref || e.ro || "";
+      if (!val) return;
+      navigator.clipboard?.writeText(val)
+        .then(() => toast(`Copied ${val}`))
+        .catch(() => {});
+    });
+
+    // ── Action buttons ───────────────────────────────────────────
+    inner.querySelector('[data-action="edit"]')?.addEventListener("click", () => startEditEntry(e));
+    inner.querySelector('[data-action="dupe"]')?.addEventListener("click", () => duplicateEntryRo(e));
+    inner.querySelector('[data-action="toggle-cb"]')?.addEventListener("click", async () => {
       const next = !e.isComeback;
       try {
         await saveEditedLog(e.id, { is_comeback: next });
@@ -1638,12 +1683,59 @@ function renderList(entries, mode){
         await refreshUI(CURRENT_ENTRIES);
       } catch (err) { toast("Failed to update entry"); }
     });
-    row.querySelector('input[data-select-id]')?.addEventListener("change", (ev) => {
+    inner.querySelector('input[data-select-id]')?.addEventListener("change", (ev) => {
       setEntrySelectedById(e.id, !!ev.target?.checked);
     });
     if (hasPhoto) {
-      row.querySelector('button[data-action="view-photo"]')?.addEventListener("click", () => openPhoto(e));
+      inner.querySelector('[data-action="view-photo"]')?.addEventListener("click", () => openPhoto(e));
     }
+
+    // ── Swipe gestures ───────────────────────────────────────────
+    let sx = 0, sy = 0, lx = 0, tracking = false, swiping = false, dir = null;
+
+    inner.addEventListener("touchstart", ev => {
+      sx = lx = ev.touches[0].clientX;
+      sy = ev.touches[0].clientY;
+      tracking = true; swiping = false; dir = null;
+    }, { passive: true });
+
+    inner.addEventListener("touchmove", ev => {
+      if (!tracking) return;
+      lx = ev.touches[0].clientX;
+      const dx = lx - sx, dy = ev.touches[0].clientY - sy;
+      if (!swiping) {
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+          swiping = true; dir = dx < 0 ? "left" : "right";
+          row.classList.add("swiping");
+        } else if (Math.abs(dy) > 8) { tracking = false; return; }
+      }
+      if (swiping) {
+        ev.preventDefault();
+        const clamped = dir === "left" ? Math.max(-90, Math.min(0, dx)) : Math.max(0, Math.min(90, dx));
+        inner.style.transform = `translateX(${clamped}px)`;
+      }
+    }, { passive: false });
+
+    const resetSwipe = () => {
+      inner.style.transition = "transform 200ms ease";
+      inner.style.transform = "translateX(0)";
+      row.classList.remove("swiping");
+    };
+
+    inner.addEventListener("touchend", () => {
+      if (!tracking) return;
+      tracking = false;
+      const dx = lx - sx;
+      if (swiping && dir === "left" && dx < -70) {
+        resetSwipe(); onDeleteClicked(null, e.id);
+      } else if (swiping && dir === "right" && dx > 70) {
+        resetSwipe(); startEditEntry(e);
+      } else {
+        resetSwipe();
+      }
+      swiping = false;
+    });
+
     return row;
   };
 
@@ -1883,13 +1975,17 @@ async function refreshUI(entriesOverride){
     }
   }
 
-  // Pace projection (days worked this week × avg/day)
+  // Pace projection + daily avg/job
   const paceEl = document.getElementById("paceLine");
   if (paceEl) {
     const daysWorked = new Set(entries.filter(e => inWeek(e.dayKey, ws)).map(e => e.dayKey).filter(Boolean)).size;
+    const avgJobToday = today.count > 0 ? `Avg/job: ${formatMoney(round2(today.dollars / today.count))}` : "";
     if (daysWorked > 0 && week.dollars > 0) {
       const proj = round2((week.dollars / daysWorked) * 5);
-      paceEl.textContent = `On pace for ${formatMoney(proj)} this week`;
+      paceEl.textContent = `On pace for ${formatMoney(proj)} this week${avgJobToday ? ` · ${avgJobToday}` : ""}`;
+      paceEl.style.display = "";
+    } else if (avgJobToday) {
+      paceEl.textContent = avgJobToday;
       paceEl.style.display = "";
     } else {
       paceEl.style.display = "none";

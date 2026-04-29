@@ -243,14 +243,42 @@ main {
 .list    { display: grid; gap: 8px; }
 
 .item {
-  background: var(--surface2);
   border-radius: var(--r-lg);
-  padding: 16px;
-  transition: background 150ms var(--ease);
   border: 1px solid var(--stroke);
+  overflow: hidden;
+  position: relative;
+  touch-action: pan-y;
 }
 
-.item:active { background: var(--surface3); }
+.itemInner {
+  padding: 16px;
+  background: var(--surface2);
+  border-radius: inherit;
+  position: relative;
+  z-index: 2;
+  transition: transform 200ms ease;
+}
+.item.swiping .itemInner { transition: none; }
+.item:active .itemInner { background: var(--surface3); }
+
+/* Swipe action zones — sit behind .itemInner, revealed on swipe */
+.swipeZone {
+  position: absolute;
+  top: 0; bottom: 0; width: 90px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: .3px;
+}
+.swipeZone span { font-size: 18px; line-height: 1; }
+.swipeDeleteZone { right: 0; background: var(--danger); border-radius: 0 var(--r-lg) var(--r-lg) 0; }
+.swipeEditZone   { left: 0;  background: var(--primary); border-radius: var(--r-lg) 0 0 var(--r-lg); }
 
 /* ── Entry card layout ───────────────────────────── */
 .itemTop {
@@ -286,7 +314,9 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
+.itemRef:active { opacity: .6; }
 
 /* Compact meta line below headline */
 .itemMeta {
@@ -1957,7 +1987,7 @@ button:not(.btn):not(.segBtn):not(.fr26BtnPrimary):not(.fr26BtnGhost):not(.fr26C
 .ptDeltaEven  { color: var(--muted); }
 
 /* ── Compact list mode ───────────────────────────── */
-body.compact .item    { padding: 9px 12px; }
+body.compact .itemInner { padding: 9px 12px; }
 body.compact .itemTop { font-size: 13px; }
 body.compact .itemPay { font-size: 16px; }
 body.compact .itemMeta { margin-top: 3px; }
