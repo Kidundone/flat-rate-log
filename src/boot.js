@@ -397,7 +397,7 @@ async function runOnce() {
       if (!empId) return alert("Enter Employee # first.");
       setStatusMsg("Repairing… keep this page open.");
       try {
-        const fixed = await backfillDayKeysForEmpCursor(empId, { batch: 150 });
+        const fixed = await backfillDayKeysForEmp(empId);
         alert(`Repair complete. Fixed ${fixed} entries.`);
       } catch (e) {
         alert("Repair failed: " + (e?.message || e));

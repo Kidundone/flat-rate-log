@@ -264,9 +264,6 @@ function isMissingColumnError(err, columnName) {
     && (msg.includes("column") || msg.includes("does not exist") || msg.includes("schema cache"));
 }
 
-function isDealerColumnMissingError(err) {
-  return isMissingColumnError(err, "dealer");
-}
 
 async function updateWorkLogWithFallback(sbClient, logId, patch) {
   const body = { ...(patch || {}) };
@@ -788,9 +785,6 @@ async function backfillDayKeysForEmp(empId){
   return needsFix.length;
 }
 
-async function backfillDayKeysForEmpCursor(empId, { batch = 150 } = {}) {
-  return backfillDayKeysForEmp(empId);
-}
 
 async function renderLogs(logs) {
   const entries = Array.isArray(logs) ? normalizeEntries(logs) : [];

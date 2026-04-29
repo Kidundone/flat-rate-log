@@ -301,7 +301,7 @@ function normalizeEntries(entries) {
     const entry = {
       ...e,
       createdAtMs,
-      dayKey: dayKey || e?.dayKey || "",
+      dayKey: dayKey || "",
     };
 
     entry.weekEnding = entry.dayKey ? getWeekEnding(entry.dayKey) : (entry.weekEnding || "");
@@ -313,8 +313,7 @@ async function getAll(storeName) {
   if (storeName === STORES.entries) {
     return normalizeEntries(Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []);
   }
-  const items = Array.from(getStoreMap(storeName).values()).map(cloneStoreValue);
-  return storeName === STORES.entries ? normalizeEntries(items) : items;
+  return Array.from(getStoreMap(storeName).values()).map(cloneStoreValue);
 }
 
 async function get(storeName, key) {
@@ -356,14 +355,8 @@ async function clearStore(storeName) {
 }
 
 function applySearch(entries, q){
-  const s = String(q || "").trim().toLowerCase();
-  if (!s) return entries;
-  return entries.filter(e => {
-    const hay = [
-      e.ref, e.ro, e.ro_number, e.stock, e.vin, e.vin8, e.type, e.typeText, e.notes,
-    ].map(x => String(x || "").toLowerCase()).join(" ");
-    return hay.includes(s);
-  });
+  if (!String(q || "").trim()) return entries;
+  return entries.filter(e => matchSearch(e, q));
 }
 
 function populateDealerFilter(entries) {

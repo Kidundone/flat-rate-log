@@ -275,10 +275,6 @@ function focusHoursInput() {
   });
 }
 
-function showToast(msg) {
-  console.log(msg);
-  toast(msg);
-}
 
 function buildEntryMetaHtml(entry) {
   const vin8 = String(entry?.vin8 || "").trim();
@@ -371,18 +367,18 @@ function updateHeaderTodayTotal(dollars) {
 async function repeatLastEntry() {
   const entries = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
   const last = entries[0];
-  if (!last) { showToast("No previous entry."); return; }
+  if (!last) { toast("No previous entry."); return; }
   const typeEl = document.getElementById("typeText");
   const rateEl = document.querySelector('input[name="rate"]');
   if (typeEl) { typeEl.value = last.type || last.typeText || ""; typeEl.dispatchEvent(new Event("input", { bubbles: true })); }
   if (rateEl) { rateEl.value = last.rate != null ? String(last.rate) : String(getDefaultRate()); rateEl.dispatchEvent(new Event("input", { bubbles: true })); }
   updateEarningsPreview();
-  showToast("Last job loaded — update hours and save.");
+  toast("Last job loaded — update hours and save.");
 }
 
 async function deleteSelectedEntries() {
   const selected = (Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : []).filter(e => e.selected);
-  if (!selected.length) { showToast("No entries selected."); return; }
+  if (!selected.length) { toast("No entries selected."); return; }
   const word = selected.length === 1 ? "entry" : "entries";
   if (!confirm(`Delete ${selected.length} selected ${word}? This cannot be undone.`)) return;
   for (const e of selected) {
@@ -612,7 +608,7 @@ async function handleSave(ev) {
     isSaving = false;
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = EDITING_ID ? "Update" : "Save Entry";
+      saveBtn.textContent = EDITING_ID ? "Update" : "Save";
     }
   }
 }
@@ -865,10 +861,8 @@ function maybeShowOnboarding() {
 
 function syncOfflineDot() {
   const dot = document.getElementById("offlineDot");
-  const banner = document.getElementById("offlineBanner");
-  const isOffline = !navigator.onLine;
-  if (dot) dot.style.display = isOffline ? "" : "none";
-  if (banner) banner.style.display = isOffline ? "" : "none";
+  if (dot) dot.style.display = !navigator.onLine ? "" : "none";
+  updatePendingBadge?.();
 }
 
 window.__FR = window.__FR || {};
@@ -1318,12 +1312,6 @@ function computeWeekComparison(entries, now = new Date()){
   };
 }
 
-function addDaysLocal(d, days){
-  const x = new Date(d);
-  x.setDate(x.getDate() + days);
-  return x;
-}
-
 function weekStartKeyForDate(d){
   // uses your existing helpers
   return dateKey(startOfWeekLocal(d));
@@ -1331,7 +1319,7 @@ function weekStartKeyForDate(d){
 
 function getThisAndLastWeekKeys(now = new Date()){
   const thisStart = startOfWeekLocal(now);
-  const lastStart = addDaysLocal(thisStart, -7);
+  const lastStart = addDays(thisStart, -7);
   return {
     thisWeekKey: dateKey(thisStart),
     lastWeekKey: dateKey(lastStart)
@@ -1729,102 +1717,6 @@ function renderList(entries, mode){
   for (const e of capped) {
     try { list.appendChild(buildEntry(e)); } catch {}
   }
-}
-
-function applyPhotoLoadGuard(img, photo_path) {
-  if (!img) return;
-  img.onerror = () => {
-    console.error("PHOTO LOAD FAILED", photo_path);
-    img.replaceWith(
-      Object.assign(document.createElement("div"), {
-        textContent: "Photo failed to load",
-        className: "photo-error"
-      })
-    );
-  };
-}
-
-function ensurePhotoImg(id, container, styleText, beforeEl) {
-  let img = document.getElementById(id);
-  if (img || !container) return img;
-
-  img = document.createElement("img");
-  img.id = id;
-  img.alt = "Proof photo";
-  if (styleText) img.style.cssText = styleText;
-
-  const errorDiv = container.querySelector(".photo-error");
-  if (errorDiv) {
-    errorDiv.replaceWith(img);
-    return img;
-  }
-
-  if (beforeEl) container.insertBefore(img, beforeEl);
-  else container.appendChild(img);
-  return img;
-}
-
-async function viewPhotoById(id) {
-  const entries = Array.isArray(CURRENT_ENTRIES) ? CURRENT_ENTRIES : [];
-  const row = entries.find(e => String(e.id) === String(id));
-
-  if (!row) {
-    alert("Photo entry not found.");
-    return;
-  }
-
-  const path = row.photo_path || row.photoPath;
-  if (!path) {
-    alert("No photo on this entry.");
-    return;
-  }
-
-  const url = await getPhotoUrl(path);
-
-  // whatever modal you already use:
-  openPhotoModal(url, path);
-}
-
-function openPhotoModal(url, pathLabel) {
-  const modal = document.getElementById("photoModal");
-  const card = modal?.querySelector(".card");
-  const img = ensurePhotoImg(
-    "photoImg",
-    card,
-    "width:100%; height:auto; border-radius:14px; margin-top:12px; display:block;"
-  );
-  const label = document.getElementById("photoPathLabel") || document.getElementById("photoMeta");
-
-  if (!modal || !img) {
-    // fallback: just open in new tab
-    window.open(url, "_blank");
-    return;
-  }
-
-  if (label) label.textContent = pathLabel || "";
-  applyPhotoLoadGuard(img, pathLabel);
-  img.src = url;
-
-  modal.classList.add("open");
-  lockBodyScroll();
-}
-
-async function openPhoto(row) {
-  const path = row?.photo_path || row?.photoPath;
-  if (!path) return toast("No photo saved.");
-  const url = await getPhotoUrl(path);
-  openPhotoModal(url, path);
-}
-
-function closePhotoModal(){
-  const shell = document.getElementById("photoModal");
-  const img = document.getElementById("photoImg");
-  if (img) img.src = "";
-  if (shell) {
-    shell.classList.remove("open");
-    shell.style.display = "";
-  }
-  unlockBodyScroll();
 }
 
 async function refreshUI(entriesOverride){

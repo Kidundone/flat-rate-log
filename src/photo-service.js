@@ -78,7 +78,8 @@ async function uploadProofPhoto({ sb, empId, logId, file, roNumber = null }) {
     });
 
   if (error) throw error;
-  await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
+  const { error: updateErr } = await sb.from("work_logs").update({ photo_path: path }).eq("id", logId);
+  if (updateErr) throw updateErr;
   return { path, dealer: null };
 }
 
@@ -294,7 +295,7 @@ function openPhotoModal(url, pathLabel) {
   img.src = url;
 
   modal.classList.add("open");
-  document.body.classList.add("modal-open");
+  lockBodyScroll();
 }
 
 async function openPhoto(row) {
@@ -312,7 +313,7 @@ function closePhotoModal(){
     shell.classList.remove("open");
     shell.style.display = "";
   }
-  document.body.classList.remove("modal-open");
+  unlockBodyScroll();
 }
 
 async function entryPhotoUrl(entry) {
