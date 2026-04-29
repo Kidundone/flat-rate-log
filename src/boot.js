@@ -9,8 +9,11 @@ console.log("__FR_MARKER_20260316");
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
-  // When a new SW takes over, reload once so the user always gets the latest version
-  navigator.serviceWorker.addEventListener("controllerchange", () => location.reload());
+  // When a new SW takes over, show a non-intrusive update prompt instead of force-reloading
+  // (force-reload was interrupting sign-in and other active operations)
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    toast?.("App updated — close and reopen to get the latest", 6000);
+  });
 }
 
 window.__FR = window.__FR || {};
