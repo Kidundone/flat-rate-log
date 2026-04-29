@@ -317,23 +317,24 @@
       </div>
     </section>
 
-    <!-- Hidden — needed by JS but not shown in this simplified UI -->
-    <div style="display:none;">
-      <div id="photoViewer" class="modalShell">
-        <div class="modalContent" style="max-width:900px;margin:20px auto;padding:0 12px;">
-          <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-              <div class="muted" id="photoMeta"></div>
-              <button class="btn" id="closePhotoViewerBtn" type="button">Close</button>
-            </div>
-            <img id="photoFull" style="width:100%;border-radius:16px;margin-top:10px;" />
-            <div style="display:flex;gap:8px;margin-top:10px;">
-              <a class="btn" id="downloadPhotoBtn" download="proof.jpg">Download</a>
-              <button class="btn" id="copyPhotoBtn">Copy Image</button>
-            </div>
+    <!-- Photo viewer modal -->
+    <div id="photoViewer" class="modalShell" style="display:none;">
+      <div class="modalContent" style="max-width:560px;margin:20px auto;padding:0 12px;">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <div class="muted small" id="photoMeta"></div>
+            <button class="btn" id="closePhotoViewerBtn" type="button">Close</button>
+          </div>
+          <img id="photoFull" style="width:100%;border-radius:14px;margin-top:12px;display:block;" />
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <a class="btn" id="downloadPhotoBtn" download="proof.jpg">Download</a>
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Hidden stubs needed by JS -->
+    <div style="display:none;">
       <select id="reviewRange"><option value="all">All</option></select>
       <select id="reviewFocus"><option value="all">All</option></select>
       <select id="reviewGroup"><option value="day">Day</option></select>
