@@ -1645,7 +1645,7 @@ function renderList(entries, mode){
           <button class="iBtn" data-action="dupe">Dupe RO</button>
           <button class="iBtn${e.isComeback ? " iBtn--active" : ""}" data-action="toggle-cb">${e.isComeback ? "CB ✓" : "CB"}</button>
           <button class="iBtn iBtn--danger" data-del="${e.id}">Delete</button>
-          ${hasPhoto ? `<button class="iBtn" data-action="view-photo">Photo</button>` : ""}
+          ${hasPhoto ? `<button class="iBtn" data-action="view-photo" data-id="${e.id}">Photo</button>` : ""}
         </div>
       </div>
     `;
